@@ -3,7 +3,9 @@ import requests
 from .auth import get_dataverse_token
 
 DV_API = "/api/data/v9.2"
-BOT_SELECT = "botid,name,schemaname,configuration,publishedon,statecode,description"
+# configuration is excluded here — it causes 400 in collection $select;
+# fetched per-bot via a separate full-record request instead.
+BOT_SELECT = "botid,name,schemaname,publishedon,statecode,description"
 MONITOR_TAG = "#monitor"
 
 
@@ -23,6 +25,21 @@ def extract_model_version(configuration: str) -> str:
         return "unknown"
 
 
+def _fetch_bot_details(org_url: str, token: str, bot_id: str) -> dict:
+    """Fetch full bot record (no $select) to get configuration and any computed fields."""
+    try:
+        r = requests.get(
+            f"{org_url}{DV_API}/bots({bot_id})",
+            headers=_headers(token),
+            timeout=20,
+        )
+        if r.ok:
+            return r.json()
+    except Exception:
+        pass
+    return {}
+
+
 def list_bots(org_url: str) -> list[dict]:
     token = get_dataverse_token(org_url)
     url = f"{org_url}{DV_API}/bots?$select={BOT_SELECT}&$filter=statecode eq 0"
@@ -34,11 +51,13 @@ def list_bots(org_url: str) -> list[dict]:
         description = b.get("description") or ""
         if MONITOR_TAG not in description.lower():
             continue
+        bot_id  = b["botid"]
+        details = _fetch_bot_details(org_url, token, bot_id)
         bots.append({
-            "botId":        b["botid"],
+            "botId":        bot_id,
             "name":         b.get("name", ""),
             "schemaName":   b.get("schemaname", ""),
-            "modelVersion": extract_model_version(b.get("configuration")),
+            "modelVersion": extract_model_version(details.get("configuration")),
             "publishedOn":  b.get("publishedon"),
             "orgUrl":       org_url
         })
