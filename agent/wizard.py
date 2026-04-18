@@ -16,6 +16,7 @@ MG = "\033[95m";  BL = "\033[94m";  DM = "\033[2m";   BD = "\033[1m"
 RS = "\033[0m"
 
 TOTAL_STEPS = 5
+_AZ = "az.cmd" if sys.platform == "win32" else "az"
 
 
 # ── Logo ──────────────────────────────────────────────────────────────────────
@@ -214,7 +215,7 @@ def _send_test_email(host: str, port: int, user: str, password: str, recipient: 
 # ── Tenant / environment discovery via BAPI ───────────────────────────────────
 def _fetch_environments_from_bapi() -> list:
     token = subprocess.check_output(
-        ["az", "account", "get-access-token",
+        [_AZ, "account", "get-access-token",
          "--resource", "https://service.powerapps.com/",
          "--query", "accessToken", "-o", "tsv"],
         stderr=subprocess.DEVNULL,
@@ -239,7 +240,7 @@ def _fetch_environments_from_bapi() -> list:
 
 def _get_tenant_id_from_az() -> str:
     return subprocess.check_output(
-        ["az", "account", "show", "--query", "tenantId", "-o", "tsv"],
+        [_AZ, "account", "show", "--query", "tenantId", "-o", "tsv"],
         stderr=subprocess.DEVNULL,
     ).decode().strip()
 
@@ -249,7 +250,7 @@ def _fetch_bots_for_env(org_url: str) -> list:
     if not org_url.startswith("http"):
         org_url = "https://" + org_url
     token = subprocess.check_output(
-        ["az", "account", "get-access-token",
+        [_AZ, "account", "get-access-token",
          "--resource", org_url.rstrip("/") + "/",
          "--query", "accessToken", "-o", "tsv"],
         stderr=subprocess.DEVNULL,
