@@ -14,6 +14,8 @@
   "token_cache_file": "msal_token_cache.json",
   "store_dir": "data",
   "poll_interval_minutes": 20,
+  "eval_poll_timeout_seconds": 1200,
+  "eval_poll_interval_seconds": 20,
   "llm": {
     "base_url": "https://llm-evaluation-ragas.services.ai.azure.com/api/projects/llm-evaluation/openai/v1/responses",
     "api_key": "",
