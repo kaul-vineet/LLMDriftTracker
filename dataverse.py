@@ -3,7 +3,8 @@ import requests
 from auth import get_dataverse_token
 
 DV_API = "/api/data/v9.2"
-BOT_SELECT = "botid,name,schemaname,configuration,publishedon,statecode"
+BOT_SELECT = "botid,name,schemaname,configuration,publishedon,statecode,description"
+MONITOR_TAG = "#monitor"
 
 
 def _headers(token: str) -> dict:
@@ -30,6 +31,9 @@ def list_bots(org_url: str) -> list[dict]:
 
     bots = []
     for b in r.json().get("value", []):
+        description = b.get("description") or ""
+        if MONITOR_TAG not in description.lower():
+            continue
         bots.append({
             "botId":        b["botid"],
             "name":         b.get("name", ""),
@@ -50,7 +54,7 @@ def list_all_bots(cfg: dict) -> list[dict]:
                 b["envName"]  = env["name"]
                 b["ppEnvId"]  = env["pp_env_id"]
             all_bots.extend(bots)
-            print(f"[dataverse] {env['name']}: {len(bots)} bot(s)")
+            print(f"[dataverse] {env['name']}: {len(bots)} bot(s) tagged {MONITOR_TAG}")
         except Exception as e:
             print(f"[dataverse] {env['name']} failed: {e}")
     return all_bots
