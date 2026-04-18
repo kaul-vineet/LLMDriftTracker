@@ -17,6 +17,7 @@ st.set_page_config(
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded",
+    menu_items={},
 )
 
 # ── Design tokens ─────────────────────────────────────────────────────────────
@@ -231,6 +232,8 @@ st.markdown(f"""
   /* ── Hide Streamlit chrome ── */
   #MainMenu, footer, [data-testid="stToolbar"] {{ visibility: hidden; }}
   [data-testid="stHeader"] {{ display: none; }}
+  [data-testid="collapsedControl"] {{ display: none; }}
+  [data-testid="stSidebarCollapseButton"] {{ display: none; }}
 </style>
 """, unsafe_allow_html=True)
 
