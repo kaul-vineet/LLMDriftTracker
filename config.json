@@ -1,0 +1,29 @@
+{
+  "environments": [
+    {
+      "name": "Contoso (default)",
+      "orgUrl": "https://orgbc3e4ecc.crm.dynamics.com",
+      "environmentId": "Default-8b7a11d9-6513-4d54-a468-f6630df73c8b",
+      "monitoredBots": [
+        "crf98_safeTravels"
+      ]
+    }
+  ],
+  "eval_app_client_id": "774142ce-9070-446b-83ac-e2053c716879",
+  "eval_app_tenant_id": "8b7a11d9-6513-4d54-a468-f6630df73c8b",
+  "token_cache_file": "msal_token_cache.json",
+  "store_dir": "data",
+  "poll_interval_minutes": 20,
+  "llm": {
+    "base_url": "https://llm-evaluation-ragas.services.ai.azure.com/api/projects/llm-evaluation/openai/v1/responses",
+    "api_key": "",
+    "model": "gpt-5-chat"
+  },
+  "smtp": {
+    "host": "",
+    "port": 587,
+    "user": "",
+    "password": "",
+    "recipient": ""
+  }
+}

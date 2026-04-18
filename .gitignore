@@ -1,9 +1,6 @@
-# Auth & secrets
+# Secrets — never commit
 msal_token_cache.json
-config.json
-
-# Runtime data
-data/
+.env
 
 # Python
 __pycache__/
