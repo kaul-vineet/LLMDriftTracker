@@ -515,14 +515,6 @@ def main():
     print(f"  {DM}           drift dashboard        # open dashboard{RS}")
     print(f"  {DM}           drift setup            # re-run this wizard{RS}")
     print()
-    print(f"  {DM}Docker  →  docker build -t copilot-eval-agent .{RS}")
-    print(f"  {DM}           docker run -d \\{RS}")
-    print(f"  {DM}             -v $(pwd)/data:/app/data \\{RS}")
-    print(f"  {DM}             -v $(pwd)/msal_token_cache.json:/app/msal_token_cache.json \\{RS}")
-    print(f"  {DM}             -v $(pwd)/config.json:/app/config.json \\{RS}")
-    print(f"  {DM}             copilot-eval-agent{RS}")
-    print(f"  {DM}{'─' * 56}{RS}")
-    print()
     print(f"  {CY}{BD}📁 Project layout{RS}")
     print(f"  {DM}{'─' * 40}{RS}")
     tree = [
@@ -548,6 +540,13 @@ def main():
     for path, desc in tree:
         print(f"  {DM}{path:<32}{RS}  {DM}{desc}{RS}")
     print()
+    print(f"  {DM}Docker  →  docker build -t copilot-eval-agent .{RS}")
+    print(f"  {DM}           docker run -d \\{RS}")
+    print(f"  {DM}             -v $(pwd)/data:/app/data \\{RS}")
+    print(f"  {DM}             -v $(pwd)/msal_token_cache.json:/app/msal_token_cache.json \\{RS}")
+    print(f"  {DM}             -v $(pwd)/config.json:/app/config.json \\{RS}")
+    print(f"  {DM}             copilot-eval-agent{RS}")
+    print(f"  {DM}{'─' * 56}{RS}\n")
 
 
 if __name__ == "__main__":
