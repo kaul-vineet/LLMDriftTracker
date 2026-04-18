@@ -16,13 +16,24 @@ def _model(cfg: dict) -> str:
 
 
 def _extract_metrics(run: dict) -> dict:
-    """Aggregate boolean metrics to pass rates across all test cases."""
+    """Aggregate pass rate and numeric scores per metric type."""
+    if not run:
+        return {}
     totals: dict = {}
     counts: dict = {}
     for case in run.get("testCasesResults", []):
         for m in case.get("metricsResults", []):
-            mtype = m.get("type", "unknown")
-            data  = m.get("result", {}).get("data", {})
+            mtype  = m.get("type", "unknown")
+            result = m.get("result", {})
+            data   = result.get("data", {})
+            status = result.get("status", "")
+
+            # Pass/fail rate
+            pk = f"{mtype}.passRate"
+            counts[pk] = counts.get(pk, 0) + 1
+            totals[pk] = totals.get(pk, 0) + (1 if status == "Pass" else 0)
+
+            # Numeric/score fields (API returns scores as strings)
             for field, val in data.items():
                 key = f"{mtype}.{field}"
                 counts[key] = counts.get(key, 0) + 1
@@ -30,7 +41,13 @@ def _extract_metrics(run: dict) -> dict:
                     totals[key] = totals.get(key, 0) + (1 if val else 0)
                 elif isinstance(val, (int, float)):
                     totals[key] = totals.get(key, 0) + val
-    return {k: round(totals[k] / counts[k], 4) for k in totals}
+                elif isinstance(val, str):
+                    try:
+                        totals[key] = totals.get(key, 0) + float(val)
+                    except ValueError:
+                        counts.pop(key, None)
+
+    return {k: round(totals[k] / counts[k], 4) for k in totals if k in counts}
 
 
 def _build_prompt(bot_name: str, old_model: str, new_model: str,
@@ -77,10 +94,10 @@ def analyse_drift(bot_name: str, old_model: str, new_model: str,
     prev_metrics = _extract_metrics(previous_run) if previous_run else {}
 
     ai_reasons = [
-        m.get("aiResultReason", "")
+        m["result"]["aiResultReason"]
         for case in current_run.get("testCasesResults", [])
         for m in case.get("metricsResults", [])
-        if m.get("aiResultReason")
+        if m.get("result", {}).get("aiResultReason")
     ]
 
     if not prev_metrics:

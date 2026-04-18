@@ -33,22 +33,16 @@ def trigger_run(pp_env_id: str, bot_id: str, test_set_id: str, token: str) -> st
 def poll_run(pp_env_id: str, bot_id: str, run_id: str, token: str,
              timeout_s: int = 1200, interval_s: int = 20) -> dict:
     url      = _eval_url(pp_env_id, bot_id, f"testruns/{run_id}")
-    deadline = time.time() + timeout_s
-    first    = True
+    start    = time.time()
+    deadline = start + timeout_s
     while time.time() < deadline:
         r = requests.get(url, headers=_headers(token), timeout=15)
         r.raise_for_status()
-        data = r.json()
-
-        # Log raw keys once so we can verify field names against the live API
-        if first:
-            print(f"   [poll] response keys: {list(data.keys())}")
-            first = False
-
-        state     = data.get("state", "").lower()
-        processed = data.get("testCasesProcessed") or data.get("completedTestCases") or 0
-        total     = data.get("totalTestCases") or data.get("testCaseCount") or 0
-        lore.eval_polling(run_id, state, processed, total)
+        data    = r.json()
+        state   = data.get("state", "").lower()
+        elapsed = int(time.time() - start)
+        total   = data.get("totalTestCases", 0)
+        lore.eval_polling(run_id, state, elapsed, timeout_s, total)
         if state in ("completed", "failed", "cancelled"):
             return data
         time.sleep(interval_s)
