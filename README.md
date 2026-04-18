@@ -221,6 +221,9 @@ sequenceDiagram
 
 ### Step 3 — Tag bots you want monitored
 
+> [!IMPORTANT]
+> **This step is the master switch.** The agent is completely blind to any bot that doesn't have `#monitor` in its description. No tag = never evaluated, never reported, never monitored. Do this before running the agent or nothing will happen.
+
 ```
 Copilot Studio → bot → Settings → Details → Description
 ```
@@ -231,7 +234,18 @@ Add `#monitor` anywhere in the description:
 Handles HR queries for APAC employees. Routes to payroll and leave topics. #monitor
 ```
 
-To stop monitoring: remove `#monitor`. Takes effect on the next poll cycle — no restarts, no config edits.
+```
+  ┌─────────────────────────────────────────────────────────┐
+  │  WITHOUT #monitor      │  WITH #monitor                 │
+  ├────────────────────────┼────────────────────────────────┤
+  │  ✗  Never discovered   │  ✓  Discovered every poll      │
+  │  ✗  Never evaluated    │  ✓  Evaluated on model change  │
+  │  ✗  Never reported     │  ✓  Report emailed to admin    │
+  │  ✗  Drift goes unseen  │  ✓  Drift caught immediately   │
+  └─────────────────────────────────────────────────────────┘
+```
+
+To stop monitoring a bot: remove `#monitor` from its description. Takes effect on the next poll cycle — no restarts, no config edits, no code changes.
 
 ---
 
