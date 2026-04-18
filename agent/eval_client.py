@@ -1,6 +1,7 @@
 import time
 import requests
 from .auth import get_eval_token
+from . import lore
 
 PP_API_BASE  = "https://api.powerplatform.com"
 EVAL_API_VER = "2024-10-01"
@@ -37,10 +38,10 @@ def poll_run(pp_env_id: str, bot_id: str, run_id: str, token: str,
         r = requests.get(url, headers=_headers(token), timeout=15)
         r.raise_for_status()
         data = r.json()
-        state = data.get("state", "").lower()
+        state     = data.get("state", "").lower()
         processed = data.get("testCasesProcessed", 0)
-        total = data.get("totalTestCases", 0)
-        print(f"[eval] run {run_id[:8]}... state={state} {processed}/{total}")
+        total     = data.get("totalTestCases", 0)
+        lore.eval_polling(run_id, state, processed, total)
         if state in ("completed", "failed", "cancelled"):
             return data
         time.sleep(interval_s)
@@ -62,17 +63,16 @@ def run_eval_for_bot(bot: dict, cfg: dict) -> dict | None:
 
     test_sets = get_test_sets(pp_env_id, bot_id, token)
     if not test_sets:
-        print(f"[eval] {bot['name']}: no test sets — skipping")
+        lore.eval_no_testsets(bot["name"])
         return None
 
-    # Use the first active test set
     active = [s for s in test_sets if s.get("state") == "Active"]
     if not active:
-        print(f"[eval] {bot['name']}: no active test sets — skipping")
+        lore.eval_no_testsets(bot["name"])
         return None
 
     test_set_id = active[0]["id"]
-    print(f"[eval] {bot['name']}: triggering run on test set {active[0].get('displayName')}")
+    lore.eval_start(bot["name"], active[0].get("displayName", test_set_id))
 
     run_id = trigger_run(pp_env_id, bot_id, test_set_id, token)
     result = poll_run(

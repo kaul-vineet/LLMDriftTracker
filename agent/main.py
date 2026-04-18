@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from . import dataverse
 from . import eval_client
+from . import lore
 from . import notifier
 from . import reasoning
 from . import report
@@ -18,7 +19,7 @@ def load_cfg(path: str = "config.json") -> dict:
 
 def run_cycle(cfg: dict):
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    print(f"\n[agent] ── cycle start {ts} ──")
+    lore.cycle_start(ts)
 
     store_dir   = cfg.get("store_dir", "data")
     bots        = dataverse.list_all_bots(cfg)
@@ -31,12 +32,12 @@ def run_cycle(cfg: dict):
 
         changed = store.model_changed(store_dir, bot_id, curr_ver)
         if not changed:
-            print(f"[agent] {bot_name}: no model change — skipping eval")
+            lore.no_change(bot_name)
             continue
 
-        tracking  = store.load_tracking(store_dir, bot_id)
-        old_ver   = tracking.get("modelVersion", "unknown")
-        print(f"[agent] {bot_name}: model changed {old_ver} → {curr_ver}")
+        tracking = store.load_tracking(store_dir, bot_id)
+        old_ver  = tracking.get("modelVersion", "unknown")
+        lore.model_changed(bot_name, old_ver, curr_ver)
 
         try:
             result = eval_client.run_eval_for_bot(bot, cfg)
@@ -68,30 +69,31 @@ def run_cycle(cfg: dict):
 
             store.save_tracking(store_dir, bot_id, curr_ver, run_id,
                                 bot_name=bot_name, env_name=bot.get("envName", ""))
+            lore.eval_done(bot_name)
 
         except Exception as e:
-            print(f"[agent] {bot_name}: error — {e}")
+            lore.eval_error(bot_name, e)
 
     if not bot_results:
-        print("[agent] no model changes detected this cycle")
+        lore.cycle_idle()
         return
 
-    html      = report.generate_report(bot_results)
+    html        = report.generate_report(bot_results)
     report_path = os.path.join(store_dir, f"report_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}.html")
     os.makedirs(store_dir, exist_ok=True)
     open(report_path, "w", encoding="utf-8").write(html)
-    print(f"[agent] report saved → {report_path}")
+    lore.report_saved(report_path)
 
     notifier.send_report(html, cfg)
-    print(f"[agent] ── cycle complete — {len(bot_results)} bot(s) reported ──")
+    lore.cycle_complete(len(bot_results))
 
 
 def main():
     cfg      = load_cfg()
     interval = cfg.get("poll_interval_minutes", 10)
-    print(f"[agent] starting — polling every {interval} minute(s)")
+    lore.starting(interval)
 
-    run_cycle(cfg)  # run immediately on start
+    run_cycle(cfg)
 
     schedule.every(interval).minutes.do(run_cycle, cfg=cfg)
     while True:

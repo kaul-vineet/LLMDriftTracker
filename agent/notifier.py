@@ -3,6 +3,7 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime, timezone
+from . import lore
 
 
 def send_report(html: str, cfg: dict):
@@ -15,7 +16,7 @@ def send_report(html: str, cfg: dict):
     recipient = os.environ.get("SMTP_RECIPIENT") or smtp_cfg["recipient"]
 
     if not all([host, user, password, recipient]):
-        print("[notifier] SMTP not configured — saving report locally only")
+        lore.report_skipped()
         return
 
     ts      = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -33,4 +34,4 @@ def send_report(html: str, cfg: dict):
         s.login(user, password)
         s.send_message(msg)
 
-    print(f"[notifier] Report emailed to {recipient}")
+    lore.report_sent(recipient)

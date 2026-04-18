@@ -1,6 +1,7 @@
 import json
 import requests
 from .auth import get_dataverse_token
+from . import lore
 
 DV_API = "/api/data/v9.2"
 # configuration excluded — causes 400 in collection $select; fetched per-bot.
@@ -74,7 +75,7 @@ def list_all_bots(cfg: dict) -> list[dict]:
                 b["envName"] = env["name"]
                 b["ppEnvId"] = env["environmentId"]
             all_bots.extend(bots)
-            print(f"[dataverse] {env['name']}: {len(bots)} bot(s) ({scope_label})")
+            lore.bots_found(env["name"], len(bots), scope_label)
         except Exception as e:
-            print(f"[dataverse] {env['name']} failed: {e}")
+            lore.bots_failed(env["name"], e)
     return all_bots
