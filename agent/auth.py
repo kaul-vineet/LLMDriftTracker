@@ -10,6 +10,8 @@ EVAL_SCOPES = ["https://api.powerplatform.com/.default"]
 
 
 def get_dataverse_token(org_url: str) -> str:
+    if not org_url.startswith("http"):
+        org_url = "https://" + org_url
     if os.environ.get("AZURE_CLIENT_ID"):
         from azure.identity import ClientSecretCredential
         resource = org_url.rstrip("/") + "/.default"
