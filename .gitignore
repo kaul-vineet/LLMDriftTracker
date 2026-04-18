@@ -1,0 +1,17 @@
+# Auth & secrets
+msal_token_cache.json
+config.json
+
+# Runtime data
+data/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
