@@ -2,6 +2,9 @@
 msal_token_cache.json
 .env
 
+# Runtime state — local only
+data/
+
 # Python
 __pycache__/
 *.pyc
