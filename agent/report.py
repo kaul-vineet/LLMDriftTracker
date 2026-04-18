@@ -31,9 +31,16 @@ def _bot_section(bot_name: str, old_model: str, new_model: str,
                             prev_metrics.get(k, "N/A"),
                             curr_metrics.get(k, "N/A"))
 
-    model_change = (f"<span style='color:#9ca3af'>{old_model}</span>"
-                    f" &rarr; "
-                    f"<span style='color:#1d4ed8;font-weight:600'>{new_model}</span>")
+    force_eval   = old_model == new_model
+    model_change = (
+        f"<span style='color:#9ca3af'>Force evaluation — model unchanged</span>"
+        if force_eval else
+        f"<span style='color:#9ca3af'>{old_model}</span>"
+        f" &rarr; "
+        f"<span style='color:#1d4ed8;font-weight:600'>{new_model}</span>"
+    )
+    prev_col = "Previous run" if force_eval else (old_model or "Previous")
+    curr_col = "Current run"  if force_eval else new_model
 
     no_prev = "<tr><td colspan='4' style='color:#9ca3af;text-align:center'>No previous run — baseline established</td></tr>"
 
@@ -49,8 +56,8 @@ def _bot_section(bot_name: str, old_model: str, new_model: str,
           <thead>
             <tr style='background:#f3f4f6'>
               <th style='text-align:left;padding:0.5rem 0.75rem'>Metric</th>
-              <th style='text-align:left;padding:0.5rem 0.75rem'>{old_model or "Previous"}</th>
-              <th style='text-align:left;padding:0.5rem 0.75rem'>{new_model}</th>
+              <th style='text-align:left;padding:0.5rem 0.75rem'>{prev_col}</th>
+              <th style='text-align:left;padding:0.5rem 0.75rem'>{curr_col}</th>
               <th style='text-align:left;padding:0.5rem 0.75rem'>Δ</th>
             </tr>
           </thead>

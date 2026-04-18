@@ -100,13 +100,10 @@ def eval_start(name: str, test_set: str):
 
 
 def eval_polling(run_id: str, state: str, elapsed: int, timeout: int, total: int = 0):
-    bar_width = 20
-    filled    = min(bar_width, int((elapsed / timeout) * bar_width)) if timeout else 0
-    bar       = "█" * filled + "░" * (bar_width - filled)
-    cases     = f"  {total} cases" if total else ""
+    cases = f"  {total} cases" if total else ""
     print(_any(
-        f"   📜  [{bar}] {elapsed}s/{timeout}s  {state}{cases}  run={run_id[:8]}",
-        f"   🕯   [{bar}] the maesters deliberate… {elapsed}s  {state}{cases}",
+        f"   📜  {elapsed}s  {state}{cases}  run={run_id[:8]}",
+        f"   🕯   the maesters deliberate… {elapsed}s  {state}{cases}",
     ))
 
 
