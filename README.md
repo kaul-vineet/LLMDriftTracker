@@ -15,82 +15,141 @@
 ![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)
 ![Platform](https://img.shields.io/badge/Power_Platform-Copilot_Studio-742774?style=flat-square&logo=microsoft&logoColor=white)
 ![Auth](https://img.shields.io/badge/Auth-MSAL_delegated-0078D4?style=flat-square&logo=microsoftazure&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Dashboard-Streamlit-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-22c55e?style=flat-square)
 
-**Autonomous model drift detection for Microsoft Copilot Studio bots.**
+<br/>
 
-*Know the moment your AI changes — before your users do.*
+### *Know the moment your AI changes — before your users do.*
+
+<br/>
+
+> **Autonomous model drift detection for Microsoft Copilot Studio bots.**
+> Watches every tagged bot across all your Power Platform environments.
+> Detects model version changes. Triggers evaluations. Emails you a
+> side-by-side drift analysis report. Fully headless after first setup.
 
 </div>
 
 ---
 
-## The Problem
+## ⚡ The Problem
 
-Your Copilot Studio bots run on top of large language models. Microsoft updates those models. When they do, your bot's behaviour can shift — subtly or dramatically — with zero warning. Accuracy drops. Tone changes. Topics misfire. You find out from a support ticket, not a dashboard.
+Your Copilot Studio bots run on top of large language models. Microsoft updates those models silently. When they do, your bot's behaviour shifts — subtly or dramatically — with zero warning. Accuracy drops. Tone changes. Topics misfire. **You find out from a support ticket, not a dashboard.**
 
-## The Solution
+## 🎯 The Solution
 
-**LLM Drift Tracker** watches every bot you care about, around the clock. The moment a model version change is detected in Dataverse, it fires the Copilot Studio Eval API, pulls the results, runs an LLM analysis of the metric delta, and emails you a clean side-by-side report — all before your users notice anything.
+LLM Drift Tracker watches every bot you care about, around the clock. The moment a model version change is detected in Dataverse, it fires the Copilot Studio Eval API, pulls the results, runs an LLM analysis of the metric delta, and emails you a clean side-by-side report — all before your users notice anything.
 
-No pass/fail verdicts. No automated rollbacks. No changes to your bots. Pure, unobtrusive observation.
+> No pass/fail verdicts · No automated rollbacks · No changes to your bots · Pure, unobtrusive observation
 
 ---
 
-## How it works
+## 🔄 How it works
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                     copilot-eval-agent loop                         │
-│                                                                     │
-│   Every N minutes                                                   │
-│     │                                                               │
-│     ▼                                                               │
-│   Dataverse ──► fetch all bots ──► filter: description has #monitor │
-│                                         │                           │
-│                                         ▼                           │
-│                              gPTSettings.defaultSchemaName          │
-│                              changed since last run?                │
-│                                    │           │                    │
-│                                   NO          YES                   │
-│                                    │           │                    │
-│                                  skip    Eval REST API              │
-│                                            │                        │
-│                                      poll until done                │
-│                                            │                        │
-│                                    extract metrics                  │
-│                                    prev  ◄──► curr                  │
-│                                            │                        │
-│                                    LLM drift analysis               │
-│                                            │                        │
-│                                    HTML report ──► email            │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    A([⏱ Every N minutes]) --> B[Fetch all bots\nfrom Dataverse]
+    B --> C{Description\ncontains #monitor?}
+    C -- No --> D([⏭ Skip])
+    C -- Yes --> E{Model version\nchanged?}
+    E -- No --> F([⏭ Skip])
+    E -- Yes --> G[🚀 Trigger\nCopilot Studio\nEval API]
+    G --> H[⏳ Poll until\ncomplete]
+    H --> I[📊 Extract &\naggregate metrics]
+    I --> J[🧠 LLM drift\nanalysis]
+    J --> K[📄 Generate\nHTML report]
+    K --> L[📧 Email report\nto admin]
+    K --> M[💾 Save to\ndata/ volume]
+
+    style A fill:#1f6feb,color:#fff,stroke:none
+    style G fill:#238636,color:#fff,stroke:none
+    style J fill:#8957e5,color:#fff,stroke:none
+    style L fill:#da3633,color:#fff,stroke:none
+    style D fill:#30363d,color:#8b949e,stroke:none
+    style F fill:#30363d,color:#8b949e,stroke:none
 ```
 
 ---
 
-## Features
+## 🏗️ Architecture
 
-| Feature | Detail |
-|---|---|
-| **Multi-environment** | Watches bots across unlimited Power Platform environments |
-| **Opt-in via `#monitor`** | Tag a bot's description — no config changes ever |
-| **Zero-touch eval** | Discovers test sets automatically, triggers and polls the Eval API |
-| **Side-by-side metrics** | Pass rate delta per metric — green/red gradient, no pass/fail label |
-| **LLM reasoning** | Any OpenAI-compatible model explains the drift in plain English |
-| **Self-healing auth** | Token expires? Emails admin a device code, resumes when signed in |
-| **HTML reports** | Self-contained, email-ready, saved locally too |
-| **Docker native** | Runs headless, mounts state as volumes |
-| **No cloud storage** | All state is local JSON — no Dataverse writes, no blob storage |
+```mermaid
+graph LR
+    subgraph HOST["🖥️  Host (one-time)"]
+        BS[bootstrap.py\nSetup Wizard]
+    end
+
+    subgraph DOCKER["🐳  Docker Container"]
+        AG[agent/main.py\nPoll Loop]
+        DV[agent/dataverse.py\nBot Discovery]
+        EC[agent/eval_client.py\nEval API]
+        RS[agent/reasoning.py\nLLM Analysis]
+        ST[agent/store.py\nState]
+        NT[agent/notifier.py\nSMTP]
+    end
+
+    subgraph DASH["📊  Dashboard Container"]
+        APP[dashboard/app.py\nStreamlit UI]
+    end
+
+    subgraph MSFT["☁️  Microsoft Cloud"]
+        DVS[(Dataverse\nbot entity)]
+        EVAL[Copilot Studio\nEval API]
+        MSAL[Microsoft Identity\nDevice Code Flow]
+    end
+
+    subgraph LOCAL["💾  Local Volumes"]
+        CFG[config.json]
+        TOK[msal_token_cache.json]
+        DATA[(data/)]
+    end
+
+    BS -->|writes| CFG
+    BS -->|caches| TOK
+    AG --> DV --> DVS
+    AG --> EC --> EVAL
+    AG --> RS
+    AG --> NT
+    AG --> ST --> DATA
+    APP --> DATA
+    EC -->|auth| MSAL
+    TOK -->|mounted| AG
+    CFG -->|mounted| AG
+    CFG -->|mounted| APP
+
+    style HOST fill:#161b22,color:#c9d1d9,stroke:#30363d
+    style DOCKER fill:#0d419d,color:#c9d1d9,stroke:#1f6feb
+    style DASH fill:#3d1f00,color:#c9d1d9,stroke:#d29922
+    style MSFT fill:#1a3a1a,color:#c9d1d9,stroke:#238636
+    style LOCAL fill:#2d1b69,color:#c9d1d9,stroke:#8957e5
+```
 
 ---
 
-## Directory structure
+## ✨ Features
+
+| | Feature | Detail |
+|---|---|---|
+| 🌐 | **Multi-environment** | Watches bots across unlimited Power Platform environments |
+| 🏷️ | **Opt-in via `#monitor`** | Tag a bot's Dataverse description — no config changes ever |
+| 🤖 | **Zero-touch eval** | Discovers test sets, triggers + polls the Eval API automatically |
+| 📊 | **Side-by-side metrics** | Pass rate delta per metric — colour-coded, no pass/fail label |
+| 🧠 | **LLM reasoning** | Any OpenAI-compatible model explains the drift in plain English |
+| 🔄 | **Self-healing auth** | Token expires → emails admin a device code → resumes automatically |
+| 📧 | **HTML reports** | Self-contained, email-ready, archived locally |
+| 🐳 | **Docker native** | Fully headless, state mounted as volumes |
+| 💾 | **No cloud storage** | All state is local JSON — no Dataverse writes, no blob storage |
+| 📈 | **Streamlit dashboard** | Fleet heatmap · Radar · Trends · Sankey · Failure clusters |
+
+---
+
+## 📁 Directory structure
 
 ```
 LLMDriftTracker/
 │
-├── agent/                       ← core engine (Python package)
+├── agent/                       ← 🤖 core engine (Python package)
 │   ├── __init__.py
 │   ├── main.py                  ← main loop — polls, orchestrates, saves reports
 │   ├── auth.py                  ← dual-mode auth (az CLI locally · SP in Docker)
@@ -102,11 +161,11 @@ LLMDriftTracker/
 │   ├── notifier.py              ← SMTP email sender (env var overrides)
 │   └── store.py                 ← local JSON state per bot
 │
-├── dashboard/                   ← Streamlit read-only UI
+├── dashboard/                   ← 📊 Streamlit read-only UI
 │   ├── __init__.py
 │   └── app.py                   ← fleet heatmap · radar · trends · analysis
 │
-├── bootstrap.py                 ← one-time setup wizard (run on host, not Docker)
+├── bootstrap.py                 ← 🧙 one-time setup wizard (run on host, not Docker)
 ├── .streamlit/
 │   └── config.toml              ← dark theme config
 ├── Dockerfile
@@ -125,13 +184,13 @@ LLMDriftTracker/
 
 ---
 
-## Full setup — A to Z
+## 🚀 Full setup — A to Z
 
-### 1 — Prerequisites
+### Step 1 — Prerequisites
 
 | What | How |
 |---|---|
-| Python 3.11+ | [python.org](https://python.org) |
+| Python 3.12+ | [python.org](https://python.org) |
 | Docker Desktop | [docker.com](https://docker.com) |
 | Azure CLI | `winget install Microsoft.AzureCLI` |
 | Power Platform admin access | For app registration + admin consent |
@@ -139,55 +198,62 @@ LLMDriftTracker/
 
 ---
 
-### 2 — App registration (one-time)
+### Step 2 — App registration
 
-The agent uses **delegated auth** — it calls the Eval API as you, not as a service. The app registration is the vehicle; your sign-in is the credential. This is a Microsoft requirement for the Eval API.
+The agent uses **delegated auth** — it calls the Eval API as you, not as a service. A Microsoft requirement for the Eval API.
+
+```mermaid
+sequenceDiagram
+    actor Admin
+    participant Portal as Azure Portal
+    participant PP as Power Platform API
+
+    Admin->>Portal: New App Registration
+    Portal-->>Admin: client_id + tenant_id
+    Admin->>Portal: Add delegated permissions
+    Note over Portal,PP: CopilotStudio.MakerOperations.Read + ReadWrite
+    Admin->>Portal: Grant admin consent
+    Portal-->>PP: ✅ Permissions active
+```
 
 1. [portal.azure.com](https://portal.azure.com) → **Azure Active Directory** → **App registrations** → **New registration**
 2. Name: `copilot-eval-agent` · Account type: **Single tenant** → **Register**
 3. Note the **Application (client) ID** and **Directory (tenant) ID**
 4. **API permissions** → **Add a permission** → **APIs my organization uses** → search `Power Platform API`
-5. **Delegated permissions** → tick:
-   - `CopilotStudio.MakerOperations.Read`
-   - `CopilotStudio.MakerOperations.ReadWrite`
-6. **Add permissions** → then **Grant admin consent for [tenant]** → confirm
+5. **Delegated permissions** → tick `CopilotStudio.MakerOperations.Read` + `ReadWrite`
+6. **Grant admin consent for [tenant]** → confirm
 
 ---
 
-### 3 — Tag bots you want monitored
+### Step 3 — Tag bots you want monitored
 
-The agent ignores every bot that isn't explicitly opted in. To enrol a bot:
+```
+Copilot Studio → bot → Settings → Details → Description
+```
 
-1. Open [Copilot Studio](https://copilotstudio.microsoft.com) → your bot
-2. **Settings** → **Details** → **Description**
-3. Add `#monitor` anywhere in the text
+Add `#monitor` anywhere in the description:
 
 ```
 Handles HR queries for APAC employees. Routes to payroll and leave topics. #monitor
 ```
 
-4. Save
-
-To stop monitoring: remove `#monitor` from the description. Takes effect on the next poll cycle. No restarts, no config edits.
+To stop monitoring: remove `#monitor`. Takes effect on the next poll cycle — no restarts, no config edits.
 
 ---
 
-### 4 — Create test sets in Copilot Studio
+### Step 4 — Create test sets in Copilot Studio
 
-The Eval API only runs against test sets you define. Without them, the agent skips the bot.
+> The Eval API runs against test sets you define. Without them the agent skips the bot.
 
-1. Open Copilot Studio → your `#monitor` bot → **Evaluation** tab
-2. **New test set** → add 10–20 utterances covering the bot's main topics
-3. For each utterance, add expected responses or topic labels
-4. Save
+```
+Copilot Studio → your #monitor bot → Evaluation tab → New test set
+```
 
-The agent discovers and runs all test sets automatically.
+Add 10–20 utterances covering the bot's main topics. The agent discovers and runs all test sets automatically.
 
 ---
 
-### 5 — Run the setup wizard
-
-Clone and run `bootstrap.py` on your machine (not inside Docker). One-time.
+### Step 5 — Run the setup wizard
 
 ```bash
 git clone https://github.com/kaul-vineet/LLMDriftTracker.git
@@ -202,8 +268,6 @@ python bootstrap.py
   ║     copilot-eval-agent  ·  v1.0  ·  Setup Wizard        ║
   ╚══════════════════════════════════════════════════════════╝
 
-  Welcome. Five steps and you're done.
-
   [████████████░░░░░░░░░░░░]  50%  step 3/5
 
   ╔═══ ⚙️  Step 3 · Agent Settings ══════════════════════════╗
@@ -212,44 +276,33 @@ python bootstrap.py
 
 | Step | What it does |
 |---|---|
-| 1 · Environments | Org URLs + environment IDs for each Power Platform env |
-| 2 · Credentials | Client ID + tenant ID from the app registration |
-| 3 · Agent settings | Poll interval + LLM endpoint (Ollama / Azure OpenAI / any OpenAI-compatible) |
-| 4 · Microsoft sign-in | Browser device code — one-time, token cached |
-| 5 · SMTP | Mail server config + test email to confirm delivery |
+| 1 · 🌐 Environments | Org URLs + environment IDs |
+| 2 · 🔑 Credentials | Client ID + tenant ID |
+| 3 · ⚙️ Agent settings | Poll interval + LLM endpoint |
+| 4 · 🔐 Microsoft sign-in | Browser device code — one-time, token cached |
+| 5 · 📧 SMTP | Mail server + test email to confirm delivery |
 
 Outputs: `config.json` + `msal_token_cache.json`
 
-**Finding your environment details:**
-
-| Field | Where |
-|---|---|
-| Org URL | Power Platform Admin Centre → Environments → [env] → Environment URL |
-| Environment ID | The `org...` prefix in that URL (e.g. `orge71ae48e`) |
-
 ---
 
-### 6 — Test locally
-
-Verify end-to-end before committing to Docker.
+### Step 6 — Test locally
 
 ```bash
 python -m agent.main
 ```
 
 Expected output:
-
 ```
 [dataverse] Production: 2 bot(s) tagged #monitor
-[agent] HRBot: model changed unknown → gpt-4o-2024-11-20
-[eval]  HRBot: run abc123 completed
-[agent] report saved → data/report_20250418T143012.html
+[agent]  HRBot: model changed unknown → gpt-4o-2024-11-20
+[eval]   HRBot: run abc123 completed
+[agent]  report saved → data/report_20250418T143012.html
 [notifier] Report emailed to admin@contoso.com
-[agent] ── cycle complete — 1 bot(s) reported ──
+[agent]  ── cycle complete — 1 bot(s) reported ──
 ```
 
-**Force a re-evaluation** (useful for first test — deletes prior tracking so agent treats current version as new):
-
+**Force a re-evaluation** (delete prior tracking to treat current version as new):
 ```bash
 rm data/<botId>/tracking.json
 python -m agent.main
@@ -257,14 +310,14 @@ python -m agent.main
 
 ---
 
-### 7 — Run in Docker
+### Step 7 — Run in Docker
 
 **Build:**
 ```bash
 docker build -t copilot-eval-agent .
 ```
 
-**Run — local auth (dev/test):**
+**Agent — local auth (dev/test):**
 ```bash
 docker run -d \
   -v $(pwd)/data:/app/data \
@@ -273,7 +326,7 @@ docker run -d \
   copilot-eval-agent
 ```
 
-**Run — service principal auth (production):**
+**Agent — service principal auth (production):**
 ```bash
 docker run -d \
   -e AZURE_TENANT_ID=<tenant-id> \
@@ -286,84 +339,69 @@ docker run -d \
   copilot-eval-agent
 ```
 
+**Dashboard:**
+```bash
+docker run -d -p 8501:8501 \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/config.json:/app/config.json \
+  --entrypoint streamlit \
+  copilot-eval-agent run dashboard/app.py --server.headless true
+```
+
+Open `http://localhost:8501`
+
 ```bash
 docker logs -f <container-id>
 ```
 
-> `msal_token_cache.json` must always be mounted. It holds your delegated identity for the Eval API — a service principal cannot replace it.
+---
+
+## 🔐 Token expiry — self-healing
+
+```mermaid
+sequenceDiagram
+    participant Agent
+    participant MSAL as MSAL Cache
+    participant Admin
+    participant MS as microsoft.com/devicelogin
+
+    Agent->>MSAL: Silent token refresh
+    MSAL-->>Agent: ❌ Token expired
+    Agent->>Admin: 📧 Email device code XXXXXXXX
+    Agent->>MSAL: Poll for 15 minutes...
+    Admin->>MS: Open browser, enter XXXXXXXX
+    MS-->>MSAL: ✅ Token issued
+    MSAL-->>Agent: Access token
+    Agent->>Agent: Resume eval cycle
+    Note over Agent,Admin: If admin misses it — fresh code on next poll cycle
+```
 
 ---
 
-## Dashboard (Streamlit)
+## 📊 Dashboard
 
-A read-only web dashboard runs alongside the agent and visualises all drift data.
-
-**Run locally:**
-```bash
-streamlit run app.py
 ```
-Open `http://localhost:8501`
-
-**Run in Docker (separate container, shared data volume):**
-```bash
-docker run -d \
-  -p 8501:8501 \
-  -v $(pwd)/data:/app/data \
-  -v $(pwd)/config.json:/app/config.json \
-  --entrypoint streamlit \
-  copilot-eval-agent run app.py --server.headless true
+┌──────────────────────────────────────────────────────────────────┐
+│  ⚡ LLM DRIFT TRACKER          ● LIVE    last scan: 2 min ago    │
+├──────────────┬───────────────┬────────────────┬──────────────────┤
+│  4 Bots      │  12 Eval Runs │  3 Drift Events│  Apr 18, 14:30   │
+│  Monitored   │  Total        │  Detected      │  Last Activity   │
+└──────────────┴───────────────┴────────────────┴──────────────────┘
 ```
 
-| Page | What you see |
+| Visual | What it shows |
 |---|---|
-| Overview | Fleet heatmap across all bots × model versions + KPI cards |
-| Bot Detail | Radar chart · Metric trend lines · Box plots · Sankey test-case flow · Failure clusters · LLM analysis |
+| 🗺️ Fleet heatmap | All bots × all model versions — composite score per cell |
+| 🕸️ Radar chart | Two models overlaid — metric-by-metric shape comparison |
+| 📈 Trend lines | Metric trajectory across every model version |
+| 📦 Box plots | Score distribution — consistency vs variance per model |
+| 🌊 Sankey diagram | Test cases flowing pass→fail or fail→pass between models |
+| 📊 Failure clusters | `aiResultReason` grouped by pattern — routing · formatting · safety |
+| 🧠 LLM analysis | Plain-English drift narrative per bot |
 
 ---
 
-## Token expiry — self-healing
-
-When the eval token expires, the agent emails the admin without any manual intervention:
-
-```
-Subject: [LLM Drift Tracker] Sign-in required — code XXXXXXXX
-
-1. Open  https://microsoft.com/devicelogin
-2. Enter code  XXXXXXXX
-
-The agent resumes automatically once signed in.
-Code expires in 15 minutes — a fresh one arrives next poll cycle if missed.
-```
-
-No container restart. No terminal access. The agent skips the affected cycle and re-issues a fresh code on every subsequent poll until sign-in is completed.
-
----
-
-## The report
-
-Every detected model change produces a self-contained HTML report — saved locally and emailed.
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│  HRBot  ·  model drift detected                              │
-│  gpt-4o-mini-2024-07-18  →  gpt-4o-2024-11-20               │
-├─────────────────────┬──────────────┬──────────────┬──────────┤
-│ Metric              │ Previous     │ Current      │ Delta    │
-├─────────────────────┼──────────────┼──────────────┼──────────┤
-│ Utterance accuracy  │ 0.74         │ 0.81         │ ▲ +0.07  │  ← green
-│ Topic match rate    │ 0.88         │ 0.85         │ ▼ −0.03  │  ← red
-│ Response relevance  │ 0.71         │ 0.73         │ ▲ +0.02  │  ← grey
-├─────────────────────┴──────────────┴──────────────┴──────────┤
-│  Analysis                                                     │
-│  The upgrade to gpt-4o improves overall accuracy but shows   │
-│  a slight regression in topic routing. The payroll topic      │
-│  accounts for most mismatches — review trigger phrases.       │
-└──────────────────────────────────────────────────────────────┘
-```
-
----
-
-## config.json reference
+## 🗂️ config.json reference
 
 ```jsonc
 {
@@ -398,11 +436,11 @@ Every detected model change produces a self-contained HTML report — saved loca
 }
 ```
 
-SMTP values can be overridden via env vars: `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASSWORD` `SMTP_RECIPIENT`
+SMTP values overridable via env vars: `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASSWORD` `SMTP_RECIPIENT`
 
 ---
 
-## Auth reference
+## 🔑 Auth reference
 
 | Context | Dataverse / BAPI | Eval API |
 |---|---|---|
@@ -411,7 +449,7 @@ SMTP values can be overridden via env vars: `SMTP_HOST` `SMTP_PORT` `SMTP_USER` 
 
 ---
 
-## Troubleshooting
+## 🩺 Troubleshooting
 
 | Symptom | Fix |
 |---|---|
@@ -427,8 +465,16 @@ SMTP values can be overridden via env vars: `SMTP_HOST` `SMTP_PORT` `SMTP_USER` 
 
 <div align="center">
 
-Built with Python · MSAL · Copilot Studio Eval API · Dataverse Web API
+```
+  ✦  ·  ★   ·  ✦   ·   ★  ·   ✦  ·  ★   ·  ✦
+    ★   ✦  ·   ★  ✶   ·   ✦    ★   ·   ✸  ✦
+  ·  ✦   ·  ✸  ·   ✦   ★   ·  ✶   ✦  ·  ★  ·
+```
+
+Built with Python · MSAL · Copilot Studio Eval API · Dataverse Web API · Streamlit
 
 *Tag it. Forget it. Know when things change.*
+
+**[github.com/kaul-vineet/LLMDriftTracker](https://github.com/kaul-vineet/LLMDriftTracker)**
 
 </div>
