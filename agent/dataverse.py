@@ -3,9 +3,10 @@ import requests
 from .auth import get_dataverse_token
 
 DV_API = "/api/data/v9.2"
-# configuration is excluded here — it causes 400 in collection $select;
-# fetched per-bot via a separate full-record request instead.
-BOT_SELECT = "botid,name,schemaname,publishedon,statecode,description"
+# configuration + description excluded — both cause 400 in collection $select.
+# configuration is fetched per-bot via _fetch_bot_details().
+# description does not exist on this entity; #monitor tag is checked in name.
+BOT_SELECT = "botid,name,schemaname,publishedon,statecode"
 MONITOR_TAG = "#monitor"
 
 
@@ -48,8 +49,7 @@ def list_bots(org_url: str) -> list[dict]:
 
     bots = []
     for b in r.json().get("value", []):
-        description = b.get("description") or ""
-        if MONITOR_TAG not in description.lower():
+        if MONITOR_TAG not in (b.get("name") or "").lower():
             continue
         bot_id  = b["botid"]
         details = _fetch_bot_details(org_url, token, bot_id)
