@@ -44,8 +44,10 @@ def poll_run(pp_env_id: str, bot_id: str, run_id: str, token: str,
         total   = data.get("totalTestCases", 0)
         lore.eval_polling(run_id, state, elapsed, timeout_s, total)
         if state in ("completed", "failed", "cancelled"):
+            lore.eval_poll_done()
             return data
         time.sleep(interval_s)
+    lore.eval_poll_done()
     raise TimeoutError(f"Eval run {run_id} did not complete within {timeout_s}s")
 
 
