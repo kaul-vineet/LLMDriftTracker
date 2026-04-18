@@ -289,6 +289,28 @@ def extract_metrics(run: dict) -> dict:
     return _extract_metrics_from_run(results)
 
 
+def extract_cases(run: dict) -> list[dict]:
+    """Return list of {caseId, status, score, reason} from a stored run."""
+    results = run.get("results", run)
+    out = []
+    for case in results.get("testCasesResults", []):
+        cid = case.get("testCaseId", "")
+        for m in case.get("metricsResults", []):
+            r      = m.get("result", {})
+            raw    = r.get("data", {}).get("score")
+            try:
+                score = float(raw)
+            except (ValueError, TypeError):
+                score = None
+            out.append({
+                "caseId": cid,
+                "status": r.get("status", ""),
+                "score":  score,
+                "reason": r.get("aiResultReason", ""),
+            })
+    return out
+
+
 def extract_ai_reasons(run: dict) -> list[str]:
     reasons = []
     results = run.get("results", run)
@@ -571,96 +593,56 @@ def delta_chip(val: float) -> str:
 
 # ── Pages ─────────────────────────────────────────────────────────────────────
 def page_overview(bots: list[dict]):
-    total_runs    = sum(b["runCount"] for b in bots)
-    drift_events  = sum(1 for b in bots if len(b["runs"]) >= 2)
-    last_scan     = max((b["updatedAt"] for b in bots), default="")
+    total_runs   = sum(b["runCount"] for b in bots)
+    drift_events = sum(1 for b in bots if len(b["runs"]) >= 2)
+    last_scan    = max((b["updatedAt"] for b in bots), default="")
 
-    # KPI row
-    st.markdown(f"""
-    <div class="kpi-grid">
-      <div class="kpi-card">
-        <div class="kpi-value" style="color:{C_BLUE}">{len(bots)}</div>
-        <div class="kpi-label">Bots Monitored</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-value" style="color:{C_PURPLE}">{total_runs}</div>
-        <div class="kpi-label">Eval Runs Total</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-value" style="color:{C_AMBER}">{drift_events}</div>
-        <div class="kpi-label">Drift Events</div>
-      </div>
-      <div class="kpi-card">
-        <div class="kpi-value" style="color:{C_DIM}; font-size:16px">{_fmt_ts(last_scan)}</div>
-        <div class="kpi-label">Last Activity</div>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Bots Monitored",  len(bots))
+    c2.metric("Eval Runs Total", total_runs)
+    c3.metric("Drift Events",    drift_events)
+    c4.metric("Last Activity",   _fmt_ts(last_scan))
 
     if not bots:
-        st.markdown("""
-        <div class="empty-state">
-          <div class="empty-icon">🤖</div>
-          <div class="empty-title">No bots tracked yet</div>
-          <div>Tag a Copilot Studio bot with <code>#monitor</code> in its description<br>
-          and run the agent to populate this dashboard.</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.info("No bots tracked yet — run `drift run` or `drift eval` to populate data.")
         return
 
-    # Fleet heatmap
     if any(len(b["runs"]) > 0 for b in bots):
-        st.markdown('<div class="section-title">Fleet Health — All Models</div>',
-                    unsafe_allow_html=True)
+        st.subheader("Fleet Health — All Models")
         st.plotly_chart(chart_fleet_heatmap(bots), use_container_width=True,
                         config={"displayModeBar": False})
 
 
 def page_bot_detail(bot: dict):
-    runs   = bot["runs"]
-    name   = bot["botName"]
-    env    = bot["envName"]
-    model  = bot["modelVersion"]
+    import pandas as pd
 
-    # Bot header
-    badge = status_badge(bot)
-    st.markdown(f"""
-    <div style="display:flex; align-items:flex-start; justify-content:space-between;
-                margin-bottom:20px">
-      <div>
-        <div style="font-size:22px; font-weight:700; color:{C_TEXT}">🤖 {name}</div>
-        <div style="margin-top:6px">
-          <span class="model-pill">{model}</span>
-          &nbsp;
-          <span style="font-size:11px; color:{C_PURPLE}">● {env}</span>
-          &nbsp;&nbsp;{badge}
-        </div>
-      </div>
-      <div style="text-align:right; font-size:11px; color:{C_DIM}">
-        {len(runs)} eval run{'s' if len(runs) != 1 else ''}<br>
-        Last: {_fmt_ts(runs[-1].get('storedAt','') if runs else '')}
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
+    runs  = bot["runs"]
+    name  = bot["botName"]
+    env   = bot["envName"]
+    model = bot["modelVersion"]
+
+    # ── Header ───────────────────────────────────────────────────────────────
+    st.subheader(f"🤖 {name}")
+    hc1, hc2, hc3 = st.columns(3)
+    hc1.caption(f"Model: `{model}`")
+    hc2.caption(f"Env: {env}")
+    hc3.caption(f"{len(runs)} run{'s' if len(runs) != 1 else ''} · Last: {_fmt_ts(runs[-1].get('storedAt','') if runs else '')}")
 
     if not runs:
-        st.markdown('<div class="empty-state"><div class="empty-icon">📭</div>'
-                    '<div class="empty-title">No eval runs yet</div></div>',
-                    unsafe_allow_html=True)
+        st.info("No eval runs yet.")
         return
 
     # ── Run selector ──────────────────────────────────────────────────────────
+    st.divider()
+    versions  = [r.get("modelVersion", "?") for r in runs]
+    all_same  = len(set(versions)) == 1
+    run_labels = [
+        f"Run {i+1}  ·  {_fmt_ts(r.get('storedAt',''))}"
+        if all_same else
+        f"{r.get('modelVersion','?')[:30]}  ·  {_fmt_ts(r.get('storedAt',''))}"
+        for i, r in enumerate(runs)
+    ]
     if len(runs) >= 2:
-        st.markdown('<div class="section-title">Compare Two Runs</div>',
-                    unsafe_allow_html=True)
-        versions   = [r.get("modelVersion", "?") for r in runs]
-        all_same   = len(set(versions)) == 1
-        run_labels = [
-            f"Run {i+1}  ·  {_fmt_ts(r.get('storedAt',''))}"
-            if all_same else
-            f"{r.get('modelVersion','?')[:28]}  ·  {_fmt_ts(r.get('storedAt',''))}"
-            for i, r in enumerate(runs)
-        ]
         col1, col2 = st.columns(2)
         with col1:
             idx_a = st.selectbox("Baseline run", range(len(runs)),
@@ -671,97 +653,114 @@ def page_bot_detail(bot: dict):
                                  format_func=lambda i: run_labels[i],
                                  index=len(runs) - 1, key="sel_b")
         run_a, run_b = runs[idx_a], runs[idx_b]
-        m_a  = extract_metrics(run_a)
-        m_b  = extract_metrics(run_b)
-        lbl_a = run_a.get("modelVersion", "Baseline")[:24]
-        lbl_b = run_b.get("modelVersion", "Current")[:24]
+        lbl_a = run_labels[idx_a]
+        lbl_b = run_labels[idx_b]
     else:
-        run_a, run_b = runs[0], runs[0]
-        m_a  = extract_metrics(run_a)
-        m_b  = {}
-        lbl_a = run_a.get("modelVersion", "Baseline")[:24]
-        lbl_b = "—"
+        run_a = run_b = runs[0]
+        lbl_a = lbl_b = run_labels[0]
 
-    # ── Metric comparison table ───────────────────────────────────────────────
-    st.markdown('<div class="section-title">Metric Scorecard</div>',
-                unsafe_allow_html=True)
+    m_a = extract_metrics(run_a)
+    m_b = extract_metrics(run_b) if run_b is not run_a else {}
+
+    # ── Metric scorecard ──────────────────────────────────────────────────────
+    st.subheader("Metric Scorecard")
     all_keys = sorted(set(list(m_a.keys()) + list(m_b.keys())))
     if all_keys:
-        header = (f"<tr><th>Metric</th><th>{lbl_a}</th>"
-                  f"<th>{lbl_b if m_b else '—'}</th><th>Delta</th></tr>")
-        rows   = []
+        scorecard = []
         for k in all_keys:
             va = m_a.get(k)
             vb = m_b.get(k) if m_b else None
-            va_s = f"{va:.3f}" if va is not None else "—"
-            vb_s = f"{vb:.3f}" if vb is not None else "—"
-            if va is not None and vb is not None:
-                d    = vb - va
-                chip = delta_chip(d)
-            else:
-                chip = '<span class="delta-flat">—</span>'
-            short = k.split(".")[-1]
-            rows.append(f"<tr><td style='font-family:monospace;font-size:12px'>{short}</td>"
-                        f"<td>{va_s}</td><td>{vb_s}</td><td>{chip}</td></tr>")
-        table_html = f"""
-        <table style="width:100%;border-collapse:collapse;font-size:13px">
-          <thead style="color:{C_DIM};font-size:10px;letter-spacing:1px;
-                        text-transform:uppercase;border-bottom:1px solid {C_BORDER}">
-            {header}
-          </thead>
-          <tbody>{''.join(rows)}</tbody>
-        </table>"""
-        st.markdown(table_html, unsafe_allow_html=True)
+            delta = round(vb - va, 4) if va is not None and vb is not None else None
+            scorecard.append({
+                "Metric":   k,
+                lbl_a:      round(va, 4) if va is not None else None,
+                lbl_b:      round(vb, 4) if vb is not None else None,
+                "Δ":        f"{delta:+.4f}" if delta is not None else "—",
+            })
+        st.dataframe(pd.DataFrame(scorecard), use_container_width=True, hide_index=True)
 
     # ── Charts ────────────────────────────────────────────────────────────────
-    st.markdown('<div class="section-title">Visual Analysis</div>',
-                unsafe_allow_html=True)
+    st.subheader("Visual Analysis")
 
     if m_b:
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown(f"**Radar — {lbl_a} vs {lbl_b}**")
-            st.plotly_chart(chart_radar(m_a, m_b, lbl_a, lbl_b),
-                            use_container_width=True, config={"displayModeBar": False})
+            st.caption(f"Radar — {lbl_a} vs {lbl_b}")
+            fig_r = chart_radar(m_a, m_b, lbl_a, lbl_b)
+            if fig_r.data:
+                st.plotly_chart(fig_r, use_container_width=True,
+                                config={"displayModeBar": False})
         with c2:
-            st.markdown("**Test Case Flow (Sankey)**")
+            st.caption("Test Case Flow (Sankey)")
             fig_s = chart_sankey(run_a, run_b, lbl_a, lbl_b)
             if fig_s.data:
                 st.plotly_chart(fig_s, use_container_width=True,
                                 config={"displayModeBar": False})
             else:
-                st.markdown(f'<div style="color:{C_DIM};padding:40px;text-align:center">'
-                            'Not enough per-case data for Sankey</div>',
-                            unsafe_allow_html=True)
+                st.caption("No per-case flow data available.")
 
     if len(runs) >= 2:
         c3, c4 = st.columns(2)
         with c3:
-            st.markdown("**Metric Trends — All Runs**")
-            st.plotly_chart(chart_trend(runs), use_container_width=True,
-                            config={"displayModeBar": False})
+            st.caption("Metric Trends — All Runs")
+            fig_t = chart_trend(runs)
+            if fig_t.data:
+                st.plotly_chart(fig_t, use_container_width=True,
+                                config={"displayModeBar": False})
         with c4:
-            st.markdown("**Score Distribution (Box Plot)**")
-            st.plotly_chart(chart_box(runs), use_container_width=True,
-                            config={"displayModeBar": False})
+            st.caption("Score Distribution (Box Plot)")
+            fig_b = chart_box(runs)
+            if fig_b.data:
+                st.plotly_chart(fig_b, use_container_width=True,
+                                config={"displayModeBar": False})
+
+    # ── Per-case breakdown ────────────────────────────────────────────────────
+    st.subheader("Per-case Breakdown")
+    cases_a = {c["caseId"]: c for c in extract_cases(run_a)}
+    cases_b = {c["caseId"]: c for c in extract_cases(run_b)}
+    all_ids = list(cases_b.keys()) or list(cases_a.keys())
+
+    if all_ids:
+        rows = []
+        for i, cid in enumerate(all_ids):
+            ca = cases_a.get(cid, {})
+            cb = cases_b.get(cid, {})
+            sa, sc = ca.get("score"), cb.get("score")
+            delta = round(sc - sa, 1) if isinstance(sa, float) and isinstance(sc, float) else None
+            rows.append({
+                "#":             i + 1,
+                "Prev status":   ca.get("status", "—"),
+                "Prev score":    int(sa) if isinstance(sa, float) else None,
+                "Curr status":   cb.get("status", "—"),
+                "Curr score":    int(sc) if isinstance(sc, float) else None,
+                "Δ score":       delta,
+                "AI reason":     cb.get("reason", ""),
+            })
+        df = pd.DataFrame(rows).set_index("#")
+        st.dataframe(df, use_container_width=True, height=min(420, 45 + len(rows) * 38))
+
+        failures = [r for r in rows if r["Curr status"] == "Fail"]
+        if failures:
+            st.subheader(f"Failing Cases ({len(failures)})")
+            for f in failures:
+                with st.expander(f"Case {f['#']} — Score {f['Curr score']}"):
+                    st.write(f["AI reason"])
+    else:
+        st.caption("No per-case data available.")
 
     # ── Failure clusters ──────────────────────────────────────────────────────
-    st.markdown('<div class="section-title">Failure Mode Clusters — All Runs</div>',
-                unsafe_allow_html=True)
+    st.subheader("Failure Mode Clusters — All Runs")
     fig_fc = chart_failure_clusters(runs)
     if fig_fc.data:
         st.plotly_chart(fig_fc, use_container_width=True,
                         config={"displayModeBar": False})
     else:
-        st.markdown(f'<div style="color:{C_DIM};padding:20px">'
-                    'No aiResultReason data available yet.</div>',
-                    unsafe_allow_html=True)
+        st.caption("No AI reason data available yet.")
 
     # ── LLM analysis ─────────────────────────────────────────────────────────
     analysis = (run_b.get("analysis") or run_a.get("analysis") or "").strip()
     if analysis:
-        st.markdown('<div class="section-title">LLM Drift Analysis</div>',
-                    unsafe_allow_html=True)
+        st.subheader("LLM Drift Analysis")
         st.markdown(f"""
         <div class="analysis-panel">
           <div class="analysis-label">⚡ AI ANALYSIS</div>
@@ -808,25 +807,14 @@ def render_sidebar(bots: list[dict]) -> str | None:
 
         selected = st.session_state.get("selected_bot")
         for bot in bots:
-            badge = status_badge(bot)
+            runs_n  = bot["runCount"]
+            label   = (f"🤖 {bot['botName']}\n"
+                       f"{bot['modelVersion'][:24]}\n"
+                       f"{runs_n} run{'s' if runs_n != 1 else ''} · {_fmt_ts(bot['updatedAt'])}")
             is_active = selected == bot["botId"]
-            card_class = "bot-card active" if is_active else "bot-card"
-            st.markdown(f"""
-            <div class="{card_class}">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start">
-                <div class="bot-name">{bot['botName']}</div>
-                {badge}
-              </div>
-              <div class="bot-env">● {bot['envName']}</div>
-              <div class="bot-model">{bot['modelVersion'][:28]}</div>
-              <div style="font-size:10px;color:{C_DIM};margin-top:4px">
-                {bot['runCount']} run{'s' if bot['runCount'] != 1 else ''}
-                · {_fmt_ts(bot['updatedAt'])}
-              </div>
-            </div>
-            """, unsafe_allow_html=True)
-            if st.button(f"View {bot['botName']}", key=f"btn_{bot['botId']}",
-                         use_container_width=True, type="secondary"):
+            if st.button(label, key=f"btn_{bot['botId']}",
+                         use_container_width=True,
+                         type="primary" if is_active else "secondary"):
                 st.session_state.selected_bot = bot["botId"]
                 st.session_state.page = "bots"
                 st.rerun()
