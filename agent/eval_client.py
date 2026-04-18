@@ -24,7 +24,7 @@ def get_test_sets(pp_env_id: str, bot_id: str, token: str) -> list[dict]:
 
 def trigger_run(pp_env_id: str, bot_id: str, test_set_id: str, token: str) -> str:
     url = _eval_url(pp_env_id, bot_id, f"testsets/{test_set_id}/run")
-    r = requests.get(url, headers=_headers(token), timeout=15)
+    r = requests.post(url, headers=_headers(token), json={}, timeout=15)
     r.raise_for_status()
     return r.json()["runId"]
 
