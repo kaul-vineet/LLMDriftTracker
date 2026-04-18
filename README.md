@@ -74,55 +74,49 @@ flowchart TD
 
 ## 🏗️ Architecture
 
-```mermaid
-graph LR
-    subgraph HOST["🖥️  Host (one-time)"]
-        BS[bootstrap.py\nSetup Wizard]
-    end
-
-    subgraph DOCKER["🐳  Docker Container"]
-        AG[agent/main.py\nPoll Loop]
-        DV[agent/dataverse.py\nBot Discovery]
-        EC[agent/eval_client.py\nEval API]
-        RS[agent/reasoning.py\nLLM Analysis]
-        ST[agent/store.py\nState]
-        NT[agent/notifier.py\nSMTP]
-    end
-
-    subgraph DASH["📊  Dashboard Container"]
-        APP[dashboard/app.py\nStreamlit UI]
-    end
-
-    subgraph MSFT["☁️  Microsoft Cloud"]
-        DVS[(Dataverse\nbot entity)]
-        EVAL[Copilot Studio\nEval API]
-        MSAL[Microsoft Identity\nDevice Code Flow]
-    end
-
-    subgraph LOCAL["💾  Local Volumes"]
-        CFG[config.json]
-        TOK[msal_token_cache.json]
-        DATA[(data/)]
-    end
-
-    BS -->|writes| CFG
-    BS -->|caches| TOK
-    AG --> DV --> DVS
-    AG --> EC --> EVAL
-    AG --> RS
-    AG --> NT
-    AG --> ST --> DATA
-    APP --> DATA
-    EC -->|auth| MSAL
-    TOK -->|mounted| AG
-    CFG -->|mounted| AG
-    CFG -->|mounted| APP
-
-    style HOST fill:#161b22,color:#c9d1d9,stroke:#30363d
-    style DOCKER fill:#0d419d,color:#c9d1d9,stroke:#1f6feb
-    style DASH fill:#3d1f00,color:#c9d1d9,stroke:#d29922
-    style MSFT fill:#1a3a1a,color:#c9d1d9,stroke:#238636
-    style LOCAL fill:#2d1b69,color:#c9d1d9,stroke:#8957e5
+```
+  ╔══════════════════════════════════════════════════════════════════════╗
+  ║  🖥️  HOST  (one-time setup)                                         ║
+  ║                                                                      ║
+  ║   bootstrap.py ──────────────────────── writes ──► config.json      ║
+  ║                └─────────────────────── caches ──► msal_token_cache ║
+  ╚══════════════════════╤═══════════════════════════════════════════════╝
+                         │  volume mount
+                         ▼
+  ╔══════════════════════════════════════════════════════════════════════╗
+  ║  🐳  DOCKER  copilot-eval-agent                                     ║
+  ║                                                                      ║
+  ║   agent/main.py  ── poll loop ──────────────────────────────────── ►║
+  ║        │                                                             ║
+  ║        ├──► agent/dataverse.py  · #monitor filter ──────────────── ►║─► Dataverse
+  ║        │                                                             ║   bot entity
+  ║        ├──► agent/eval_client.py · trigger + poll ─────────────── ►║─► Eval API
+  ║        │                                                             ║   powerplatform.com
+  ║        ├──► agent/auth.py · MSAL silent refresh ──────────────── ──║─► Microsoft Identity
+  ║        │                                                             ║   device code flow
+  ║        ├──► agent/reasoning.py · aiResultReason clustering ──────► ║─► LLM endpoint
+  ║        │                                                             ║   (any OpenAI-compat)
+  ║        ├──► agent/notifier.py · on token expiry / report ready ── ►║─► SMTP → 📧 email
+  ║        │                                                             ║
+  ║        └──► agent/store.py ──────────────────────── writes ───────►║
+  ║                                                                      ║
+  ╚══════════════════════════════════════╤═════════════════════════════╤╝
+                                         │                             │
+                              ┌──────────▼──────────┐     ┌──────────▼──────────┐
+                              │   💾  data/          │     │  📄  reports/       │
+                              │   tracking.json      │     │  report_*.html      │
+                              │   runs/<runId>.json  │     │  (emailed + saved)  │
+                              └──────────┬──────────┘     └─────────────────────┘
+                                         │ shared volume
+                                         ▼
+  ╔══════════════════════════════════════════════════════════════════════╗
+  ║  📊  DASHBOARD  · port 8501                                         ║
+  ║                                                                      ║
+  ║   dashboard/app.py  ─── reads ──► data/                             ║
+  ║                                                                      ║
+  ║   Fleet heatmap · Radar · Trend lines · Box plots                   ║
+  ║   Sankey · Failure clusters · LLM analysis panel                    ║
+  ╚══════════════════════════════════════════════════════════════════════╝
 ```
 
 ---
