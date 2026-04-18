@@ -237,7 +237,38 @@ drift setup
 
 ### 🗂️ Step 5 — config.json reference
 
-The wizard writes this for you. Key fields:
+The wizard writes this for you. Key fields at a glance:
+
+| Field | Description |
+|---|---|
+| `environments[].name` | Friendly label for the environment |
+| `environments[].orgUrl` | Dataverse org URL, e.g. `https://orgXXXXX.crm.dynamics.com` |
+| `environments[].environmentId` | Power Platform environment ID |
+| `environments[].monitoredBots` | Schema names of bots to watch — empty list = all active bots |
+| `eval_app_client_id` | App registration client ID (from Step 2) |
+| `eval_app_tenant_id` | Azure AD tenant ID |
+| `token_cache_file` | MSAL token cache path (gitignored) |
+| `store_dir` | Local directory for run history and tracking state |
+| `poll_interval_minutes` | How often the agent checks for model changes |
+| `eval_poll_timeout_seconds` | Max time to wait for an eval run to complete |
+| `eval_poll_interval_seconds` | How often to poll the eval API during a run |
+| `llm.base_url` | Any OpenAI-compatible endpoint |
+| `llm.api_key` | Leave blank — set `LLM_API_KEY` in `.env` instead |
+| `llm.model` | Model name to use for drift analysis |
+| `smtp.host / port / user` | Mail server for HTML report delivery (optional) |
+| `smtp.recipient` | Who receives the drift report email |
+
+**Secrets:** Store the LLM API key in a `.env` file (gitignored) — never in `config.json`:
+
+```
+LLM_API_KEY=your-key-here
+```
+
+**`monitoredBots`:** To stop monitoring a bot, remove it from the list — takes effect on the next poll cycle.
+
+🔀 SMTP values overridable via env vars: `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASSWORD` `SMTP_RECIPIENT`
+
+Full config.json structure:
 
 ```jsonc
 {
@@ -246,30 +277,25 @@ The wizard writes this for you. Key fields:
       "name": "Contoso (default)",
       "orgUrl": "https://orgXXXXX.crm.dynamics.com",
       "environmentId": "Default-XXXXXXXX-...",
-      "monitoredBots": [           // schema names of bots to watch
-        "crf98_safeTravels",       // empty list = watch all active bots
+      "monitoredBots": [
+        "crf98_safeTravels",
         "crf98_hrAssistant"
       ]
     }
   ],
-
-  "eval_app_client_id": "<client id>",   // 🔑 app registration
-  "eval_app_tenant_id": "<tenant id>",   // 🏢 your tenant
+  "eval_app_client_id": "<client id>",
+  "eval_app_tenant_id": "<tenant id>",
   "token_cache_file": "msal_token_cache.json",
-
-  "store_dir": "data",                   // 💾 local state directory
-  "poll_interval_minutes": 20,           // ⏱️ how often to check
-
-  "eval_poll_timeout_seconds": 1200,     // max wait for an eval run
-  "eval_poll_interval_seconds": 20,      // how often to poll during eval
-
-  "llm": {                               // 🧠 any OpenAI-compatible endpoint
+  "store_dir": "data",
+  "poll_interval_minutes": 20,
+  "eval_poll_timeout_seconds": 1200,
+  "eval_poll_interval_seconds": 20,
+  "llm": {
     "base_url": "https://...",
-    "api_key":  "",                      // set LLM_API_KEY env var or .env
+    "api_key":  "",
     "model":    "gpt-4o"
   },
-
-  "smtp": {                              // 📧 email reports (optional)
+  "smtp": {
     "host":      "smtp.office365.com",
     "port":      587,
     "user":      "sender@contoso.com",
@@ -278,16 +304,6 @@ The wizard writes this for you. Key fields:
   }
 }
 ```
-
-**Secrets:** Store the LLM API key in a `.env` file (gitignored) — never in `config.json`:
-
-```
-LLM_API_KEY=your-key-here
-```
-
-**`monitoredBots`:** List bot schema names (e.g. `crf98_safeTravels`). Leave the list empty to monitor all active bots in that environment. To stop monitoring a bot, remove it from the list — takes effect on the next poll cycle.
-
-🔀 SMTP values overridable via env vars: `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASSWORD` `SMTP_RECIPIENT`
 
 ---
 
