@@ -232,8 +232,9 @@ st.markdown(f"""
   /* ── Hide Streamlit chrome ── */
   #MainMenu, footer, [data-testid="stToolbar"] {{ visibility: hidden; }}
   [data-testid="stHeader"] {{ display: none; }}
-  [data-testid="collapsedControl"] {{ display: none; }}
-  [data-testid="stSidebarCollapseButton"] {{ display: none; }}
+  [data-testid="collapsedControl"],
+  [data-testid="stSidebarCollapsed"],
+  [data-testid="stSidebarCollapseButton"] {{ display: none !important; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -333,15 +334,16 @@ def chart_radar(prev_metrics: dict, curr_metrics: dict,
         return go.Figure()
     short = [k.split(".")[-1][:18] for k in keys]
     fig = go.Figure()
-    for vals, label, color in [
+    fill_colors = ["rgba(210,153,34,0.12)", "rgba(88,166,255,0.12)"]
+    for (vals, label, color), fill in zip([
         ([prev_metrics.get(k, 0) for k in keys], prev_label, C_AMBER),
         ([curr_metrics.get(k, 0) for k in keys], curr_label, C_BLUE),
-    ]:
+    ], fill_colors):
         fig.add_trace(go.Scatterpolar(
             r=vals + [vals[0]], theta=short + [short[0]],
             fill="toself", name=label,
             line=dict(color=color, width=2),
-            fillcolor=color.replace("#", "rgba(") + ",0.1)" if "#" in color else color,
+            fillcolor=fill,
         ))
     fig.update_layout(
         **CHART_LAYOUT,
@@ -384,7 +386,7 @@ def chart_trend(runs: list[dict]) -> go.Figure:
         ))
     fig.update_layout(**CHART_LAYOUT, height=320)
     fig.update_xaxes(**_AXIS)
-    fig.update_yaxes(**_AXIS, range=[0, 1.05])
+    fig.update_yaxes(**_AXIS)
     return fig
 
 
@@ -421,7 +423,7 @@ def chart_box(runs: list[dict]) -> go.Figure:
             ))
     fig.update_layout(**CHART_LAYOUT, height=320)
     fig.update_xaxes(**_AXIS)
-    fig.update_yaxes(**_AXIS, range=[-.05, 1.05])
+    fig.update_yaxes(**_AXIS)
     return fig
 
 
