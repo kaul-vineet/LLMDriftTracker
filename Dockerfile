@@ -2,8 +2,8 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt pyproject.toml cli.py ./
+RUN pip install --no-cache-dir -r requirements.txt && pip install --no-cache-dir -e .
 
 COPY agent/ agent/
 COPY dashboard/ dashboard/
@@ -24,4 +24,4 @@ ENV SMTP_USER=""
 ENV SMTP_PASSWORD=""
 ENV SMTP_RECIPIENT=""
 
-CMD ["python", "-m", "agent.main"]
+CMD ["drift", "run"]
