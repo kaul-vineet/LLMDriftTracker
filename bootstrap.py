@@ -392,13 +392,84 @@ def print_summary(cfg: dict):
     print(f"  {GR}{BD}  └─────────────────────────────────────────────────┘{RS}\n")
 
 
+# ── Top-level re-run menu ─────────────────────────────────────────────────────
+_MENU = [
+    ("🌐", "Environments"),
+    ("🔑", "Credentials"),
+    ("⚙️ ", "Agent Settings"),
+    ("🔐", "Sign-In"),
+    ("📧", "SMTP / Email"),
+]
+
+def _load_existing_cfg() -> dict:
+    try:
+        return json.loads(open("config.json").read())
+    except Exception:
+        return {}
+
+def _top_menu() -> str:
+    print(f"\n  {CY}{BD}╔═══ 🔄  config.json found — what would you like to update? ════╗{RS}")
+    print(f"  {CY}│{RS}    {YL}{BD}0{RS}  ·  Full wizard (re-run all steps)")
+    for i, (icon, label) in enumerate(_MENU, 1):
+        print(f"  {CY}│{RS}    {GR}{BD}{i}{RS}  ·  {icon}  {label}")
+    print(f"  {CY}│{RS}    {RD}{BD}q{RS}  ·  Quit (no changes)")
+    print(f"  {CY}╚{'═' * 58}╝{RS}\n")
+    return ask("  Choose", "0").strip().lower()
+
+def _run_step(n: str, cfg: dict):
+    if n == "1":
+        section_header(1, "🌐", "Power Platform Environments")
+        cfg["environments"] = step_environments()
+        section_ok(1, "Environments")
+    elif n == "2":
+        section_header(2, "🔑", "Eval App Credentials")
+        cfg.update(step_credentials())
+        section_ok(2, "Credentials")
+    elif n == "3":
+        section_header(3, "⚙️ ", "Agent Settings")
+        cfg.update(step_agent_settings())
+        section_ok(3, "Agent Settings")
+    elif n == "4":
+        section_header(4, "🔐", "Microsoft Sign-In")
+        if cfg.get("eval_app_client_id") and cfg.get("eval_app_tenant_id"):
+            try:
+                authenticate(cfg)
+                print(f"\n  {GR}{BD}✓  Signed in!{RS}  Token cached → msal_token_cache.json")
+            except Exception as e:
+                step_fail(f"Auth failed: {e}")
+                hint("Re-run bootstrap.py to retry sign-in.")
+        else:
+            hint("Credentials not in config — run step 2 first.")
+        section_ok(4, "Sign-In")
+    elif n == "5":
+        section_header(5, "📧", "Email Reports")
+        cfg["smtp"] = step_smtp()
+        section_ok(5, "SMTP")
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     print_logo()
-    slow(f"  {DM}Welcome. Five steps and you're done.{RS}", delay=0.018)
-    time.sleep(0.3)
+    existing = _load_existing_cfg()
 
-    cfg = {}
+    if existing:
+        choice = _top_menu()
+        if choice == "q":
+            print(f"\n  {DM}No changes made. Goodbye.{RS}\n")
+            return
+        if choice in ("1", "2", "3", "4", "5"):
+            cfg = existing.copy()
+            _run_step(choice, cfg)
+            open("config.json", "w").write(json.dumps(cfg, indent=2))
+            step_ok("config.json updated")
+            print()
+            return
+        # choice == "0" or anything else → full wizard, start fresh
+        cfg = {}
+    else:
+        slow(f"  {DM}Welcome. Five steps and you're done.{RS}", delay=0.018)
+        time.sleep(0.3)
+        cfg = {}
 
     # Step 1 — Environments
     section_header(1, "🌐", "Power Platform Environments")
@@ -416,17 +487,7 @@ def main():
     section_ok(3, "Agent Settings")
 
     # Step 4 — Microsoft sign-in
-    section_header(4, "🔐", "Microsoft Sign-In")
-    if cfg.get("eval_app_client_id") and cfg.get("eval_app_tenant_id"):
-        try:
-            authenticate(cfg)
-            print(f"\n  {GR}{BD}✓  Signed in!{RS}  Token cached → msal_token_cache.json")
-        except Exception as e:
-            step_fail(f"Auth failed: {e}")
-            hint("Re-run bootstrap.py to retry sign-in.")
-    else:
-        hint("Skipping — credentials not provided.")
-    section_ok(4, "Sign-In")
+    _run_step("4", cfg)
 
     # Step 5 — SMTP
     section_header(5, "📧", "Email Reports")
