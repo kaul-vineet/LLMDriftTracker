@@ -3,7 +3,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 COPY requirements.txt pyproject.toml cli.py ./
-RUN pip install --no-cache-dir -r requirements.txt && pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir -r requirements.txt && pip install --no-cache-dir --no-deps -e .
 
 COPY agent/ agent/
 COPY dashboard/ dashboard/
