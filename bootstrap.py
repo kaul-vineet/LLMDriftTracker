@@ -352,6 +352,12 @@ def step_agent_settings() -> dict:
 
 def step_smtp() -> dict:
     hint("Drift reports are emailed as HTML. Leave host blank to skip.\n")
+    print(f"  {DM}{'─' * 52}{RS}")
+    print(f"  {CY}{BD}📄 config.json{RS}  — written to your project root when this wizard finishes.")
+    print(f"  {DM}   It stores all settings: environments, credentials, poll interval,{RS}")
+    print(f"  {DM}   LLM config, and SMTP below. You can edit it by hand at any time{RS}")
+    print(f"  {DM}   or re-run  {RS}{CY}drift setup{RS}{DM}  to update any section.{RS}")
+    print(f"  {DM}{'─' * 52}{RS}\n")
     host = ask("SMTP host", "smtp.office365.com")
     if not host:
         print(f"\n  {YL}⚠  Skipping — configure smtp in config.json later.{RS}")
