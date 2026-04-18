@@ -316,10 +316,9 @@ CHART_LAYOUT = dict(
     plot_bgcolor="rgba(0,0,0,0)",
     font=dict(color=C_TEXT, family="monospace", size=11),
     margin=dict(l=10, r=10, t=30, b=10),
-    xaxis=dict(gridcolor=C_BORDER, linecolor=C_BORDER, zerolinecolor=C_BORDER),
-    yaxis=dict(gridcolor=C_BORDER, linecolor=C_BORDER, zerolinecolor=C_BORDER),
     legend=dict(bgcolor="rgba(0,0,0,0)", bordercolor=C_BORDER, borderwidth=1),
 )
+_AXIS = dict(gridcolor=C_BORDER, linecolor=C_BORDER, zerolinecolor=C_BORDER)
 
 
 def chart_radar(prev_metrics: dict, curr_metrics: dict,
@@ -351,6 +350,8 @@ def chart_radar(prev_metrics: dict, curr_metrics: dict,
         showlegend=True,
         height=360,
     )
+    fig.update_xaxes(**_AXIS)
+    fig.update_yaxes(**_AXIS)
     return fig
 
 
@@ -376,10 +377,9 @@ def chart_trend(runs: list[dict]) -> go.Figure:
             line=dict(color=color, width=2),
             marker=dict(color=color, size=7, line=dict(color=C_BG, width=2)),
         ))
-    fig.update_layout(**CHART_LAYOUT, height=320,
-                      yaxis=dict(range=[0, 1.05], gridcolor=C_BORDER,
-                                 linecolor=C_BORDER, zerolinecolor=C_BORDER),
-                      xaxis=dict(gridcolor=C_BORDER, linecolor=C_BORDER))
+    fig.update_layout(**CHART_LAYOUT, height=320)
+    fig.update_xaxes(**_AXIS)
+    fig.update_yaxes(**_AXIS, range=[0, 1.05])
     return fig
 
 
@@ -414,9 +414,9 @@ def chart_box(runs: list[dict]) -> go.Figure:
                 fillcolor=colors[i % len(colors)] + "33",
                 boxmean=True,
             ))
-    fig.update_layout(**CHART_LAYOUT, height=320,
-                      yaxis=dict(range=[-.05, 1.05], gridcolor=C_BORDER,
-                                 linecolor=C_BORDER, zerolinecolor=C_BORDER))
+    fig.update_layout(**CHART_LAYOUT, height=320)
+    fig.update_xaxes(**_AXIS)
+    fig.update_yaxes(**_AXIS, range=[-.05, 1.05])
     return fig
 
 
@@ -445,8 +445,9 @@ def chart_fleet_heatmap(bots: list[dict]) -> go.Figure:
         colorbar=dict(tickfont=dict(color=C_DIM), outlinecolor=C_BORDER,
                       outlinewidth=1, len=0.8),
     ))
-    fig.update_layout(**CHART_LAYOUT, height=max(200, len(bots) * 44 + 60),
-                      xaxis=dict(gridcolor=C_BORDER, linecolor=C_BORDER, side="bottom"))
+    fig.update_layout(**CHART_LAYOUT, height=max(200, len(bots) * 44 + 60))
+    fig.update_xaxes(**_AXIS, side="bottom")
+    fig.update_yaxes(**_AXIS)
     return fig
 
 
@@ -489,10 +490,9 @@ def chart_failure_clusters(runs: list[dict]) -> go.Figure:
         marker_color=[color_map.get(l, C_BLUE) for l in labels],
         hovertemplate="%{x}: %{y} cases<extra></extra>",
     ))
-    fig.update_layout(**CHART_LAYOUT, height=280,
-                      yaxis=dict(gridcolor=C_BORDER, linecolor=C_BORDER,
-                                 zerolinecolor=C_BORDER, title="failure count"),
-                      showlegend=False)
+    fig.update_layout(**CHART_LAYOUT, height=280, showlegend=False)
+    fig.update_xaxes(**_AXIS)
+    fig.update_yaxes(**_AXIS, title="failure count")
     return fig
 
 
@@ -539,6 +539,8 @@ def chart_sankey(prev_run: dict, curr_run: dict,
         ),
     ))
     fig.update_layout(**CHART_LAYOUT, height=300)
+    fig.update_xaxes(**_AXIS)
+    fig.update_yaxes(**_AXIS)
     return fig
 
 
