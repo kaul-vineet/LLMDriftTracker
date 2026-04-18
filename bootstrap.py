@@ -2,7 +2,7 @@
 bootstrap.py — one-time setup wizard for copilot-eval-agent
 Run once on host before starting Docker.
 """
-import json, msal, os, sys, time, threading, smtplib, getpass
+import json, msal, os, sys, time, threading, smtplib, getpass, subprocess, requests
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime, timezone
@@ -211,8 +211,41 @@ def _send_test_email(host: str, port: int, user: str, password: str, recipient: 
         s.ehlo(); s.starttls(); s.login(user, password); s.send_message(msg)
 
 
+# ── BAPI environment discovery ────────────────────────────────────────────────
+def _fetch_environments_from_bapi() -> list:
+    token = subprocess.check_output(
+        ["az", "account", "get-access-token",
+         "--resource", "https://service.powerapps.com/",
+         "--query", "accessToken", "-o", "tsv"],
+        stderr=subprocess.DEVNULL,
+    ).decode().strip()
+    resp = requests.get(
+        "https://api.bap.microsoft.com/providers/Microsoft.BusinessAppPlatform/environments",
+        params={"api-version": "2020-10-01"},
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=20,
+    )
+    resp.raise_for_status()
+    envs = []
+    for item in resp.json().get("value", []):
+        env_id  = item.get("name", "")
+        props   = item.get("properties", {})
+        display = props.get("displayName", env_id)
+        url     = props.get("linkedEnvironmentMetadata", {}).get("instanceUrl", "")
+        if url:
+            envs.append({"name": display, "orgUrl": url.rstrip("/"), "environmentId": env_id})
+    return envs
+
+
+def _get_tenant_id_from_az() -> str:
+    return subprocess.check_output(
+        ["az", "account", "show", "--query", "tenantId", "-o", "tsv"],
+        stderr=subprocess.DEVNULL,
+    ).decode().strip()
+
+
 # ── Step handlers ─────────────────────────────────────────────────────────────
-def step_environments() -> list:
+def _step_environments_manual() -> list:
     hint("Add one or more Power Platform environments to monitor.")
     hint("Press Enter on Org URL to finish.\n")
     envs = []
@@ -237,10 +270,69 @@ def step_environments() -> list:
     return envs
 
 
+def step_environments() -> list:
+    print()
+    try:
+        raw = with_spinner("Fetching environments from tenant…", _fetch_environments_from_bapi)
+    except Exception as e:
+        step_fail(f"BAPI lookup failed: {e}")
+        hint("Make sure you are signed in with:  az login")
+        hint("Falling back to manual entry.\n")
+        return _step_environments_manual()
+
+    if not raw:
+        step_fail("No environments with a Dataverse org URL found in tenant.")
+        return _step_environments_manual()
+
+    print()
+    border = "═" * 52
+    print(f"  {CY}{BD}╔═══ 🌐 Available Environments {border[:24]}╗{RS}")
+    print()
+    for i, env in enumerate(raw, 1):
+        org_short = env["orgUrl"].replace("https://", "")
+        print(f"    {GR}{BD}{i:>2}{RS}  {CY}●{RS}  {BD}{env['name']:<28}{RS}  {DM}{org_short}{RS}")
+    print()
+    print(f"  {CY}{BD}╚{'═' * 52}╝{RS}")
+    print()
+    hint("Enter numbers to monitor, comma-separated — or 'all'.")
+    sel = ask("  Select environments", "all")
+
+    if sel.strip().lower() == "all":
+        chosen = raw
+    else:
+        chosen = []
+        for part in sel.split(","):
+            part = part.strip()
+            try:
+                chosen.append(raw[int(part) - 1])
+            except (ValueError, IndexError):
+                print(f"  {YL}  Skipping invalid selection: {part}{RS}")
+
+    if not chosen:
+        print(f"  {RD}  No valid selection — using all environments.{RS}")
+        chosen = raw
+
+    print()
+    for env in chosen:
+        step_ok(f"{BD}{env['name']}{RS}  {DM}{env['orgUrl']}{RS}")
+    return chosen
+
+
 def step_credentials() -> dict:
     hint("App registration with CopilotStudio.MakerOperations delegated permissions.\n")
     client_id = ask("App (client) ID")
-    tenant_id = ask("Tenant ID")
+
+    tenant_id = ""
+    try:
+        tenant_id = with_spinner("Reading tenant ID from az account…", _get_tenant_id_from_az)
+    except Exception:
+        pass
+
+    if not tenant_id:
+        tenant_id = ask("Tenant ID")
+    else:
+        print(f"  {GR}✓{RS}  Tenant  {DM}{tenant_id}{RS}  {DM}(from az account){RS}")
+
     return {"eval_app_client_id": client_id, "eval_app_tenant_id": tenant_id,
             "token_cache_file": "msal_token_cache.json"}
 
@@ -364,7 +456,33 @@ def main():
     print(f"  {DM}          -v $(pwd)/msal_token_cache.json:/app/msal_token_cache.json \\{RS}")
     print(f"  {DM}          -v $(pwd)/config.json:/app/config.json \\{RS}")
     print(f"  {DM}          copilot-eval-agent{RS}")
-    print(f"  {DM}{'─' * 56}{RS}\n")
+    print(f"  {DM}{'─' * 56}{RS}")
+    print()
+    print(f"  {CY}{BD}📁 Project layout{RS}")
+    print(f"  {DM}{'─' * 40}{RS}")
+    tree = [
+        (".",             "project root"),
+        ("├── agent/",    "polling agent package"),
+        ("│   ├── main.py",    "entry point — poll loop"),
+        ("│   ├── auth.py",    "MSAL + self-healing device flow"),
+        ("│   ├── dataverse.py","bot discovery (#monitor gate)"),
+        ("│   ├── eval_client.py","Copilot Studio Eval API"),
+        ("│   ├── reasoning.py","LLM drift analysis"),
+        ("│   ├── store.py",   "run history (local JSON)"),
+        ("│   ├── notifier.py","SMTP email"),
+        ("│   └── report.py",  "HTML report generator"),
+        ("├── dashboard/", "Streamlit read-only UI"),
+        ("│   └── app.py",     "fleet heatmap, radar, trends"),
+        ("├── .streamlit/", "dark theme config"),
+        ("├── bootstrap.py","← you are here (setup wizard)"),
+        ("├── config.json", "generated by this wizard"),
+        ("├── Dockerfile",  "production container"),
+        ("├── requirements.txt","Python deps"),
+        ("└── README.md",  "full docs"),
+    ]
+    for path, desc in tree:
+        print(f"  {DM}{path:<32}{RS}  {DM}{desc}{RS}")
+    print()
 
 
 if __name__ == "__main__":
