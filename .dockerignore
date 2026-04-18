@@ -1,0 +1,5 @@
+test_viability.py
+msal_token_cache.json
+data/
+__pycache__/
+*.pyc
