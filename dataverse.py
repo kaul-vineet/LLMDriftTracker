@@ -49,10 +49,10 @@ def list_all_bots(cfg: dict) -> list[dict]:
     all_bots = []
     for env in cfg["environments"]:
         try:
-            bots = list_bots(env["org_url"])
+            bots = list_bots(env["orgUrl"])
             for b in bots:
                 b["envName"]  = env["name"]
-                b["ppEnvId"]  = env["pp_env_id"]
+                b["ppEnvId"]  = env["environmentId"]
             all_bots.extend(bots)
             print(f"[dataverse] {env['name']}: {len(bots)} bot(s) tagged {MONITOR_TAG}")
         except Exception as e:

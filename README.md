@@ -11,7 +11,7 @@
 
 <div align="center">
 
-![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.12+-3776AB?style=flat-square&logo=python&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)
 ![Platform](https://img.shields.io/badge/Power_Platform-Copilot_Studio-742774?style=flat-square&logo=microsoft&logoColor=white)
 ![Auth](https://img.shields.io/badge/Auth-MSAL_delegated-0078D4?style=flat-square&logo=microsoftazure&logoColor=white)
@@ -283,6 +283,33 @@ docker logs -f <container-id>
 ```
 
 > `msal_token_cache.json` must always be mounted. It holds your delegated identity for the Eval API — a service principal cannot replace it.
+
+---
+
+## Dashboard (Streamlit)
+
+A read-only web dashboard runs alongside the agent and visualises all drift data.
+
+**Run locally:**
+```bash
+streamlit run app.py
+```
+Open `http://localhost:8501`
+
+**Run in Docker (separate container, shared data volume):**
+```bash
+docker run -d \
+  -p 8501:8501 \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/config.json:/app/config.json \
+  --entrypoint streamlit \
+  copilot-eval-agent run app.py --server.headless true
+```
+
+| Page | What you see |
+|---|---|
+| Overview | Fleet heatmap across all bots × model versions + KPI cards |
+| Bot Detail | Radar chart · Metric trend lines · Box plots · Sankey test-case flow · Failure clusters · LLM analysis |
 
 ---
 

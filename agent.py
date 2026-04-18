@@ -47,14 +47,14 @@ def run_cycle(cfg: dict):
             run_id    = result.get("id", result.get("runId", "unknown"))
             prev_run  = store.load_last_run(store_dir, bot_id)
 
-            store.save_run(store_dir, bot_id, run_id, curr_ver, result)
-
             curr_metrics = reasoning.extract_metrics_for_report(result)
             prev_metrics = reasoning.extract_metrics_for_report(prev_run["results"]) if prev_run else {}
 
             analysis = reasoning.analyse_drift(
                 bot_name, old_ver, curr_ver, result, prev_run["results"] if prev_run else None, cfg
             )
+
+            store.save_run(store_dir, bot_id, run_id, curr_ver, result, analysis=analysis)
 
             bot_results.append({
                 "botName":     bot_name,
@@ -66,7 +66,8 @@ def run_cycle(cfg: dict):
                 "analysis":    analysis
             })
 
-            store.save_tracking(store_dir, bot_id, curr_ver, run_id)
+            store.save_tracking(store_dir, bot_id, curr_ver, run_id,
+                                bot_name=bot_name, env_name=bot.get("envName", ""))
 
         except Exception as e:
             print(f"[agent] {bot_name}: error — {e}")

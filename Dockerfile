@@ -5,7 +5,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY auth.py store.py dataverse.py eval_client.py reasoning.py report.py notifier.py agent.py ./
+COPY auth.py store.py dataverse.py eval_client.py reasoning.py report.py notifier.py agent.py app.py ./
+COPY .streamlit/ .streamlit/
 COPY config.json .
 
 # Mounted at runtime:

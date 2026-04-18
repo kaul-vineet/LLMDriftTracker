@@ -3,3 +3,5 @@ msal
 schedule
 openai
 azure-identity
+streamlit
+plotly
