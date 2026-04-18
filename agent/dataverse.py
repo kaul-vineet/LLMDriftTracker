@@ -1,6 +1,6 @@
 import json
 import requests
-from auth import get_dataverse_token
+from .auth import get_dataverse_token
 
 DV_API = "/api/data/v9.2"
 BOT_SELECT = "botid,name,schemaname,configuration,publishedon,statecode,description"

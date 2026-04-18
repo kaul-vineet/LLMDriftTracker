@@ -4,12 +4,12 @@ import schedule
 import time
 from datetime import datetime, timezone
 
-import dataverse
-import eval_client
-import notifier
-import reasoning
-import report
-import store
+from . import dataverse
+from . import eval_client
+from . import notifier
+from . import reasoning
+from . import report
+from . import store
 
 
 def load_cfg(path: str = "config.json") -> dict:

@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 import plotly.graph_objects as go
 import streamlit as st
-from reasoning import extract_metrics_for_report as _extract_metrics_from_run
+from agent.reasoning import extract_metrics_for_report as _extract_metrics_from_run
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(

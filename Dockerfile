@@ -5,7 +5,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY auth.py store.py dataverse.py eval_client.py reasoning.py report.py notifier.py agent.py app.py ./
+COPY agent/ agent/
+COPY dashboard/ dashboard/
 COPY .streamlit/ .streamlit/
 COPY config.json .
 
@@ -23,4 +24,4 @@ ENV SMTP_USER=""
 ENV SMTP_PASSWORD=""
 ENV SMTP_RECIPIENT=""
 
-CMD ["python", "agent.py"]
+CMD ["python", "-m", "agent.main"]

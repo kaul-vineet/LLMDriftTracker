@@ -1,6 +1,6 @@
 import time
 import requests
-from auth import get_eval_token
+from .auth import get_eval_token
 
 PP_API_BASE  = "https://api.powerplatform.com"
 EVAL_API_VER = "2024-10-01"

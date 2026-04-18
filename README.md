@@ -90,29 +90,37 @@ No pass/fail verdicts. No automated rollbacks. No changes to your bots. Pure, un
 ```
 LLMDriftTracker/
 │
-├── agent.py              ← main loop — polls, orchestrates, saves reports
-├── auth.py               ← dual-mode auth (az CLI locally · SP in Docker)
-│                            self-healing eval token with email alert
-├── bootstrap.py          ← one-time setup wizard (jazzy terminal UI)
-│                            creates config.json, caches MSAL token
-├── dataverse.py          ← fetches #monitor bots + model version from Dataverse
-├── eval_client.py        ← Copilot Studio Eval REST API (get sets · trigger · poll)
-├── reasoning.py          ← metric aggregation + LLM drift narrative
-├── report.py             ← self-contained HTML report generator
-├── notifier.py           ← SMTP email sender (env var overrides)
-├── store.py              ← local JSON state per bot (tracking + run history)
+├── agent/                       ← core engine (Python package)
+│   ├── __init__.py
+│   ├── main.py                  ← main loop — polls, orchestrates, saves reports
+│   ├── auth.py                  ← dual-mode auth (az CLI locally · SP in Docker)
+│   │                               self-healing eval token with email alert
+│   ├── dataverse.py             ← fetches #monitor bots + model versions
+│   ├── eval_client.py           ← Copilot Studio Eval REST API
+│   ├── reasoning.py             ← metric aggregation + LLM drift narrative
+│   ├── report.py                ← self-contained HTML report generator
+│   ├── notifier.py              ← SMTP email sender (env var overrides)
+│   └── store.py                 ← local JSON state per bot
 │
-├── Dockerfile            ← python:3.12-slim, volumes for data + secrets
+├── dashboard/                   ← Streamlit read-only UI
+│   ├── __init__.py
+│   └── app.py                   ← fleet heatmap · radar · trends · analysis
+│
+├── bootstrap.py                 ← one-time setup wizard (run on host, not Docker)
+├── .streamlit/
+│   └── config.toml              ← dark theme config
+├── Dockerfile
 ├── .dockerignore
-├── requirements.txt      ← requests · msal · schedule · openai · azure-identity
+├── requirements.txt
 │
-├── config.json           ← your config (gitignored — created by bootstrap)
-├── msal_token_cache.json ← cached eval token (gitignored — mount into Docker)
+├── config.json                  ← your config (gitignored — created by bootstrap)
+├── msal_token_cache.json        ← cached auth token (gitignored — mount into Docker)
 │
-└── data/                 ← runtime state (gitignored — mount into Docker)
+└── data/                        ← runtime state (gitignored — mount into Docker)
     └── <botId>/
-        ├── tracking.json          last known model version + run ID
-        └── run_<runId>.json       full eval result payload
+        ├── tracking.json        last known model version + run ID
+        └── runs/
+            └── <runId>.json     eval result + LLM analysis
 ```
 
 ---
@@ -226,7 +234,7 @@ Outputs: `config.json` + `msal_token_cache.json`
 Verify end-to-end before committing to Docker.
 
 ```bash
-python agent.py
+python -m agent.main
 ```
 
 Expected output:
@@ -244,7 +252,7 @@ Expected output:
 
 ```bash
 rm data/<botId>/tracking.json
-python agent.py
+python -m agent.main
 ```
 
 ---
