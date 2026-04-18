@@ -99,18 +99,16 @@ def eval_start(name: str, test_set: str):
     ))
 
 
-_SPIN = ["⚔", "·", "🗡", "·"]
-
-
 def eval_polling(run_id: str, state: str, elapsed: int, timeout: int, total: int = 0):
-    frame = _SPIN[(elapsed // 20) % len(_SPIN)]
     cases = f"  {total} cases" if total else ""
-    line  = f"   {frame}  {elapsed}s  {state}{cases}  run={run_id[:8]}"
-    print(f"\r{line:<72}", end="", flush=True)
+    print(_any(
+        f"   📜  {elapsed}s  {state}{cases}  run={run_id[:8]}",
+        f"   🕯   the maesters deliberate… {elapsed}s  {state}{cases}",
+    ))
 
 
 def eval_poll_done():
-    print()
+    pass
 
 
 def eval_done(name: str):
