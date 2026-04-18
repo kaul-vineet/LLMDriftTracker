@@ -302,7 +302,9 @@ def extract_ai_reasons(run: dict) -> list[str]:
 def composite_score(metrics: dict) -> float:
     if not metrics:
         return 0.0
-    return round(sum(metrics.values()) / len(metrics), 4)
+    # Normalize: values > 1 are assumed to be on a 0-100 scale
+    vals = [v / 100.0 if v > 1 else v for v in metrics.values()]
+    return round(sum(vals) / len(vals), 4)
 
 
 def _fmt_ts(iso: str) -> str:
@@ -424,24 +426,19 @@ def chart_box(runs: list[dict]) -> go.Figure:
 
 
 def chart_fleet_heatmap(bots: list[dict]) -> go.Figure:
-    all_models: list[str] = []
-    for bot in bots:
-        for run in bot["runs"]:
-            m = run.get("modelVersion", "unknown")[:20]
-            if m not in all_models:
-                all_models.append(m)
-    all_models = sorted(set(all_models))
+    all_models: list[str] = sorted({
+        run.get("modelVersion", "unknown")
+        for bot in bots
+        for run in bot["runs"]
+    })
     z, y_labels = [], []
     for bot in bots:
-        row = []
         model_score = {run.get("modelVersion", "?"): composite_score(extract_metrics(run))
                        for run in bot["runs"]}
-        for model in all_models:
-            row.append(model_score.get(model, None))
-        z.append(row)
-        y_labels.append(bot["botName"][:20])
+        z.append([model_score.get(m) for m in all_models])
+        y_labels.append(bot["botName"])
     fig = go.Figure(go.Heatmap(
-        z=z, x=[m[:16] for m in all_models], y=y_labels,
+        z=z, x=all_models, y=y_labels,
         colorscale=[[0, C_RED], [0.5, C_AMBER], [1, C_GREEN]],
         zmin=0, zmax=1,
         hovertemplate="<b>%{y}</b><br>Model: %{x}<br>Score: %{z:.2f}<extra></extra>",
