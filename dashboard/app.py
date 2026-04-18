@@ -290,7 +290,7 @@ def extract_ai_reasons(run: dict) -> list[str]:
     results = run.get("results", run)
     for case in results.get("testCasesResults", []):
         for m in case.get("metricsResults", []):
-            r = m.get("aiResultReason", "")
+            r = m.get("result", {}).get("aiResultReason", "")
             if r:
                 reasons.append(r)
     return reasons
@@ -500,21 +500,23 @@ def chart_sankey(prev_run: dict, curr_run: dict,
                  prev_label: str, curr_label: str) -> go.Figure:
     prev_results = prev_run.get("results", prev_run)
     curr_results = curr_run.get("results", curr_run)
-    prev_cases = {c.get("utterance", c.get("id", i)): c
+    prev_cases = {c.get("testCaseId", str(i)): c
                   for i, c in enumerate(prev_results.get("testCasesResults", []))}
-    curr_cases = {c.get("utterance", c.get("id", i)): c
+    curr_cases = {c.get("testCaseId", str(i)): c
                   for i, c in enumerate(curr_results.get("testCasesResults", []))}
     pp = ff = pf = fp = 0
+
+    def _pass(c):
+        for m in c.get("metricsResults", []):
+            status = m.get("result", {}).get("status", "")
+            if status:
+                return status == "Pass"
+        return None
+
     for uid, prev_c in prev_cases.items():
         curr_c = curr_cases.get(uid)
         if not curr_c:
             continue
-        def _pass(c):
-            for m in c.get("metricsResults", []):
-                for v in m.get("result", {}).get("data", {}).values():
-                    if isinstance(v, bool):
-                        return v
-            return None
         pv, cv = _pass(prev_c), _pass(curr_c)
         if pv is True  and cv is True:  pp += 1
         if pv is False and cv is False: ff += 1
@@ -647,8 +649,14 @@ def page_bot_detail(bot: dict):
     if len(runs) >= 2:
         st.markdown('<div class="section-title">Compare Two Runs</div>',
                     unsafe_allow_html=True)
-        run_labels = [f"{r.get('modelVersion','?')[:30]}  ·  {_fmt_ts(r.get('storedAt',''))}"
-                      for r in runs]
+        versions   = [r.get("modelVersion", "?") for r in runs]
+        all_same   = len(set(versions)) == 1
+        run_labels = [
+            f"Run {i+1}  ·  {_fmt_ts(r.get('storedAt',''))}"
+            if all_same else
+            f"{r.get('modelVersion','?')[:28]}  ·  {_fmt_ts(r.get('storedAt',''))}"
+            for i, r in enumerate(runs)
+        ]
         col1, col2 = st.columns(2)
         with col1:
             idx_a = st.selectbox("Baseline run", range(len(runs)),
@@ -790,7 +798,7 @@ def render_sidebar(bots: list[dict]) -> str | None:
 
         if not bots:
             st.markdown(f'<div style="color:{C_DIM};font-size:12px;padding:8px 0">'
-                        'No bots yet — tag a bot with #monitor</div>',
+                        'No bots yet — run the agent to populate data</div>',
                         unsafe_allow_html=True)
             return None
 

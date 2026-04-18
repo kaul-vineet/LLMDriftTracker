@@ -17,6 +17,35 @@ def load_cfg(path: str = "config.json") -> dict:
     return json.loads(open(path).read())
 
 
+def _build_bot_result(bot_name, old_ver, curr_ver, run_id, result, prev_run, cfg) -> dict:
+    curr_metrics = reasoning.extract_metrics_for_report(result)
+    prev_metrics = reasoning.extract_metrics_for_report(prev_run["results"]) if prev_run else {}
+    analysis     = reasoning.analyse_drift(
+        bot_name, old_ver, curr_ver, result, prev_run["results"] if prev_run else None, cfg
+    )
+    return {
+        "botName":     bot_name,
+        "oldModel":    old_ver,
+        "newModel":    curr_ver,
+        "runId":       run_id,
+        "currMetrics": curr_metrics,
+        "prevMetrics": prev_metrics,
+        "analysis":    analysis,
+        "prevRunData": prev_run,
+        "currRunData": result,
+    }
+
+
+def _save_and_notify(bot_results, store_dir, cfg):
+    html        = report.generate_report(bot_results)
+    report_path = os.path.join(store_dir, f"report_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}.html")
+    os.makedirs(store_dir, exist_ok=True)
+    open(report_path, "w", encoding="utf-8").write(html)
+    lore.report_saved(report_path)
+    notifier.send_report(html, cfg)
+    lore.cycle_complete(len(bot_results))
+
+
 def run_cycle(cfg: dict):
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lore.cycle_start(ts)
@@ -30,8 +59,7 @@ def run_cycle(cfg: dict):
         bot_name = bot["name"]
         curr_ver = bot["modelVersion"]
 
-        changed = store.model_changed(store_dir, bot_id, curr_ver)
-        if not changed:
+        if not store.model_changed(store_dir, bot_id, curr_ver):
             lore.no_change(bot_name)
             continue
 
@@ -45,30 +73,14 @@ def run_cycle(cfg: dict):
                 store.save_tracking(store_dir, bot_id, curr_ver, None)
                 continue
 
-            run_id    = result.get("id", result.get("runId", "unknown"))
-            prev_run  = store.load_last_run(store_dir, bot_id)
+            run_id   = result.get("id", result.get("runId", "unknown"))
+            prev_run = store.load_last_run(store_dir, bot_id)
 
-            curr_metrics = reasoning.extract_metrics_for_report(result)
-            prev_metrics = reasoning.extract_metrics_for_report(prev_run["results"]) if prev_run else {}
-
-            analysis = reasoning.analyse_drift(
-                bot_name, old_ver, curr_ver, result, prev_run["results"] if prev_run else None, cfg
-            )
-
-            store.save_run(store_dir, bot_id, run_id, curr_ver, result, analysis=analysis)
-
-            bot_results.append({
-                "botName":     bot_name,
-                "oldModel":    old_ver,
-                "newModel":    curr_ver,
-                "runId":       run_id,
-                "currMetrics": curr_metrics,
-                "prevMetrics": prev_metrics,
-                "analysis":    analysis
-            })
-
+            br = _build_bot_result(bot_name, old_ver, curr_ver, run_id, result, prev_run, cfg)
+            store.save_run(store_dir, bot_id, run_id, curr_ver, result, analysis=br["analysis"])
             store.save_tracking(store_dir, bot_id, curr_ver, run_id,
                                 bot_name=bot_name, env_name=bot.get("envName", ""))
+            bot_results.append(br)
             lore.eval_done(bot_name)
 
         except Exception as e:
@@ -78,14 +90,47 @@ def run_cycle(cfg: dict):
         lore.cycle_idle()
         return
 
-    html        = report.generate_report(bot_results)
-    report_path = os.path.join(store_dir, f"report_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}.html")
-    os.makedirs(store_dir, exist_ok=True)
-    open(report_path, "w", encoding="utf-8").write(html)
-    lore.report_saved(report_path)
+    _save_and_notify(bot_results, store_dir, cfg)
 
-    notifier.send_report(html, cfg)
-    lore.cycle_complete(len(bot_results))
+
+def force_eval(cfg: dict):
+    """Run evals for all monitored bots immediately, regardless of model change."""
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    lore.cycle_start(ts)
+
+    store_dir   = cfg.get("store_dir", "data")
+    bots        = dataverse.list_all_bots(cfg)
+    bot_results = []
+
+    for bot in bots:
+        bot_id   = bot["botId"]
+        bot_name = bot["name"]
+        curr_ver = bot["modelVersion"]
+        old_ver  = store.load_tracking(store_dir, bot_id).get("modelVersion", curr_ver)
+
+        try:
+            result = eval_client.run_eval_for_bot(bot, cfg)
+            if result is None:
+                continue
+
+            run_id   = result.get("id", result.get("runId", "unknown"))
+            prev_run = store.load_last_run(store_dir, bot_id)
+
+            br = _build_bot_result(bot_name, old_ver, curr_ver, run_id, result, prev_run, cfg)
+            store.save_run(store_dir, bot_id, run_id, curr_ver, result, analysis=br["analysis"])
+            store.save_tracking(store_dir, bot_id, curr_ver, run_id,
+                                bot_name=bot_name, env_name=bot.get("envName", ""))
+            bot_results.append(br)
+            lore.eval_done(bot_name)
+
+        except Exception as e:
+            lore.eval_error(bot_name, e)
+
+    if not bot_results:
+        lore.cycle_idle()
+        return
+
+    _save_and_notify(bot_results, store_dir, cfg)
 
 
 def main():
@@ -102,4 +147,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "--force-eval":
+        force_eval(load_cfg())
+    else:
+        main()
