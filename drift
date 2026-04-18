@@ -1,2 +1,16 @@
 #!/usr/bin/env bash
-python "$(dirname "$0")/cli.py" "$@"
+cd "$(dirname "$0")"
+case "${1:-}" in
+  setup)     python -m agent.wizard ;;
+  run)       python -m agent.main ;;
+  dashboard) python -m streamlit run dashboard/app.py ;;
+  *)
+    echo ""
+    echo "  ⚡  LLM Drift Tracker"
+    echo ""
+    echo "  drift setup        run the setup wizard"
+    echo "  drift run          start the autonomous polling agent"
+    echo "  drift dashboard    launch the Streamlit dashboard"
+    echo ""
+    ;;
+esac

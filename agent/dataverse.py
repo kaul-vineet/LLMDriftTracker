@@ -3,11 +3,10 @@ import requests
 from .auth import get_dataverse_token
 
 DV_API = "/api/data/v9.2"
-# configuration + description excluded — both cause 400 in collection $select.
-# configuration is fetched per-bot via _fetch_bot_details().
-# description does not exist on this entity; #monitor tag is checked in name.
+# configuration excluded — causes 400 in collection $select; fetched per-bot.
+# Opt-in via config.json monitoredBots list (schemanames) per environment.
+# Empty list = monitor all active bots in that environment.
 BOT_SELECT = "botid,name,schemaname,publishedon,statecode"
-MONITOR_TAG = "#monitor"
 
 
 def _headers(token: str) -> dict:
@@ -41,7 +40,7 @@ def _fetch_bot_details(org_url: str, token: str, bot_id: str) -> dict:
     return {}
 
 
-def list_bots(org_url: str) -> list[dict]:
+def list_bots(org_url: str, monitored: list) -> list[dict]:
     token = get_dataverse_token(org_url)
     url = f"{org_url}{DV_API}/bots?$select={BOT_SELECT}&$filter=statecode eq 0"
     r = requests.get(url, headers=_headers(token), timeout=20)
@@ -49,7 +48,7 @@ def list_bots(org_url: str) -> list[dict]:
 
     bots = []
     for b in r.json().get("value", []):
-        if MONITOR_TAG not in (b.get("name") or "").lower():
+        if monitored and b.get("schemaname") not in monitored:
             continue
         bot_id  = b["botid"]
         details = _fetch_bot_details(org_url, token, bot_id)
@@ -67,13 +66,15 @@ def list_bots(org_url: str) -> list[dict]:
 def list_all_bots(cfg: dict) -> list[dict]:
     all_bots = []
     for env in cfg["environments"]:
+        monitored = env.get("monitoredBots", [])
+        scope_label = f"{len(monitored)} selected" if monitored else "all"
         try:
-            bots = list_bots(env["orgUrl"])
+            bots = list_bots(env["orgUrl"], monitored)
             for b in bots:
-                b["envName"]  = env["name"]
-                b["ppEnvId"]  = env["environmentId"]
+                b["envName"] = env["name"]
+                b["ppEnvId"] = env["environmentId"]
             all_bots.extend(bots)
-            print(f"[dataverse] {env['name']}: {len(bots)} bot(s) tagged {MONITOR_TAG}")
+            print(f"[dataverse] {env['name']}: {len(bots)} bot(s) ({scope_label})")
         except Exception as e:
             print(f"[dataverse] {env['name']} failed: {e}")
     return all_bots

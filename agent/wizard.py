@@ -1,6 +1,6 @@
 """
-bootstrap.py — one-time setup wizard for copilot-eval-agent
-Run once on host before starting Docker.
+agent/wizard.py — one-time setup wizard for copilot-eval-agent
+Invoked via:  drift setup
 """
 import json, msal, os, sys, time, threading, smtplib, getpass, subprocess, requests
 from email.mime.multipart import MIMEMultipart
@@ -211,7 +211,7 @@ def _send_test_email(host: str, port: int, user: str, password: str, recipient: 
         s.ehlo(); s.starttls(); s.login(user, password); s.send_message(msg)
 
 
-# ── BAPI environment discovery ────────────────────────────────────────────────
+# ── Tenant / environment discovery via BAPI ───────────────────────────────────
 def _fetch_environments_from_bapi() -> list:
     token = subprocess.check_output(
         ["az", "account", "get-access-token",
@@ -244,6 +244,72 @@ def _get_tenant_id_from_az() -> str:
     ).decode().strip()
 
 
+# ── Bot discovery per environment ─────────────────────────────────────────────
+def _fetch_bots_for_env(org_url: str) -> list:
+    if not org_url.startswith("http"):
+        org_url = "https://" + org_url
+    token = subprocess.check_output(
+        ["az", "account", "get-access-token",
+         "--resource", org_url.rstrip("/") + "/",
+         "--query", "accessToken", "-o", "tsv"],
+        stderr=subprocess.DEVNULL,
+    ).decode().strip()
+    resp = requests.get(
+        f"{org_url}/api/data/v9.2/bots",
+        params={"$select": "botid,name,schemaname,statecode", "$filter": "statecode eq 0"},
+        headers={"Authorization": f"Bearer {token}", "OData-MaxVersion": "4.0",
+                 "Accept": "application/json"},
+        timeout=20,
+    )
+    resp.raise_for_status()
+    return resp.json().get("value", [])
+
+
+def _pick_bots(env: dict):
+    """Populate env['monitoredBots'] with selected schemanames. Empty list = all."""
+    print(f"\n  {CY}{BD}── 🤖 Bots in  {BD}{env['name']}{RS}  {'─' * 20}{RS}")
+    try:
+        bots = with_spinner(f"Fetching bots…", _fetch_bots_for_env, env["orgUrl"])
+    except Exception as e:
+        step_fail(f"Could not fetch bots ({e}) — will monitor all")
+        env["monitoredBots"] = []
+        return
+
+    if not bots:
+        hint("No active bots found — will monitor all when any appear.")
+        env["monitoredBots"] = []
+        return
+
+    print()
+    print(f"  {CY}{BD}╔═══ Active bots {'═' * 36}╗{RS}")
+    print()
+    for i, b in enumerate(bots, 1):
+        print(f"    {GR}{BD}{i:>2}{RS}  {CY}●{RS}  {BD}{b['name']:<34}{RS}  {DM}{b['schemaname']}{RS}")
+    print()
+    print(f"  {CY}{BD}╚{'═' * 52}╝{RS}")
+    print()
+    hint("Enter numbers to monitor, comma-separated — or 'all'.")
+    sel = ask("  Monitor bots", "all")
+
+    if sel.strip().lower() == "all":
+        env["monitoredBots"] = []
+    else:
+        chosen = []
+        for part in sel.split(","):
+            part = part.strip()
+            try:
+                chosen.append(bots[int(part) - 1]["schemaname"])
+            except (ValueError, IndexError):
+                print(f"  {YL}  Skipping invalid: {part}{RS}")
+        env["monitoredBots"] = chosen if chosen else []
+
+    if env["monitoredBots"]:
+        for sn in env["monitoredBots"]:
+            step_ok(sn)
+    else:
+        step_ok("All active bots")
+
+
 # ── Step handlers ─────────────────────────────────────────────────────────────
 def _step_environments_manual() -> list:
     hint("Add one or more Power Platform environments to monitor.")
@@ -260,7 +326,8 @@ def _step_environments_manual() -> list:
                 continue
             break
         env_id = ask("  Environment ID  (e.g. orge71ae48e)")
-        envs.append({"name": name, "orgUrl": org.rstrip("/"), "environmentId": env_id})
+        envs.append({"name": name, "orgUrl": org.rstrip("/"), "environmentId": env_id,
+                     "monitoredBots": []})
         step_ok(f"Added: {BD}{name}{RS}  {DM}{org}{RS}")
         print()
         more = ask("  Add another? [y/N]", "N")
@@ -285,8 +352,7 @@ def step_environments() -> list:
         return _step_environments_manual()
 
     print()
-    border = "═" * 52
-    print(f"  {CY}{BD}╔═══ 🌐 Available Environments {border[:24]}╗{RS}")
+    print(f"  {CY}{BD}╔═══ 🌐 Available Environments {'═' * 24}╗{RS}")
     print()
     for i, env in enumerate(raw, 1):
         org_short = env["orgUrl"].replace("https://", "")
@@ -315,6 +381,12 @@ def step_environments() -> list:
     print()
     for env in chosen:
         step_ok(f"{BD}{env['name']}{RS}  {DM}{env['orgUrl']}{RS}")
+
+    # Bot picker — one sub-section per environment
+    print()
+    for env in chosen:
+        _pick_bots(env)
+
     return chosen
 
 
@@ -354,9 +426,9 @@ def step_smtp() -> dict:
     hint("Drift reports are emailed as HTML. Leave host blank to skip.\n")
     print(f"  {DM}{'─' * 52}{RS}")
     print(f"  {CY}{BD}📄 config.json{RS}  — written to your project root when this wizard finishes.")
-    print(f"  {DM}   It stores all settings: environments, credentials, poll interval,{RS}")
-    print(f"  {DM}   LLM config, and SMTP below. You can edit it by hand at any time{RS}")
-    print(f"  {DM}   or re-run  {RS}{CY}drift setup{RS}{DM}  to update any section.{RS}")
+    print(f"  {DM}   Stores environments + monitored bots, credentials, poll interval,{RS}")
+    print(f"  {DM}   LLM config, and SMTP. Edit by hand at any time or re-run{RS}")
+    print(f"  {DM}   {RS}{CY}drift setup{RS}{DM}  to update any section.{RS}")
     print(f"  {DM}{'─' * 52}{RS}\n")
     host = ask("SMTP host", "smtp.office365.com")
     if not host:
@@ -391,7 +463,9 @@ def print_summary(cfg: dict):
     llm       = cfg.get("llm", {})
     print(f"\n  {GR}{BD}  ┌─ Configuration ─────────────────────────────────┐{RS}")
     for env in cfg.get("environments", []):
-        print(f"  {GR}{BD}  │{RS}  {CY}●{RS}  {BD}{env['name']}{RS}  {DM}{env['orgUrl']}{RS}")
+        bots = env.get("monitoredBots", [])
+        bot_label = f"{len(bots)} bot(s)" if bots else "all bots"
+        print(f"  {GR}{BD}  │{RS}  {CY}●{RS}  {BD}{env['name']}{RS}  {DM}{bot_label}{RS}")
     print(f"  {GR}{BD}  │{RS}  {DM}Poll every        {RS}{cfg.get('poll_interval_minutes', 10)} min")
     print(f"  {GR}{BD}  │{RS}  {DM}LLM model         {RS}{llm.get('model', '—')}")
     print(f"  {GR}{BD}  │{RS}  {DM}Reports to        {RS}{recipient}")
@@ -400,7 +474,7 @@ def print_summary(cfg: dict):
 
 # ── Top-level re-run menu ─────────────────────────────────────────────────────
 _MENU = [
-    ("🌐", "Environments"),
+    ("🌐", "Environments & monitored bots"),
     ("🔑", "Credentials"),
     ("⚙️ ", "Agent Settings"),
     ("🔐", "Sign-In"),
@@ -443,7 +517,7 @@ def _run_step(n: str, cfg: dict):
                 print(f"\n  {GR}{BD}✓  Signed in!{RS}  Token cached → msal_token_cache.json")
             except Exception as e:
                 step_fail(f"Auth failed: {e}")
-                hint("Re-run bootstrap.py to retry sign-in.")
+                hint("Re-run  drift setup  to retry sign-in.")
         else:
             hint("Credentials not in config — run step 2 first.")
         section_ok(4, "Sign-In")
@@ -470,14 +544,13 @@ def main():
             step_ok("config.json updated")
             print()
             return
-        # choice == "0" or anything else → full wizard, start fresh
         cfg = {}
     else:
         slow(f"  {DM}Welcome. Five steps and you're done.{RS}", delay=0.018)
         time.sleep(0.3)
         cfg = {}
 
-    # Step 1 — Environments
+    # Step 1 — Environments + bot picker
     section_header(1, "🌐", "Power Platform Environments")
     cfg["environments"] = step_environments()
     section_ok(1, "Environments")
@@ -524,24 +597,25 @@ def main():
     print(f"  {CY}{BD}📁 Project layout{RS}")
     print(f"  {DM}{'─' * 40}{RS}")
     tree = [
-        (".",             "project root"),
-        ("├── agent/",    "polling agent package"),
-        ("│   ├── main.py",    "entry point — poll loop"),
-        ("│   ├── auth.py",    "MSAL + self-healing device flow"),
-        ("│   ├── dataverse.py","bot discovery (#monitor gate)"),
-        ("│   ├── eval_client.py","Copilot Studio Eval API"),
-        ("│   ├── reasoning.py","LLM drift analysis"),
-        ("│   ├── store.py",   "run history (local JSON)"),
-        ("│   ├── notifier.py","SMTP email"),
-        ("│   └── report.py",  "HTML report generator"),
-        ("├── dashboard/", "Streamlit read-only UI"),
-        ("│   └── app.py",     "fleet heatmap, radar, trends"),
-        ("├── .streamlit/", "dark theme config"),
-        ("├── bootstrap.py","← you are here (setup wizard)"),
-        ("├── config.json", "generated by this wizard"),
-        ("├── Dockerfile",  "production container"),
-        ("├── requirements.txt","Python deps"),
-        ("└── README.md",  "full docs"),
+        (".",                      "project root"),
+        ("├── agent/",             "agent package"),
+        ("│   ├── main.py",        "poll loop entry point"),
+        ("│   ├── wizard.py",      "this setup wizard"),
+        ("│   ├── auth.py",        "MSAL + self-healing device flow"),
+        ("│   ├── dataverse.py",   "bot discovery + monitoredBots filter"),
+        ("│   ├── eval_client.py", "Copilot Studio Eval API"),
+        ("│   ├── reasoning.py",   "LLM drift analysis"),
+        ("│   ├── store.py",       "run history (local JSON)"),
+        ("│   ├── notifier.py",    "SMTP email"),
+        ("│   └── report.py",      "HTML report generator"),
+        ("├── dashboard/",         "Streamlit read-only UI"),
+        ("│   └── app.py",         "fleet heatmap, radar, trends"),
+        ("├── .streamlit/",        "dark theme config"),
+        ("├── drift / drift.bat",  "CLI entry points"),
+        ("├── config.json",        "← generated by this wizard"),
+        ("├── Dockerfile",         "production container"),
+        ("├── requirements.txt",   "Python deps"),
+        ("└── README.md",          "full docs"),
     ]
     for path, desc in tree:
         print(f"  {DM}{path:<32}{RS}  {DM}{desc}{RS}")
