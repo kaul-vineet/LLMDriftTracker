@@ -259,12 +259,20 @@ def render_agent_controls():
             time.sleep(1)
             st.rerun()
     pending = os.path.exists(trigger_path)
-    if pending:
+    if running and pending:
         st.markdown(
             f"<div style='color:{C_GOLD};font-size:0.7rem;font-family:{FONT};"
             f"text-align:center;padding:6px'>⏳ Eval queued</div>",
             unsafe_allow_html=True,
         )
+    elif not running and pending:
+        # Stale trigger — agent never ran to consume it; offer to clear
+        if st.button("✕ Clear stale trigger", use_container_width=True, type="secondary"):
+            try:
+                os.remove(trigger_path)
+            except Exception:
+                pass
+            st.rerun()
     else:
         if st.button("▶ Force Eval Now", use_container_width=True, type="secondary"):
             os.makedirs(STORE_DIR, exist_ok=True)
