@@ -27,17 +27,20 @@ st.markdown(f"""
   /* Radar sweep */
   .radar-wrap {{
     position:relative; width:220px; height:220px; margin:0 auto 24px;
+    border-radius:50%;
+    background:radial-gradient(circle, rgba(0,15,25,0.95) 0%, rgba(0,5,10,0.98) 100%);
+    box-shadow: 0 0 40px rgba(0,240,255,0.12), inset 0 0 60px rgba(0,0,0,0.7);
   }}
   .ring {{
     position:absolute; border-radius:50%; border:1px solid;
     top:50%; left:50%; transform:translate(-50%,-50%);
   }}
-  .r1 {{ width:220px;height:220px; border-color:rgba(0,240,255,0.15); }}
-  .r2 {{ width:160px;height:160px; border-color:rgba(0,240,255,0.25); }}
-  .r3 {{ width:100px;height:100px; border-color:rgba(0,240,255,0.40); }}
-  .r4 {{ width:44px;height:44px;   border-color:{C_CYAN}; }}
+  .r1 {{ width:220px;height:220px; border-color:rgba(0,240,255,0.30); }}
+  .r2 {{ width:160px;height:160px; border-color:rgba(0,240,255,0.45); }}
+  .r3 {{ width:100px;height:100px; border-color:rgba(0,240,255,0.65); }}
+  .r4 {{ width:44px;height:44px;   border-color:{C_CYAN}; box-shadow:0 0 8px {C_CYAN}; }}
   .radar-h,.radar-v {{
-    position:absolute; background:rgba(0,240,255,0.12);
+    position:absolute; background:rgba(0,240,255,0.20);
     top:50%; left:50%; transform:translate(-50%,-50%);
   }}
   .radar-h {{ width:220px; height:1px; }}
@@ -45,15 +48,15 @@ st.markdown(f"""
   .sweep {{
     position:absolute; top:0; left:0; width:100%; height:100%;
     border-radius:50%;
-    background: conic-gradient(rgba(0,240,255,0) 0deg, rgba(0,240,255,0) 270deg,
-                                rgba(0,240,255,0.35) 310deg, rgba(0,240,255,0.6) 350deg,
-                                rgba(0,240,255,0) 360deg);
+    background: conic-gradient(rgba(0,240,255,0) 0deg, rgba(0,240,255,0) 250deg,
+                                rgba(0,240,255,0.15) 290deg, rgba(0,240,255,0.55) 340deg,
+                                rgba(0,240,255,0.85) 358deg, rgba(0,240,255,0) 360deg);
     animation: spin 3s linear infinite;
   }}
   .center-dot {{
     position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-    width:8px; height:8px; border-radius:50%;
-    background:{C_CYAN}; box-shadow:0 0 12px {C_CYAN};
+    width:10px; height:10px; border-radius:50%;
+    background:{C_CYAN}; box-shadow:0 0 16px {C_CYAN}, 0 0 30px rgba(0,240,255,0.5);
   }}
   @keyframes spin {{ from{{transform:rotate(0deg)}} to{{transform:rotate(360deg)}} }}
   @keyframes blink {{ 0%,100%{{opacity:1}} 50%{{opacity:0.25}} }}
