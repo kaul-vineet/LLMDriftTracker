@@ -68,7 +68,17 @@ def _msal_app(client_id, tenant_id, cache):
         token_cache=cache,
     )
 
+def _cache_accounts(client_id, tenant_id, cache_file):
+    """Local-only check — no network call. Returns list of accounts in cache."""
+    try:
+        cache = _load_cache(cache_file)
+        app   = _msal_app(client_id, tenant_id, cache)
+        return app.get_accounts()
+    except Exception:
+        return []
+
 def _token_silent(scopes, client_id, tenant_id, cache_file):
+    """Full silent acquisition — may make a network call to refresh the token."""
     cache = _load_cache(cache_file)
     app   = _msal_app(client_id, tenant_id, cache)
     accs  = app.get_accounts()
@@ -207,16 +217,19 @@ if not _can_auth:
     st.markdown("<div class='status-dim'>Enter Client ID and Tenant ID above first.</div>",
                 unsafe_allow_html=True)
 else:
-    # Check existing token
-    _tok, _accs = _token_silent(
-        EVAL_SCOPES, st.session_state.s_client_id,
-        st.session_state.s_tenant_id, st.session_state.s_cache_file,
+    # Local cache check only — consistent with sidebar, no network call
+    _cached_accs = _cache_accounts(
+        st.session_state.s_client_id,
+        st.session_state.s_tenant_id,
+        st.session_state.s_cache_file,
     )
-    if _tok and not st.session_state.get("s_force_reauth"):
-        st.session_state.s_token   = _tok
-        st.session_state.s_account = _accs[0].get("username", "—") if _accs else "—"
+    _has_cache = bool(_cached_accs) and not st.session_state.get("s_force_reauth")
+
+    if _has_cache:
+        _cached_user = _cached_accs[0].get("username", "—")
+        st.session_state.s_account = _cached_user
         st.markdown(
-            f"<div class='status-ok'>● AUTHENTICATED — {st.session_state.s_account}</div>",
+            f"<div class='status-ok'>● TOKEN VALID — {_cached_user}</div>",
             unsafe_allow_html=True,
         )
         if st.button("Re-authenticate", key="btn_reauth", type="secondary"):
@@ -291,19 +304,28 @@ st.markdown("</div>", unsafe_allow_html=True)
 st.markdown("<div class='cfg-section'><div class='cfg-head'>3 · Environments</div>",
             unsafe_allow_html=True)
 
-if not st.session_state.s_token:
-    st.markdown("<div class='status-dim'>Authenticate above to load environments.</div>",
+if not _can_auth:
+    st.markdown("<div class='status-dim'>Enter Client ID and Tenant ID above first.</div>",
                 unsafe_allow_html=True)
 else:
     col_e1, col_e2 = st.columns([1, 4])
     with col_e1:
         if st.button("Load Environments", key="btn_load_envs"):
-            with st.spinner("Fetching from Power Platform BAPI…"):
-                envs, err = _fetch_envs(st.session_state.s_token)
-            if err:
-                st.error(f"BAPI error: {err}")
+            with st.spinner("Acquiring token…"):
+                tok, _ = _token_silent(
+                    EVAL_SCOPES, st.session_state.s_client_id,
+                    st.session_state.s_tenant_id, st.session_state.s_cache_file,
+                )
+            if not tok:
+                st.error("Token acquisition failed — sign in first (Section 2).")
             else:
-                st.session_state.s_envs = envs
+                st.session_state.s_token = tok
+                with st.spinner("Fetching from Power Platform BAPI…"):
+                    envs, err = _fetch_envs(tok)
+                if err:
+                    st.error(f"BAPI error: {err}")
+                else:
+                    st.session_state.s_envs = envs
     with col_e2:
         if st.session_state.s_envs:
             st.caption(f"{len(st.session_state.s_envs)} environment(s) found")
