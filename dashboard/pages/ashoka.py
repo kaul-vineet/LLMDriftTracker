@@ -447,9 +447,9 @@ def render_header(bots, raw_events):
                   font-family:{FONT};line-height:1;
                   text-shadow:0 0 30px rgba(0,240,255,.4),0 0 60px rgba(0,240,255,.15)'>
         ASHOKA</div>
-      <div style='font-size:0.85rem;color:{C_MAGENTA};letter-spacing:3px;
+      <div style='font-size:1.2rem;color:{C_MAGENTA};letter-spacing:3px;
                   font-weight:700;margin-top:6px'>THE INCORRUPTIBLE JUDGE</div>
-      <div style='font-size:0.78rem;color:{C_DIM};letter-spacing:1px;margin-top:4px'>
+      <div style='font-size:1.0rem;color:{C_DIM};letter-spacing:1px;margin-top:4px'>
         copilot-eval-agent &nbsp;·&nbsp; {n_bots} agent{n_plural} monitored
         &nbsp;·&nbsp; {ts_str} last activity</div>
 
