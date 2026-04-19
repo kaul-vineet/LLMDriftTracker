@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from theme import C_BG, C_CARD, C_BORDER, C_CYAN, C_MAGENTA, C_GOLD, C_RED, C_GREEN, C_DIM, C_TEXT, FONT
 
 EVAL_SCOPES = ["https://api.powerplatform.com/.default"]
+BAPI_SCOPES = ["https://service.powerapps.com/.default"]
 STORE_DIR   = os.environ.get("STORE_DIR", "data")
 CONFIG_PATH = "config.json"
 DEFAULT_CLIENT_ID = "774142ce-9070-446b-83ac-e2053c716879"
@@ -46,6 +47,38 @@ st.markdown(f"""
   .status-dim {{ color:{C_DIM};   font-size:0.78rem; font-family:{FONT}; }}
 </style>
 """, unsafe_allow_html=True)
+
+
+def _radar_spinner(placeholder, label="SCANNING"):
+    placeholder.markdown(f"""
+    <style>@keyframes rspin{{from{{transform:rotate(0deg)}}to{{transform:rotate(360deg)}}}}</style>
+    <div style="display:flex;flex-direction:column;align-items:center;padding:28px 0">
+      <div style="position:relative;width:90px;height:90px;border-radius:50%;
+                  background:radial-gradient(circle,rgba(0,15,25,0.97) 0%,rgba(0,5,10,0.99) 100%);
+                  box-shadow:0 0 30px rgba(0,240,255,0.18),inset 0 0 40px rgba(0,0,0,0.7)">
+        <div style="position:absolute;border-radius:50%;border:1px solid rgba(0,240,255,0.25);
+                    width:90px;height:90px;top:0;left:0"></div>
+        <div style="position:absolute;border-radius:50%;border:1px solid rgba(0,240,255,0.45);
+                    width:64px;height:64px;top:50%;left:50%;transform:translate(-50%,-50%)"></div>
+        <div style="position:absolute;border-radius:50%;border:1px solid rgba(0,240,255,0.7);
+                    width:38px;height:38px;top:50%;left:50%;transform:translate(-50%,-50%)"></div>
+        <div style="position:absolute;width:90px;height:90px;border-radius:50%;top:0;left:0;
+                    background:conic-gradient(rgba(0,240,255,0) 0deg,rgba(0,240,255,0) 240deg,
+                    rgba(0,240,255,0.12) 280deg,rgba(0,240,255,0.5) 340deg,
+                    rgba(0,240,255,0.8) 358deg,rgba(0,240,255,0) 360deg);
+                    animation:rspin 1.4s linear infinite"></div>
+        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+                    width:9px;height:9px;border-radius:50%;background:#00f0ff;
+                    box-shadow:0 0 12px #00f0ff,0 0 24px rgba(0,240,255,0.5)"></div>
+        <div style="position:absolute;top:50%;left:0;width:90px;height:1px;
+                    background:rgba(0,240,255,0.15)"></div>
+        <div style="position:absolute;left:50%;top:0;width:1px;height:90px;
+                    background:rgba(0,240,255,0.15)"></div>
+      </div>
+      <div style="color:#00f0ff;font-size:0.7rem;letter-spacing:4px;margin-top:14px;
+                  font-family:monospace;font-weight:700;animation:rspin 0s">{label}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 def _sec(title, ok: bool | None = None):
@@ -364,21 +397,25 @@ else:
     col_e1, col_e2 = st.columns([1, 4])
     with col_e1:
         if st.button("Load Environments", key="btn_load_envs"):
-            with st.spinner("Acquiring token…"):
-                tok, _ = _token_silent(
-                    EVAL_SCOPES, st.session_state.s_client_id,
-                    st.session_state.s_tenant_id, st.session_state.s_cache_file,
-                )
+            _ph = st.empty()
+            _radar_spinner(_ph, "AUTHENTICATING")
+            tok, _ = _token_silent(
+                BAPI_SCOPES, st.session_state.s_client_id,
+                st.session_state.s_tenant_id, st.session_state.s_cache_file,
+            )
             if not tok:
+                _ph.empty()
                 st.error("Token acquisition failed — sign in first (Section 2).")
             else:
                 st.session_state.s_token = tok
-                with st.spinner("Fetching from Power Platform BAPI…"):
-                    envs, err = _fetch_envs(tok)
+                _radar_spinner(_ph, "SCANNING BAPI")
+                envs, err = _fetch_envs(tok)
+                _ph.empty()
                 if err:
                     st.error(f"BAPI error: {err}")
                 else:
                     st.session_state.s_envs = envs
+                    st.rerun()
     with col_e2:
         if st.session_state.s_envs:
             st.caption(f"{len(st.session_state.s_envs)} environment(s) found")
@@ -419,15 +456,18 @@ else:
             col_b1, col_b2 = st.columns([1, 4])
             with col_b1:
                 if st.button("Load Bots", key=f"btn_bots_{env_name}"):
-                    with st.spinner(f"Fetching bots from {env_name}…"):
-                        bots, err = _fetch_bots(
-                            env["orgUrl"], st.session_state.s_client_id,
-                            st.session_state.s_tenant_id, st.session_state.s_cache_file,
-                        )
+                    _bph = st.empty()
+                    _radar_spinner(_bph, "SCANNING DATAVERSE")
+                    bots, err = _fetch_bots(
+                        env["orgUrl"], st.session_state.s_client_id,
+                        st.session_state.s_tenant_id, st.session_state.s_cache_file,
+                    )
+                    _bph.empty()
                     if err:
                         st.error(f"{err}")
                     else:
                         st.session_state.s_bots[env_name] = bots
+                        st.rerun()
             with col_b2:
                 nb = len(st.session_state.s_bots.get(env_name, []))
                 if nb:
@@ -481,8 +521,10 @@ _api_key = os.environ.get("LLM_API_KEY", "")
 col_t1, col_t2 = st.columns([1, 4])
 with col_t1:
     if st.button("Test LLM", key="btn_test_llm", disabled=not llm_url.strip()):
-        with st.spinner("Calling LLM…"):
-            ok, err = _test_llm(llm_url.strip(), llm_model.strip(), _api_key)
+        _lph = st.empty()
+        _radar_spinner(_lph, "PINGING LLM")
+        ok, err = _test_llm(llm_url.strip(), llm_model.strip(), _api_key)
+        _lph.empty()
         os.makedirs(STORE_DIR, exist_ok=True)
         import json as _json
         open(_llm_status_path(), "w").write(_json.dumps({"ok": ok, "error": err or ""}))

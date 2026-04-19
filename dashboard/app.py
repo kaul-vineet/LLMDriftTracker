@@ -293,7 +293,10 @@ def render_agent_controls():
             f"font-family:{FONT}'>○ AGENT STOPPED</div></div>",
             unsafe_allow_html=True,
         )
-        if st.button("▶ Start Agent", use_container_width=True, type="primary"):
+        _ready, _ = _get_readiness()
+        if st.button("▶ Start Agent", use_container_width=True, type="primary",
+                     disabled=not _ready,
+                     help=None if _ready else "Complete setup before starting the agent"):
             _start_agent()
             time.sleep(1)
             st.rerun()
