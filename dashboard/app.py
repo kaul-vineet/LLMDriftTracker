@@ -243,6 +243,7 @@ st.markdown(f"""
 
 # ── Data layer ────────────────────────────────────────────────────────────────
 STORE_DIR = os.environ.get("STORE_DIR", "data")
+PID_FILE  = os.path.join(STORE_DIR, "agent.pid")
 
 
 def _load_json(path: str) -> dict:
@@ -562,10 +563,101 @@ def render_auth_status():
         )
 
 
-def render_trigger_button():
-    trigger_path = os.path.join(STORE_DIR, "force_eval.trigger")
-    pending      = os.path.exists(trigger_path)
+def _read_pid() -> int | None:
+    try:
+        return int(open(PID_FILE).read().strip())
+    except Exception:
+        return None
 
+
+def _is_pid_alive(pid: int) -> bool:
+    import sys as _sys
+    try:
+        if _sys.platform == "win32":
+            import subprocess as _sp
+            r = _sp.run(
+                ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+                capture_output=True, text=True, timeout=3,
+            )
+            return str(pid) in r.stdout
+        else:
+            import os as _os
+            _os.kill(pid, 0)
+            return True
+    except Exception:
+        return False
+
+
+def _agent_running() -> bool:
+    pid = _read_pid()
+    return pid is not None and _is_pid_alive(pid)
+
+
+def _start_agent():
+    import subprocess as _sp
+    import sys as _sys
+    kwargs: dict = {"stdout": _sp.DEVNULL, "stderr": _sp.DEVNULL}
+    if _sys.platform == "win32":
+        kwargs["creationflags"] = _sp.CREATE_NO_WINDOW
+    proc = _sp.Popen([_sys.executable, "-m", "agent.main"], **kwargs)
+    os.makedirs(STORE_DIR, exist_ok=True)
+    open(PID_FILE, "w").write(str(proc.pid))
+
+
+def _stop_agent():
+    pid = _read_pid()
+    if not pid:
+        return
+    import sys as _sys
+    try:
+        if _sys.platform == "win32":
+            import subprocess as _sp
+            _sp.run(["taskkill", "/F", "/PID", str(pid)],
+                    capture_output=True, check=False)
+        else:
+            import signal as _sig
+            import os as _os
+            _os.kill(pid, _sig.SIGTERM)
+    except Exception:
+        pass
+    try:
+        os.remove(PID_FILE)
+    except Exception:
+        pass
+
+
+def render_agent_controls():
+    running      = _agent_running()
+    trigger_path = os.path.join(STORE_DIR, "force_eval.trigger")
+
+    if running:
+        pid = _read_pid()
+        st.markdown(
+            f"<div style='background:rgba(40,200,64,.06);border:1px solid rgba(40,200,64,.25);"
+            f"border-radius:6px;padding:8px 12px;margin-bottom:8px'>"
+            f"<div style='color:{C_GREEN};font-size:0.65rem;font-weight:700;"
+            f"letter-spacing:1px;font-family:{FONT}'>● AGENT RUNNING &nbsp;·&nbsp; PID {pid}</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        if st.button("■ Stop Agent", use_container_width=True, type="secondary"):
+            _stop_agent()
+            st.rerun()
+    else:
+        st.markdown(
+            f"<div style='background:{C_CARD};border:1px solid {C_BORDER};"
+            f"border-radius:6px;padding:8px 12px;margin-bottom:8px'>"
+            f"<div style='color:{C_DIM};font-size:0.65rem;font-weight:700;"
+            f"letter-spacing:1px;font-family:{FONT}'>○ AGENT STOPPED</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        if st.button("▶ Start Agent", use_container_width=True, type="primary"):
+            _start_agent()
+            time.sleep(1)
+            st.rerun()
+
+    pending = os.path.exists(trigger_path)
     if pending:
         st.markdown(
             f"<div style='color:{C_GOLD};font-size:0.7rem;font-family:{FONT};"
@@ -573,7 +665,7 @@ def render_trigger_button():
             unsafe_allow_html=True,
         )
     else:
-        if st.button("▶ Run Eval Now", use_container_width=True, type="primary"):
+        if st.button("▶ Force Eval Now", use_container_width=True, type="secondary"):
             os.makedirs(STORE_DIR, exist_ok=True)
             open(trigger_path, "w").write(datetime.now(timezone.utc).isoformat())
             st.rerun()
@@ -915,7 +1007,7 @@ def render_sidebar(bots: list[dict]) -> str | None:
         """, unsafe_allow_html=True)
 
         render_auth_status()
-        render_trigger_button()
+        render_agent_controls()
 
         st.markdown(f"<div style='border-top:1px solid {C_BORDER};margin:10px 0'></div>",
                     unsafe_allow_html=True)

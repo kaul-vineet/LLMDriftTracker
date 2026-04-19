@@ -43,7 +43,8 @@ def load_tracking(store_dir: str, bot_id: str) -> dict:
 
 def save_tracking(store_dir: str, bot_id: str, model_version: str,
                   trigger_guid: str | None,
-                  bot_name: str = "", env_name: str = ""):
+                  bot_name: str = "", env_name: str = "",
+                  env_id: str = "", org_url: str = ""):
     path     = os.path.join(_bot_dir(store_dir, bot_id), "tracking.json")
     existing = _load_json(path)
     data = {
@@ -51,6 +52,8 @@ def save_tracking(store_dir: str, bot_id: str, model_version: str,
         "botId":            bot_id,
         "botName":          bot_name or existing.get("botName", bot_id),
         "envName":          env_name or existing.get("envName", ""),
+        "envId":            env_id   or existing.get("envId",   ""),
+        "orgUrl":           org_url  or existing.get("orgUrl",  ""),
         "modelVersion":     model_version,
         "lastTriggerGuid":  trigger_guid,
         "updatedAt":        datetime.now(timezone.utc).isoformat(),
@@ -66,7 +69,8 @@ def model_changed(store_dir: str, bot_id: str, current_model: str) -> bool:
 
 def save_trigger(store_dir: str, bot_id: str, trigger_guid: str,
                  model_version: str, results_by_type: dict[str, dict],
-                 analysis: str = ""):
+                 analysis: str = "", bot_name: str = "",
+                 env_name: str = "", env_id: str = "", org_url: str = ""):
     """
     Save all test set results for one trigger event.
     results_by_type: dict[metric_type -> full API run result]
@@ -78,6 +82,11 @@ def save_trigger(store_dir: str, bot_id: str, trigger_guid: str,
     meta = {
         "triggerGuid":  trigger_guid,
         "triggeredAt":  ts,
+        "botId":        bot_id,
+        "botName":      bot_name,
+        "envId":        env_id,
+        "envName":      env_name,
+        "orgUrl":       org_url,
         "modelVersion": model_version,
         "metricTypes":  list(results_by_type.keys()),
         "analysis":     analysis,
@@ -86,10 +95,15 @@ def save_trigger(store_dir: str, bot_id: str, trigger_guid: str,
 
     for metric_type, result in results_by_type.items():
         payload = {
-            "metricType": metric_type,
-            "apiRunId":   result.get("id", result.get("runId", "unknown")),
-            "storedAt":   ts,
-            "results":    result,
+            "metricType":  metric_type,
+            "apiRunId":    result.get("id", result.get("runId", "unknown")),
+            "storedAt":    ts,
+            "triggerGuid": trigger_guid,
+            "botId":       bot_id,
+            "botName":     bot_name,
+            "envId":       env_id,
+            "orgUrl":      org_url,
+            "results":     result,
         }
         safe_name = metric_type.replace("/", "_").replace("\\", "_")
         open(os.path.join(trigger_dir, f"{safe_name}.json"), "w").write(

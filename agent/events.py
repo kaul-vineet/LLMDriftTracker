@@ -56,17 +56,32 @@ def model_change(store_dir: str, bot_name: str, bot_id: str, old_ver: str, new_v
            extra={"oldModel": old_ver, "newModel": new_ver})
 
 
-def eval_start(store_dir: str, bot_name: str, bot_id: str, test_set_count: int = 0):
+def eval_start(store_dir: str, bot_name: str, bot_id: str, test_set_count: int = 0,
+               trigger_guid: str = "", env_id: str = ""):
     detail = f"Running {test_set_count} test set(s)" if test_set_count else "Eval triggered — fetching test sets"
-    _write(store_dir, "eval_start", bot_name=bot_name, bot_id=bot_id, detail=detail)
+    extra: dict = {}
+    if trigger_guid:
+        extra["triggerGuid"] = trigger_guid
+    if env_id:
+        extra["envId"] = env_id
+    _write(store_dir, "eval_start", bot_name=bot_name, bot_id=bot_id, detail=detail,
+           extra=extra or None)
 
 
 def eval_complete(store_dir: str, bot_name: str, bot_id: str,
-                  pass_rate: float, avg_score: float, verdict: str):
+                  pass_rate: float, avg_score: float, verdict: str,
+                  trigger_guid: str = "", env_id: str = "", duration_secs: int | None = None):
     pct = f"{pass_rate * 100:.0f}%"
+    extra: dict = {"passRate": pass_rate, "avgScore": avg_score, "verdict": verdict}
+    if trigger_guid:
+        extra["triggerGuid"] = trigger_guid
+    if env_id:
+        extra["envId"] = env_id
+    if duration_secs is not None:
+        extra["durationSecs"] = duration_secs
     _write(store_dir, "eval_complete", bot_name=bot_name, bot_id=bot_id,
            detail=f"pass {pct}  ·  avg score {avg_score:.1f}  ·  {verdict}",
-           extra={"passRate": pass_rate, "avgScore": avg_score, "verdict": verdict})
+           extra=extra)
 
 
 def eval_timeout(store_dir: str, bot_name: str, bot_id: str):
@@ -79,16 +94,26 @@ def eval_no_sets(store_dir: str, bot_name: str, bot_id: str):
            detail="No test sets found — skipping eval")
 
 
-def regression(store_dir: str, bot_name: str, bot_id: str, metrics: list[str]):
+def regression(store_dir: str, bot_name: str, bot_id: str, metrics: list[str],
+               trigger_guid: str = "", env_id: str = ""):
+    extra: dict = {"metrics": metrics}
+    if trigger_guid:
+        extra["triggerGuid"] = trigger_guid
+    if env_id:
+        extra["envId"] = env_id
     _write(store_dir, "regression", bot_name=bot_name, bot_id=bot_id,
-           detail=f"Regression in: {', '.join(metrics)}",
-           extra={"metrics": metrics})
+           detail=f"Regression in: {', '.join(metrics)}", extra=extra)
 
 
-def improvement(store_dir: str, bot_name: str, bot_id: str, metrics: list[str]):
+def improvement(store_dir: str, bot_name: str, bot_id: str, metrics: list[str],
+                trigger_guid: str = "", env_id: str = ""):
+    extra: dict = {"metrics": metrics}
+    if trigger_guid:
+        extra["triggerGuid"] = trigger_guid
+    if env_id:
+        extra["envId"] = env_id
     _write(store_dir, "improvement", bot_name=bot_name, bot_id=bot_id,
-           detail=f"Improved: {', '.join(metrics)}",
-           extra={"metrics": metrics})
+           detail=f"Improved: {', '.join(metrics)}", extra=extra)
 
 
 def stable(store_dir: str, bot_name: str, bot_id: str):
