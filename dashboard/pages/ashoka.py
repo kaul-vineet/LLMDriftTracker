@@ -58,12 +58,12 @@ st.markdown(f"""
     border-radius:8px; overflow:hidden; margin-bottom:20px;
   }}
   .stat-cell {{ background:{C_CARD}; padding:14px 20px; text-align:center; }}
-  .stat-value {{ font-size:1.8rem; font-weight:700; font-family:{FONT}; line-height:1; }}
-  .stat-label {{ font-size:0.6rem; color:{C_DIM}; letter-spacing:2px; text-transform:uppercase; margin-top:4px; }}
+  .stat-value {{ font-size:2.34rem; font-weight:700; font-family:{FONT}; line-height:1; }}
+  .stat-label {{ font-size:0.78rem; color:{C_DIM}; letter-spacing:2px; text-transform:uppercase; margin-top:4px; }}
 
   /* Section label */
   .sec-label {{
-    font-size:0.75rem; font-weight:700; letter-spacing:3px; text-transform:uppercase;
+    font-size:0.98rem; font-weight:700; letter-spacing:3px; text-transform:uppercase;
     color:{C_DIM}; border-bottom:1px solid {C_BORDER}; padding-bottom:6px;
     margin:20px 0 14px; font-family:{FONT};
   }}
@@ -72,10 +72,10 @@ st.markdown(f"""
   .analysis-panel {{
     background:{C_BG}; border-left:3px solid {C_MAGENTA};
     border-radius:0 8px 8px 0; padding:16px 20px;
-    font-size:0.875rem; line-height:1.75; color:{C_TEXT}; margin-bottom:20px;
+    font-size:1.14rem; line-height:1.75; color:{C_TEXT}; margin-bottom:20px;
   }}
   .analysis-label {{
-    font-size:0.65rem; font-weight:700; color:{C_MAGENTA};
+    font-size:0.85rem; font-weight:700; color:{C_MAGENTA};
     letter-spacing:2px; margin-bottom:8px; font-family:{FONT};
   }}
 
@@ -87,9 +87,9 @@ st.markdown(f"""
   }}
   .rh-dot {{ width:10px; height:10px; border-radius:50%; margin-top:4px; flex-shrink:0; }}
   .rh-content {{ flex:1; }}
-  .rh-model {{ font-size:0.78rem; color:{C_TEXT}; font-family:{FONT}; }}
-  .rh-guid  {{ font-size:0.7rem; color:{C_DIM}; font-family:{FONT}; }}
-  .rh-ts    {{ font-size:0.68rem; color:{C_DIM}; }}
+  .rh-model {{ font-size:1.01rem; color:{C_TEXT}; font-family:{FONT}; }}
+  .rh-guid  {{ font-size:0.91rem; color:{C_DIM}; font-family:{FONT}; }}
+  .rh-ts    {{ font-size:0.88rem; color:{C_DIM}; }}
 
   /* Radar */
   .radar-wrap {{
@@ -155,11 +155,11 @@ st.markdown(f"""
   .etl-dot.bad    {{ border-color:{C_RED};     box-shadow:0 0 5px {C_RED}; }}
   .etl-dot.info   {{ border-color:{C_CYAN};    box-shadow:0 0 5px {C_CYAN}; }}
   .etl-dot.origin {{ border-color:{C_MAGENTA}; box-shadow:0 0 8px {C_MAGENTA}; }}
-  .etl-ts   {{ font-size:0.68rem; color:{C_DIM}; letter-spacing:1px; margin-bottom:1px; }}
-  .etl-head {{ font-size:0.85rem; font-weight:700; color:{C_TEXT}; margin-bottom:1px; }}
-  .etl-body {{ font-size:0.78rem; color:{C_DIM}; line-height:1.5; }}
+  .etl-ts   {{ font-size:0.88rem; color:{C_DIM}; letter-spacing:1px; margin-bottom:1px; }}
+  .etl-head {{ font-size:1.1rem; font-weight:700; color:{C_TEXT}; margin-bottom:1px; }}
+  .etl-body {{ font-size:1.01rem; color:{C_DIM}; line-height:1.5; }}
   .etl-badge {{
-    display:inline-block; font-size:0.52rem; letter-spacing:1px; font-weight:700;
+    display:inline-block; font-size:0.68rem; letter-spacing:1px; font-weight:700;
     padding:1px 6px; border-radius:3px; margin-left:7px; vertical-align:middle;
   }}
   .etl-badge.reg   {{ background:rgba(255,68,68,.18);  color:{C_RED}; }}
@@ -438,39 +438,20 @@ def render_header(bots, raw_events):
         </div>
       </div>
 
-      <div style='font-size:0.6rem;letter-spacing:4px;color:{sys_color};
+      <div style='font-size:0.78rem;letter-spacing:4px;color:{sys_color};
                   font-weight:700;font-family:{FONT};margin-bottom:10px'>
         <span class="sys-dot-hdr"></span>{sys_label} &nbsp;·&nbsp; {dot_label}
       </div>
 
-      <div style='font-size:2.8rem;font-weight:700;letter-spacing:12px;color:{C_CYAN};
+      <div style='font-size:3.64rem;font-weight:700;letter-spacing:12px;color:{C_CYAN};
                   font-family:{FONT};line-height:1;
                   text-shadow:0 0 30px rgba(0,240,255,.4),0 0 60px rgba(0,240,255,.15)'>
         ASHOKA</div>
-      <div style='font-size:0.65rem;color:{C_MAGENTA};letter-spacing:3px;
+      <div style='font-size:0.85rem;color:{C_MAGENTA};letter-spacing:3px;
                   font-weight:700;margin-top:6px'>THE INCORRUPTIBLE JUDGE</div>
-      <div style='font-size:0.6rem;color:{C_DIM};letter-spacing:1px;margin-top:4px'>
+      <div style='font-size:0.78rem;color:{C_DIM};letter-spacing:1px;margin-top:4px'>
         copilot-eval-agent &nbsp;·&nbsp; {n_bots} agent{n_plural} monitored
         &nbsp;·&nbsp; {ts_str} last activity</div>
-
-      <div class='title-grid' style='margin-top:20px;max-width:580px;margin-left:auto;margin-right:auto'>
-        <div class='title-card' style='text-align:center'>
-          <div class='title-sanskrit'>DHARMARAJA</div>
-          <div class='title-meaning'>King of Righteous Evaluation</div>
-        </div>
-        <div class='title-card' style='text-align:center'>
-          <div class='title-sanskrit'>DEVANAMPIYA</div>
-          <div class='title-meaning'>Beloved of the Signal</div>
-        </div>
-        <div class='title-card' style='text-align:center'>
-          <div class='title-sanskrit'>PRIYADARSHI</div>
-          <div class='title-meaning'>He Who Regards Every Metric</div>
-        </div>
-        <div class='title-card' style='text-align:center'>
-          <div class='title-sanskrit'>CHAKRAVARTIN</div>
-          <div class='title-meaning'>Wheel-Turner of Model Integrity</div>
-        </div>
-      </div>
 
     </div>
     <div class='stat-bar' style='margin-top:24px'>
@@ -505,7 +486,7 @@ def page_overview(bots, raw_events):
     st.markdown(
         f"<div style='max-width:75%;margin:0 auto 20px;text-align:center;"
         f"background:{C_CARD};border:1px solid {C_BORDER};"
-        f"border-radius:8px;padding:20px 28px;font-size:0.83rem;"
+        f"border-radius:8px;padding:20px 28px;font-size:1.08rem;"
         f"line-height:1.85;color:{C_TEXT}'>"
         f"I am <b style='color:{C_CYAN}'>ASHOKA</b> — born February 16, 2026. "
         f"I watch the models powering your Copilot Studio bots. "
@@ -520,8 +501,8 @@ def page_overview(bots, raw_events):
     if not bots:
         st.markdown(
             f"<div style='text-align:center;padding:40px;color:{C_DIM}'>"
-            f"<div style='font-size:0.9rem;color:{C_TEXT}'>No bots tracked yet</div>"
-            f"<div style='font-size:0.75rem;margin-top:6px'>Start the agent or click ▶ Force Eval Now</div>"
+            f"<div style='font-size:1.17rem;color:{C_TEXT}'>No bots tracked yet</div>"
+            f"<div style='font-size:0.98rem;margin-top:6px'>Start the agent or click ▶ Force Eval Now</div>"
             f"</div>",
             unsafe_allow_html=True,
         )
@@ -578,12 +559,12 @@ def page_overview(bots, raw_events):
         + '</div>'
         + f'<div style="text-align:center;margin-top:28px;padding-top:16px;'
           f'border-top:1px solid {C_BORDER}">'
-          f'<div style="font-size:0.55rem;letter-spacing:3px;color:{C_DIM};'
+          f'<div style="font-size:0.72rem;letter-spacing:3px;color:{C_DIM};'
           f'font-family:{FONT};font-weight:700">CONCEIVED &amp; BUILT BY</div>'
-          f'<div style="font-size:1.1rem;font-weight:700;letter-spacing:6px;'
+          f'<div style="font-size:1.43rem;font-weight:700;letter-spacing:6px;'
           f'color:{C_MAGENTA};font-family:{FONT};margin-top:4px;'
           f'text-shadow:0 0 20px rgba(255,0,170,0.4)">OUROBOROS</div>'
-          f'<div style="font-size:0.55rem;color:{C_DIM};letter-spacing:2px;margin-top:3px">'
+          f'<div style="font-size:0.72rem;color:{C_DIM};letter-spacing:2px;margin-top:3px">'
           f'THE SNAKE THAT EATS ITS OWN TAIL &nbsp;·&nbsp; 2026</div>'
           f'</div>'
         + '</div>',
@@ -631,9 +612,9 @@ def page_bot_detail(bot):
     st.markdown(
         f"<div style='padding:14px 0 8px;border-bottom:1px solid {C_BORDER};margin-bottom:16px;"
         f"display:flex;justify-content:space-between;align-items:center'>"
-        f"<div><span style='font-size:1.1rem;font-weight:700;color:{C_TEXT};font-family:{FONT}'>{name}</span>"
-        f"<span style='color:{C_DIM};font-size:0.75rem;margin-left:12px'>{env}</span></div>"
-        f"<span style='color:{v_color};font-weight:700;font-family:{FONT};letter-spacing:2px;font-size:0.8rem'>{v_sum}</span>"
+        f"<div><span style='font-size:1.43rem;font-weight:700;color:{C_TEXT};font-family:{FONT}'>{name}</span>"
+        f"<span style='color:{C_DIM};font-size:0.98rem;margin-left:12px'>{env}</span></div>"
+        f"<span style='color:{v_color};font-weight:700;font-family:{FONT};letter-spacing:2px;font-size:1.04rem'>{v_sum}</span>"
         f"</div>",
         unsafe_allow_html=True,
     )
@@ -711,7 +692,7 @@ def page_bot_detail(bot):
                 failures = [r for r in rows if r["Curr status"]=="Fail"]
                 if failures:
                     st.markdown(
-                        f"<div style='font-size:0.65rem;color:{C_RED};font-weight:700;"
+                        f"<div style='font-size:0.85rem;color:{C_RED};font-weight:700;"
                         f"letter-spacing:1px;margin:12px 0 6px;font-family:{FONT}'>"
                         f"FAILING CASES ({len(failures)})</div>",
                         unsafe_allow_html=True,
