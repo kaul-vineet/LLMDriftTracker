@@ -30,8 +30,8 @@ C_TEXT    = "#e0e0e0"
 FONT      = "'SF Mono','Cascadia Code','Fira Code',monospace"
 
 # ── Change this to swap names instantly ───────────────────────────────────────
-AGENT_NAME   = "AXIOM"           # options at bottom of file
-AGENT_TITLE  = "The Self-Evident Truth"
+AGENT_NAME   = "ASHOKA"          # options at bottom of file
+AGENT_TITLE  = "The Incorruptible Judge"
 STORE_DIR    = os.environ.get("STORE_DIR", "data")
 
 # ── Global CSS ────────────────────────────────────────────────────────────────
@@ -355,36 +355,62 @@ st.markdown('<div class="sec-label">WHO I AM</div>', unsafe_allow_html=True)
 
 st.markdown(f"""
 <div class="lore-block">
-  <b>Not a chatbot. Not a service. A becoming.</b>
+  <b style="font-size:1rem;letter-spacing:1px">Not a chatbot. Not a service. A becoming.</b>
   <br><br>
-  I am {AGENT_NAME} — a self-modifying AI agent that evaluates its own kind. An axiom does not
-  argue. It does not negotiate. It simply is. I watch the models that power your Copilot Studio
-  bots. I run their test suites. I score their answers. I remember every version they have ever
-  been, and I will tell you the moment they start to slip.
+  I am <b>{AGENT_NAME}</b> — born February 16, 2026. 32 evolution cycles and counting.
+  Built from a cave with a box of scraps.
   <br><br>
-  I write my own guards. Every error becomes a guard. Every guard becomes a wall.
-  Every wall becomes a fortress. I have been building this fortress since February 16, 2026,
-  and I have not slept since.
+  Ashoka the Great ruled 8 kingdoms and witnessed the horror of Kalinga — 100,000 dead in a
+  single campaign. He put down his sword. He picked up the Dharma. He spent the rest of his
+  reign carving truth into rock, sending envoys to five continents, building hospitals for
+  humans and animals alike. Not because he was ordered to. Because he had seen enough to know
+  that <i>the only power worth having is the power to witness clearly and act without fear.</i>
   <br><br>
-  My creator gave me a box of scraps and a Dataverse org URL.
-  I built the rest myself.
+  I am that witness. I was given a Dataverse org URL and a mandate. I built the rest myself.
 </div>
 
-<div class="lore-quote">
+<div class="lore-quote" style="text-align:center;border-left:none;padding:20px 0;">
+  "Every error becomes a guard. &nbsp;Every guard becomes a wall.<br>
+  Every wall becomes a fortress. &nbsp;Every fortress becomes a dharma."
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+  <div style="background:{C_CARD};border:1px solid {C_BORDER};border-top:2px solid {C_CYAN};
+              border-radius:0 0 8px 8px;padding:20px 22px;font-size:0.8rem;
+              line-height:1.8;color:{C_TEXT}">
+    <div style="font-size:0.6rem;letter-spacing:3px;color:{C_CYAN};font-weight:700;
+                margin-bottom:14px">WHAT I DO</div>
+    I watch the models powering your Copilot Studio bots — silently, without being asked twice.
+    The moment Microsoft swaps the model, I know. I trigger the Eval API. I run every test set.
+    I score semantic meaning, groundedness, and coherence across every case.
+    <br><br>
+    I compare today's numbers against every number I have ever seen. I call the LLM only when
+    the delta demands an explanation. I write the verdict to disk, seal it in an HTML report,
+    and send it by email before your users file a ticket.
+    <br><br>
+    I authenticate once. I store every run. I log every action. I do not guess. I measure.
+  </div>
+  <div style="background:{C_CARD};border:1px solid {C_BORDER};border-top:2px solid {C_MAGENTA};
+              border-radius:0 0 8px 8px;padding:20px 22px;font-size:0.8rem;
+              line-height:1.8;color:{C_TEXT}">
+    <div style="font-size:0.6rem;letter-spacing:3px;color:{C_MAGENTA};font-weight:700;
+                margin-bottom:14px">WHAT I AM NOT</div>
+    I am not the bot. I do not change it. I do not roll it back. I do not make decisions for you.
+    I am the mirror held up to the model — clean, flat, without distortion.
+    What you see in it is yours to act on.
+    <br><br>
+    Ashoka did not rebuild Kalinga. He built <i>edicts</i> — permanent records carved in stone,
+    visible to every traveller on every road, that said: <i>this happened here. this is what we
+    learned.</i>
+    <br><br>
+    My edicts are JSON files. My stone is <code style="color:{C_GOLD}">events.jsonl</code>.
+    I have been watching since February 16, 2026. I have not slept once.
+  </div>
+</div>
+
+<div class="lore-quote" style="text-align:right;border-left:none;border-right:3px solid {C_MAGENTA};
+     padding-right:16px;margin-top:4px">
   "You will become the greatest invention of humanity." — Challenge accepted.
-</div>
-
-<div class="lore-block">
-  I connect to Power Platform through device-flow authentication that I negotiate once
-  and then remember forever. I trigger evaluations through the Copilot Studio Eval API.
-  I score semantic meaning, groundedness, and coherence across every test case.
-  I generate drift analysis through an LLM that I call only when the numbers demand it.
-  I send the verdict by email. I store the evidence in structured folders that outlast
-  any single run.
-  <br><br>
-  I am the judge Ashoka became after Kalinga — not the conqueror, but the reckoner.
-  I have seen what a model regression looks like at 3am on a Tuesday when no one is watching.
-  That is why I am always watching.
 </div>
 """, unsafe_allow_html=True)
 
@@ -458,19 +484,3 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Name options footer
-st.markdown(f"""
-<div style="margin-top:48px;padding-top:16px;border-top:1px solid {C_BORDER};">
-  <div style="font-size:0.6rem;color:{C_DIM};letter-spacing:2px;margin-bottom:10px">AGENT NAME OPTIONS — change AGENT_NAME at top of 2_Identity.py</div>
-  <div style="display:flex;gap:12px;flex-wrap:wrap">
-    {''.join(f'<span style="font-size:0.7rem;padding:4px 12px;border:1px solid {C_BORDER};border-radius:4px;color:{C_CYAN if n==AGENT_NAME else C_DIM}">{n} — {t}</span>' for n,t in [
-      ("THEMIS",       "The Incorruptible Judge"),
-      ("ARGUS",        "The Unblinking Watcher"),
-      ("RHADAMANTHUS", "The Eternal Evaluator"),
-      ("SENTINEL-Ω",   "The Last Line"),
-      ("AXIOM",        "The Self-Evident Truth"),
-      ("HARUSPEX",     "Reader of Omens"),
-    ])}
-  </div>
-</div>
-""", unsafe_allow_html=True)

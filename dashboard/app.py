@@ -215,32 +215,30 @@ st.markdown(f"""
   .tl-verdict {{ font-size:0.68rem; font-weight:700; letter-spacing:1px; font-family:{FONT}; }}
 </style>
 
-<canvas id="matrix-canvas" style="position:fixed;top:0;left:0;width:100%;height:100%;
-  z-index:0;pointer-events:none;opacity:0.04"></canvas>
-<script>
-(function() {{
-  var c = document.getElementById('matrix-canvas');
-  if (!c) return;
-  var ctx = c.getContext('2d');
-  c.width = window.innerWidth; c.height = window.innerHeight;
-  var cols = Math.floor(c.width / 14);
-  var drops = Array(cols).fill(1);
-  var chars = '01アイウエオカキクケコ∆∇⊕⊗';
-  function draw() {{
-    ctx.fillStyle = 'rgba(10,10,15,0.05)';
-    ctx.fillRect(0, 0, c.width, c.height);
-    ctx.fillStyle = '#00f0ff';
-    ctx.font = '12px monospace';
-    drops.forEach(function(y, i) {{
-      var ch = chars[Math.floor(Math.random() * chars.length)];
-      ctx.fillText(ch, i * 14, y * 14);
-      if (y * 14 > c.height && Math.random() > 0.975) drops[i] = 0;
-      drops[i]++;
-    }});
+<style>
+  html, body, [data-testid="stAppViewContainer"] {{
+    background-image:
+      radial-gradient(circle, rgba(0,240,255,0.035) 1px, transparent 1px),
+      radial-gradient(circle at 80% 20%, rgba(255,0,170,0.04) 0%, transparent 50%),
+      radial-gradient(circle at 20% 80%, rgba(0,240,255,0.04) 0%, transparent 50%) !important;
+    background-size: 28px 28px, 100% 100%, 100% 100% !important;
   }}
-  setInterval(draw, 80);
-}})();
-</script>
+  @keyframes hline {{
+    0%   {{ transform: translateY(-100vh); opacity: 0; }}
+    10%  {{ opacity: 0.4; }}
+    90%  {{ opacity: 0.4; }}
+    100% {{ transform: translateY(100vh); opacity: 0; }}
+  }}
+  .scan-line {{
+    position: fixed; left: 0; width: 100%; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(0,240,255,0.15), transparent);
+    pointer-events: none; z-index: 0;
+    animation: hline 8s linear infinite;
+  }}
+  .scan-line:nth-child(2) {{ animation-delay: 3s; }}
+</style>
+<div class="scan-line"></div>
+<div class="scan-line"></div>
 """, unsafe_allow_html=True)
 
 # ── Data layer ────────────────────────────────────────────────────────────────
@@ -354,46 +352,63 @@ _AXIS = dict(gridcolor=C_BORDER, linecolor=C_BORDER, zerolinecolor=C_BORDER,
 
 
 def chart_radar(classifications: list[dict], label_a: str, label_b: str) -> go.Figure:
+    """Barpolar (radial bar) — each metric is a bar extending from centre.
+    Gold bars = Run A (baseline), Cyan bars = Run B (current).
+    Bars are interleaved so both are visible without overlap."""
     if not classifications:
         return go.Figure()
-    prev_vals = [c["prev"] or 0 for c in classifications]
-    curr_vals = [c["curr"] or 0 for c in classifications]
-    labels    = [c["key"].split(".")[-1][:16] for c in classifications]
 
-    def _norm(vals):
-        return [round(v * 100, 1) if v <= 1 else round(v, 1) for v in vals]
+    def _norm(v):
+        return round(v * 100, 1) if (v is not None and v <= 1) else round(v or 0, 1)
+
+    labels    = [c["key"].split(".")[-1][:18] for c in classifications]
+    prev_vals = [_norm(c["prev"]) for c in classifications]
+    curr_vals = [_norm(c["curr"]) for c in classifications]
+
+    n = len(labels)
+    # Each metric gets 360/n degrees; split that in two so bars sit side-by-side
+    width_each = max(8, int(280 / max(n, 1)))
 
     fig = go.Figure()
-    for vals, label, color, fill in [
-        (_norm(prev_vals), label_a, C_GOLD,    "rgba(255,215,0,0.08)"),
-        (_norm(curr_vals), label_b, C_CYAN,    "rgba(0,240,255,0.08)"),
-    ]:
-        fig.add_trace(go.Scatterpolar(
-            r=vals + [vals[0]], theta=labels + [labels[0]],
-            fill="toself", name=label,
-            line=dict(color=color, width=2),
-            fillcolor=fill,
-        ))
+    fig.add_trace(go.Barpolar(
+        r=prev_vals, theta=labels,
+        name=f"A: {label_a[:30]}",
+        width=width_each,
+        marker=dict(color=f"rgba(255,215,0,0.35)",
+                    line=dict(color=C_GOLD, width=2.5)),
+    ))
+    fig.add_trace(go.Barpolar(
+        r=curr_vals, theta=labels,
+        name=f"B: {label_b[:30]}",
+        width=width_each,
+        marker=dict(color=f"rgba(0,240,255,0.25)",
+                    line=dict(color=C_CYAN, width=2.5)),
+    ))
     fig.update_layout(
         **CHART_LAYOUT,
         polar=dict(
             bgcolor="rgba(0,0,0,0)",
-            radialaxis=dict(visible=True, range=[0, 100],
-                            gridcolor=C_BORDER, linecolor=C_BORDER,
-                            tickfont=dict(size=8, color=C_DIM)),
-            angularaxis=dict(gridcolor=C_BORDER, linecolor=C_BORDER,
-                             tickfont=dict(color=C_TEXT, size=9)),
+            radialaxis=dict(
+                visible=True, range=[0, 100],
+                gridcolor=C_BORDER, linecolor=C_BORDER,
+                tickfont=dict(size=7, color=C_DIM),
+                tickvals=[25, 50, 75, 100],
+            ),
+            angularaxis=dict(
+                gridcolor=C_BORDER, linecolor=C_BORDER,
+                tickfont=dict(color=C_TEXT, size=9),
+                direction="clockwise",
+            ),
+            barmode="overlay",
         ),
-        height=320,
-        legend=dict(
-            orientation="h",
-            x=0.5, xanchor="center",
-            y=-0.12, yanchor="top",
-            bgcolor="rgba(0,0,0,0)",
-            font=dict(size=9, color=C_DIM),
-        ),
+        height=340,
         showlegend=True,
     )
+    fig.update_layout(legend=dict(
+        orientation="h", x=0.5, xanchor="center",
+        y=-0.1, yanchor="top",
+        bgcolor="rgba(0,0,0,0)", font=dict(size=8, color=C_DIM),
+    ))
     return fig
 
 
@@ -954,22 +969,41 @@ def render_header(bots: list[dict]):
     last_scan = max((b["updatedAt"] for b in bots), default="")
     ts_str    = _fmt_ts(last_scan) if last_scan else "no data yet"
     n_reg     = sum(1 for b in bots if _bot_verdict(b) == "REGRESSED")
-    status    = f"<span style='color:{C_RED};font-weight:700'>{n_reg} REGRESSED</span>" if n_reg else \
-                f"<span style='color:{C_GREEN}'>ALL STABLE</span>"
+    now_utc   = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    dot_color = C_RED if n_reg else C_GREEN
+    dot_label = f"{n_reg} REGRESSED" if n_reg else "ALL STABLE"
+
     st.markdown(f"""
-    <div style='background:{C_CARD};border:1px solid {C_BORDER};border-radius:10px;
-                padding:16px 24px;margin-bottom:20px;
-                display:flex;justify-content:space-between;align-items:center'>
-      <div>
-        <div style='font-size:1.3rem;font-weight:700;letter-spacing:3px;color:{C_CYAN};
-                    font-family:{FONT};text-shadow:0 0 20px rgba(0,240,255,.3)'>
-          ⚡ LLM DRIFT TRACKER</div>
-        <div style='font-size:0.65rem;color:{C_DIM};margin-top:3px;letter-spacing:1px'>
-          copilot-eval-agent · {len(bots)} bots · {status}</div>
-      </div>
-      <div style='text-align:right'>
-        <div style='font-size:0.65rem;color:{C_DIM}'>last activity</div>
-        <div style='font-size:0.75rem;color:{C_TEXT};font-family:{FONT}'>{ts_str}</div>
+    <style>
+      @keyframes sys-blink {{ 0%,100%{{opacity:1}} 50%{{opacity:0.2}} }}
+      .sys-dot-hdr {{
+        width:9px;height:9px;border-radius:50%;background:{dot_color};
+        box-shadow:0 0 8px {dot_color};display:inline-block;margin-right:8px;
+        animation:sys-blink 1.4s ease-in-out infinite;vertical-align:middle;
+      }}
+    </style>
+    <div style='margin-bottom:20px'>
+      <div style='display:flex;align-items:center;justify-content:space-between;
+                  padding:8px 0 14px;border-bottom:1px solid {C_BORDER}'>
+        <div>
+          <div style='font-size:0.6rem;letter-spacing:4px;color:{dot_color};
+                      font-weight:700;font-family:{FONT};margin-bottom:6px'>
+            <span class="sys-dot-hdr"></span>SYSTEM ONLINE &nbsp;·&nbsp; {dot_label}
+          </div>
+          <div style='font-size:2rem;font-weight:700;letter-spacing:8px;color:{C_CYAN};
+                      font-family:{FONT};line-height:1;
+                      text-shadow:0 0 30px rgba(0,240,255,.4),0 0 60px rgba(0,240,255,.15)'>
+            ASHOKA</div>
+          <div style='font-size:0.65rem;color:{C_MAGENTA};letter-spacing:3px;
+                      font-weight:700;margin-top:4px'>THE INCORRUPTIBLE JUDGE</div>
+          <div style='font-size:0.6rem;color:{C_DIM};letter-spacing:1px;margin-top:2px'>
+            copilot-eval-agent &nbsp;·&nbsp; {len(bots)} agent{'s' if len(bots)!=1 else ''} monitored</div>
+        </div>
+        <div style='text-align:right'>
+          <div style='font-size:0.6rem;color:{C_DIM};letter-spacing:1px'>LAST ACTIVITY</div>
+          <div style='font-size:0.75rem;color:{C_TEXT};font-family:{FONT};margin-top:2px'>{ts_str}</div>
+          <div style='font-size:0.6rem;color:{C_DIM};margin-top:6px'>{now_utc}</div>
+        </div>
       </div>
     </div>
     """, unsafe_allow_html=True)
