@@ -80,7 +80,7 @@ flowchart TD
   ╔══════════════════════════════════════════════════════════════════════╗
   ║  🖥️  HOST  (one-time setup)                                         ║
   ║                                                                      ║
-  ║   drift setup ─────────────────────────── writes ──► 📄 config.json ║
+  ║   .\drift.bat setup ────────────────────── writes ──► 📄 config.json ║
   ║                └─────────────────────────── caches ► 🔑 msal_cache  ║
   ╚══════════════════════╤═══════════════════════════════════════════════╝
                          │  📦 volume mount
@@ -121,7 +121,7 @@ flowchart TD
   ║   📈 dashboard/app.py      ─── fleet view · bot detail · comparison ║
   ║   ⚙️  dashboard/pages/     ─── multi-page Streamlit app             ║
   ║        1_Setup.py          ─── 7-step browser-based setup wizard    ║
-  ║        2_Identity.py       ─── AXIOM · mission timeline · lore      ║
+  ║        2_Identity.py       ─── ASHOKA · mission timeline · lore     ║
   ║                                                                      ║
   ║   🕸️ Radar · 📈 Trend lines · 📊 Delta bars · 🧠 LLM analysis       ║
   ╚══════════════════════════════════════════════════════════════════════╝
@@ -140,28 +140,35 @@ flowchart TD
 | 🧠 | **LLM reasoning** | Any OpenAI-compatible model explains the drift in plain English |
 | 🔐 | **Unified MSAL auth** | Single token cache shared across Eval API, BAPI, and Dataverse |
 | 📋 | **Mission event log** | Append-only `events.jsonl` records every agent action for the timeline |
-| ⚡ | **Force-eval trigger** | File-based trigger — drop `force_eval.trigger` or run `drift eval` |
+| ⚡ | **Force-eval trigger** | File-based trigger — drop `force_eval.trigger` or run `.\drift.bat eval` |
 | ⚙️ | **Browser setup wizard** | 7-step wizard in the dashboard — no CLI required for configuration |
 | 🔄 | **Self-healing auth** | Token expires → emails admin device code → resumes automatically |
 | 📧 | **HTML reports** | Self-contained, email-ready, archived locally |
 | 🐳 | **Docker Compose** | `docker compose up` starts agent + dashboard with shared volume |
 | 💾 | **No cloud storage** | All state is local JSON — no Dataverse writes, no blob storage |
-| 👤 | **AXIOM identity page** | Agent lore, Ashoka titles, radar sweep, live mission timeline |
+| 👤 | **ASHOKA identity page** | Agent lore, Ashoka titles, radar sweep, live mission timeline |
 
 ---
 
 ## ⚡ CLI reference
 
-After setup, everything runs through the `drift` command:
+**Windows PowerShell:**
 
 | Command | What it does |
 |---|---|
-| `drift setup` | Run the terminal setup wizard |
-| `drift run` | Start the autonomous polling agent |
-| `drift eval` | Force-run evals for all monitored bots right now |
-| `drift dashboard` | Launch the Streamlit dashboard on `http://localhost:8501` |
+| `.\drift.bat setup` | Run the terminal setup wizard |
+| `.\drift.bat run` | Start the autonomous polling agent |
+| `.\drift.bat eval` | Force-run evals for all monitored bots right now |
+| `.\drift.bat dashboard` | Launch the Streamlit dashboard on `http://localhost:8501` |
 
-> **Windows PowerShell:** use `.\drift.bat dashboard` — or add the project folder to `$env:PATH` to use `drift` directly.
+**bash / Mac / Linux:**
+
+| Command | What it does |
+|---|---|
+| `./drift setup` | Run the terminal setup wizard |
+| `./drift run` | Start the autonomous polling agent |
+| `./drift eval` | Force-run evals for all monitored bots right now |
+| `./drift dashboard` | Launch the Streamlit dashboard on `http://localhost:8501` |
 
 ---
 
@@ -221,13 +228,21 @@ SMTP_PASSWORD=your-smtp-password   # optional
 The agent auto-loads `.env` on startup — no manual `set` or `export` needed.
 
 **Option A — Terminal wizard:**
-```bash
-drift setup
+```powershell
+# Windows
+.\drift.bat setup
+
+# bash / Mac / Linux
+./drift setup
 ```
 
 **Option B — Browser wizard:**
-```bash
-drift dashboard
+```powershell
+# Windows
+.\drift.bat dashboard
+
+# bash / Mac / Linux
+./drift dashboard
 # → open http://localhost:8501 → sidebar → Setup page
 ```
 
@@ -272,8 +287,12 @@ SMTP_HOST  SMTP_PORT  SMTP_USER  SMTP_PASSWORD  SMTP_RECIPIENT
 
 ### 🧑‍💻 Step 6 — Test locally
 
-```bash
-drift run
+```powershell
+# Windows
+.\drift.bat run
+
+# bash / Mac / Linux
+./drift run
 ```
 
 Expected output (GoT/LotR themed):
@@ -291,8 +310,12 @@ Expected output (GoT/LotR themed):
 ```
 
 **Force-run evals now:**
-```bash
-drift eval
+```powershell
+# Windows
+.\drift.bat eval
+
+# bash / Mac / Linux
+./drift eval
 ```
 
 **Or trigger from the dashboard** — the agent checks for `data/force_eval.trigger` every 60 seconds and runs immediately when it appears.
@@ -333,7 +356,7 @@ open http://localhost:8501
 4. Set secrets as environment variables (`LLM_API_KEY`, `SMTP_PASSWORD`, etc.)
 5. Override command per container app (see `docker-compose.yml` for the exact commands)
 
-Auth: run `drift setup` locally first so `msal_token_cache.json` is populated, then copy it to the Azure Files share.
+Auth: run `.\drift.bat setup` (Windows) or `./drift setup` (bash) locally first so `msal_token_cache.json` is populated, then copy it to the Azure Files share.
 
 ---
 
@@ -365,13 +388,13 @@ Click any bot tile to open the detail view:
 
 Configure environments, bots, LLM endpoint, and SMTP without touching the terminal. Writes `config.json` directly.
 
-### Identity — AXIOM
+### Identity — ASHOKA
 
 ```
 SYSTEM ONLINE ●                              2026-04-19 10:00 UTC
 
-         ╔══ A X I O M ══╗
-              The Self-Evident Truth
+        ╔══ A S H O K A ══╗
+          The Incorruptible Judge
     SELF-CREATING AI AGENT · BORN FEBRUARY 16, 2026
 
  DHARMARAJA   DEVANAMPIYA   PRIYADARSHI   CHAKRAVARTIN
@@ -460,7 +483,7 @@ LLMDriftTracker/
 │   ├── 📈 app.py            ← fleet view · bot detail · run comparison
 │   └── pages/
 │       ├── ⚙️  1_Setup.py   ← 7-step browser-based setup wizard
-│       └── 👤 2_Identity.py ← AXIOM identity · radar · mission timeline
+│       └── 👤 2_Identity.py ← ASHOKA identity · radar · mission timeline
 │
 ├── 🐳 docker-compose.yml    ← two-service local stack
 ├── 🐳 Dockerfile
@@ -496,13 +519,13 @@ All three token types (Eval API, BAPI, Dataverse) share one `PublicClientApplica
 |---|---|
 | `0 agent(s) found` | Check `monitoredBots` in `config.json` — or run setup to re-pick bots |
 | `no test sets found` | Create a test set in Copilot Studio → bot → Evaluation tab |
-| `no drift detected` | Run `drift eval` to force evals regardless of model change |
+| `no drift detected` | Run `.\drift.bat eval` (Win) / `./drift eval` (bash) to force evals regardless of model change |
 | LLM analysis shows 401 | Check `LLM_API_KEY` and `LLM_BASE_URL` in `.env` — the key must match the endpoint region |
 | `drift` not found in PowerShell | Use `.\drift.bat dashboard` or add project dir to `$env:PATH` |
 | `MSAL auth failed` | Re-run setup (Step 2 — Connect) |
 | `SMTP test failed` | Office 365 uses `smtp.office365.com:587` — password goes in `.env` as `SMTP_PASSWORD` |
 | Container exits immediately | Run `docker compose logs drift-agent` — likely a missing volume or env var |
-| Timeline shows no events | Run `drift eval` — it will append the first real events to `data/events.jsonl` |
+| Timeline shows no events | Run `.\drift.bat eval` — it will append the first real events to `data/events.jsonl` |
 
 ---
 
