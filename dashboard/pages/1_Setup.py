@@ -24,11 +24,13 @@ DEFAULT_CLIENT_ID = "774142ce-9070-446b-83ac-e2053c716879"
 st.markdown(f"""
 <style>
   .cfg-section {{
-    background:{C_CARD}; border:1px solid {C_BORDER};
     border-radius:10px; padding:20px 24px; margin-bottom:18px;
+    border:1px solid {C_BORDER}; background:{C_CARD};
   }}
+  .cfg-section.ok  {{ border-color:rgba(40,200,64,.4); }}
+  .cfg-section.err {{ border-color:rgba(255,68,68,.4); }}
   .cfg-head {{
-    font-size:0.78rem; font-weight:700; letter-spacing:3px; color:{C_CYAN};
+    font-size:0.85rem; font-weight:700; letter-spacing:2px;
     font-family:{FONT}; text-transform:uppercase; margin-bottom:16px;
     border-bottom:1px solid {C_BORDER}; padding-bottom:8px;
   }}
@@ -42,12 +44,23 @@ st.markdown(f"""
   .status-ok  {{ color:{C_GREEN}; font-size:0.78rem; font-weight:700; font-family:{FONT}; }}
   .status-err {{ color:{C_RED};   font-size:0.78rem; font-weight:700; font-family:{FONT}; }}
   .status-dim {{ color:{C_DIM};   font-size:0.78rem; font-family:{FONT}; }}
-  .hint-box {{
-    background:{C_BG}; border:1px solid {C_BORDER}; border-radius:6px;
-    padding:10px 14px; font-size:0.72rem; color:{C_DIM}; margin-top:10px;
-  }}
 </style>
 """, unsafe_allow_html=True)
+
+
+def _sec(title, ok: bool | None = None):
+    """Render a section opening div with coloured border + ✓/✗ in the heading."""
+    if ok is True:
+        border = "ok";  sym = f"<span style='color:{C_GREEN}'>✓</span>"
+    elif ok is False:
+        border = "err"; sym = f"<span style='color:{C_RED}'>✗</span>"
+    else:
+        border = "";    sym = f"<span style='color:{C_DIM}'>·</span>"
+    st.markdown(
+        f"<div class='cfg-section {border}'>"
+        f"<div class='cfg-head'>{sym}&nbsp; {title}</div>",
+        unsafe_allow_html=True,
+    )
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -113,6 +126,33 @@ def _fetch_envs(token):
     except Exception as e:
         return [], str(e)
 
+def _test_llm(base_url, model, api_key):
+    import requests
+    try:
+        r = requests.post(
+            base_url.rstrip("/") + "/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"model": model, "messages": [{"role": "user", "content": "ping"}], "max_tokens": 5},
+            timeout=10,
+        )
+        r.raise_for_status()
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
+def _llm_status_path():
+    return os.path.join(STORE_DIR, "llm_status.json")
+
+
+def _llm_validated():
+    try:
+        ls = json.loads(open(_llm_status_path()).read())
+        return ls.get("ok", False)
+    except Exception:
+        return False
+
+
 def _fetch_bots(org_url, client_id, tenant_id, cache_file):
     import requests
     scopes = [org_url.rstrip("/") + "/.default"]
@@ -170,6 +210,22 @@ for k, v in _defs.items():
         st.session_state[k] = v
 
 
+# ── Section completion status (computed once before any rendering) ─────────────
+def _sec_status():
+    s1 = bool(st.session_state.s_client_id and st.session_state.s_tenant_id)
+    s2 = bool(_cache_accounts(
+        st.session_state.s_client_id,
+        st.session_state.s_tenant_id,
+        st.session_state.s_cache_file,
+    ))
+    s3 = bool(st.session_state.s_sel_envs)
+    s4 = True  # empty bot list = monitor all, always valid
+    s5 = bool(st.session_state.s_llm_url) and _llm_validated()
+    return s1, s2, s3, s4, s5
+
+ok1, ok2, ok3, ok4, ok5 = _sec_status()
+
+
 # ── Page header ───────────────────────────────────────────────────────────────
 st.markdown(
     f"<div style='font-size:1.4rem;font-weight:700;letter-spacing:4px;"
@@ -183,8 +239,7 @@ st.markdown(
 # ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 1 — App Registration
 # ═══════════════════════════════════════════════════════════════════════════════
-st.markdown("<div class='cfg-section'><div class='cfg-head'>1 · App Registration</div>",
-            unsafe_allow_html=True)
+_sec("1 · App Registration", ok1)
 st.caption("Azure AD app with CopilotStudio.MakerOperations delegated permission.")
 
 c1, c2 = st.columns(2)
@@ -208,8 +263,7 @@ st.session_state.s_cache_file = cache_file.strip() or st.session_state.s_cache_f
 # ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 2 — Authentication
 # ═══════════════════════════════════════════════════════════════════════════════
-st.markdown("<div class='cfg-section'><div class='cfg-head'>2 · Authentication</div>",
-            unsafe_allow_html=True)
+_sec("2 · Authentication", ok2)
 
 _can_auth = bool(st.session_state.s_client_id and st.session_state.s_tenant_id)
 
@@ -301,8 +355,7 @@ st.markdown("</div>", unsafe_allow_html=True)
 # ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 3 — Environments
 # ═══════════════════════════════════════════════════════════════════════════════
-st.markdown("<div class='cfg-section'><div class='cfg-head'>3 · Environments</div>",
-            unsafe_allow_html=True)
+_sec("3 · Environments", ok3)
 
 if not _can_auth:
     st.markdown("<div class='status-dim'>Enter Client ID and Tenant ID above first.</div>",
@@ -346,8 +399,7 @@ st.markdown("</div>", unsafe_allow_html=True)
 # ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 4 — Bots
 # ═══════════════════════════════════════════════════════════════════════════════
-st.markdown("<div class='cfg-section'><div class='cfg-head'>4 · Bots to Monitor</div>",
-            unsafe_allow_html=True)
+_sec("4 · Bots to Monitor", ok4)
 
 if not st.session_state.s_sel_envs:
     st.markdown("<div class='status-dim'>Select at least one environment above.</div>",
@@ -407,8 +459,7 @@ st.markdown("</div>", unsafe_allow_html=True)
 # ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 5 — LLM
 # ═══════════════════════════════════════════════════════════════════════════════
-st.markdown("<div class='cfg-section'><div class='cfg-head'>5 · LLM (Drift Analysis)</div>",
-            unsafe_allow_html=True)
+_sec("5 · LLM (Drift Analysis)", ok5)
 st.caption("Any OpenAI-compatible endpoint. API key goes in .env as LLM_API_KEY.")
 
 c1, c2, c3 = st.columns([3, 2, 1])
@@ -424,6 +475,31 @@ with c3:
 st.session_state.s_llm_url   = llm_url.strip()
 st.session_state.s_llm_model = llm_model.strip()
 st.session_state.s_poll      = int(poll)
+
+# LLM validation
+_api_key = os.environ.get("LLM_API_KEY", "")
+col_t1, col_t2 = st.columns([1, 4])
+with col_t1:
+    if st.button("Test LLM", key="btn_test_llm", disabled=not llm_url.strip()):
+        with st.spinner("Calling LLM…"):
+            ok, err = _test_llm(llm_url.strip(), llm_model.strip(), _api_key)
+        os.makedirs(STORE_DIR, exist_ok=True)
+        import json as _json
+        open(_llm_status_path(), "w").write(_json.dumps({"ok": ok, "error": err or ""}))
+        st.rerun()
+with col_t2:
+    if _llm_validated():
+        st.markdown(f"<div class='status-ok'>✓ LLM responded</div>", unsafe_allow_html=True)
+    elif os.path.exists(_llm_status_path()):
+        try:
+            _ls = json.loads(open(_llm_status_path()).read())
+            st.markdown(f"<div class='status-err'>✗ {_ls.get('error','failed')}</div>",
+                        unsafe_allow_html=True)
+        except Exception:
+            pass
+    elif llm_url.strip():
+        st.markdown(f"<div class='status-dim'>· Not tested yet</div>", unsafe_allow_html=True)
+
 st.markdown("</div>", unsafe_allow_html=True)
 
 

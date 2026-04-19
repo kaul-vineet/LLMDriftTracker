@@ -191,90 +191,81 @@ def _stop_agent():
         pass
 
 
-def _check_msal_cache(cfg: dict):
-    """Read MSAL cache directly — works whether agent is running or not."""
-    try:
-        import msal
-        cache_path = cfg.get("token_cache_file", "msal_token_cache.json")
-        if not os.path.exists(cache_path):
-            return None, None
-        cache = msal.SerializableTokenCache()
-        cache.deserialize(open(cache_path).read())
-        app = msal.PublicClientApplication(
-            client_id=cfg["eval_app_client_id"],
-            authority=f"https://login.microsoftonline.com/{cfg['eval_app_tenant_id']}",
-            token_cache=cache,
-        )
-        accs = app.get_accounts()
-        if accs:
-            return "AUTHENTICATED", accs[0].get("username", "")
-        return "NOT_AUTHENTICATED", None
-    except Exception:
-        return None, None
-
-
-def render_auth_status():
-    from agent.auth import get_auth_state
+def _get_readiness():
+    """Returns (ready: bool, issues: list[str])."""
+    issues = []
 
     if not os.path.exists("config.json"):
-        st.markdown(
-            f"<div style='background:{C_CARD};border:1px solid {C_BORDER};"
-            f"border-radius:6px;padding:8px 12px;margin-bottom:8px'>"
-            f"<div style='color:{C_DIM};font-size:0.65rem;font-weight:700;letter-spacing:1px;"
-            f"font-family:{FONT}'>○ SETUP REQUIRED</div></div>",
-            unsafe_allow_html=True,
-        )
-        return
+        return False, ["No config.json — complete Setup"]
 
     try:
         cfg = json.loads(open("config.json").read())
     except Exception:
-        cfg = {}
+        return False, ["config.json unreadable"]
 
-    # Prefer agent-written auth_state.json for PENDING_DEVICE_FLOW (live agent signal)
-    agent_state = get_auth_state(cfg) if cfg else {"status": "UNKNOWN"}
-    if agent_state.get("status") == "PENDING_DEVICE_FLOW":
-        code = agent_state.get("user_code", "")
-        st.markdown(
-            f"<div style='background:rgba(255,68,68,.08);border:1px solid {C_RED};"
-            f"border-radius:6px;padding:10px 12px;margin-bottom:8px'>"
-            f"<div style='color:{C_RED};font-size:0.65rem;font-weight:700;letter-spacing:1px;"
-            f"font-family:{FONT}'>⚠ ACTION REQUIRED</div>"
-            f"<div style='color:{C_DIM};font-size:0.68rem;margin-top:4px'>microsoft.com/devicelogin</div>"
-            f"<div style='color:{C_CYAN};font-size:1.4rem;font-weight:700;letter-spacing:6px;"
-            f"font-family:{FONT};margin-top:6px;text-align:center'>{code}</div></div>",
-            unsafe_allow_html=True,
-        )
-        return
+    if not cfg.get("eval_app_client_id") or not cfg.get("eval_app_tenant_id"):
+        issues.append("App registration incomplete")
 
-    # Check MSAL cache directly — works without agent running
-    status, account = _check_msal_cache(cfg)
+    try:
+        import msal as _msal
+        cp = cfg.get("token_cache_file", "msal_token_cache.json")
+        if os.path.exists(cp):
+            _c = _msal.SerializableTokenCache(); _c.deserialize(open(cp).read())
+            _a = _msal.PublicClientApplication(
+                cfg.get("eval_app_client_id", "x"),
+                authority=f"https://login.microsoftonline.com/{cfg.get('eval_app_tenant_id','x')}",
+                token_cache=_c,
+            )
+            if not _a.get_accounts():
+                issues.append("Not authenticated — sign in via Setup")
+        else:
+            issues.append("Not authenticated — sign in via Setup")
+    except Exception:
+        issues.append("Auth check failed")
 
-    if status == "AUTHENTICATED":
+    if not cfg.get("environments"):
+        issues.append("No environments configured")
+
+    llm = cfg.get("llm", {})
+    if not llm.get("base_url"):
+        issues.append("LLM endpoint not configured")
+    else:
+        llm_status_path = os.path.join(cfg.get("store_dir", "data"), "llm_status.json")
+        if not os.path.exists(llm_status_path):
+            issues.append("LLM not validated — click Test in Setup")
+        else:
+            try:
+                ls = json.loads(open(llm_status_path).read())
+                if not ls.get("ok"):
+                    issues.append(f"LLM error: {ls.get('error', 'unknown')}")
+            except Exception:
+                issues.append("LLM status unreadable")
+
+    return len(issues) == 0, issues
+
+
+def render_readiness():
+    ready, issues = _get_readiness()
+    if ready:
         st.markdown(
-            f"<div style='background:rgba(40,200,64,.08);border:1px solid rgba(40,200,64,.3);"
-            f"border-radius:6px;padding:8px 12px;margin-bottom:8px'>"
-            f"<div style='color:{C_GREEN};font-size:0.65rem;font-weight:700;letter-spacing:1px;"
-            f"font-family:{FONT}'>● TOKEN VALID</div>"
-            f"<div style='color:{C_DIM};font-size:0.65rem;margin-top:2px'>{account}</div></div>",
-            unsafe_allow_html=True,
-        )
-    elif status == "NOT_AUTHENTICATED":
-        st.markdown(
-            f"<div style='background:rgba(255,68,68,.06);border:1px solid {C_BORDER};"
-            f"border-radius:6px;padding:8px 12px;margin-bottom:8px'>"
-            f"<div style='color:{C_RED};font-size:0.65rem;font-weight:700;letter-spacing:1px;"
-            f"font-family:{FONT}'>○ NOT AUTHENTICATED</div>"
-            f"<div style='color:{C_DIM};font-size:0.62rem;margin-top:2px'>Sign in via Setup page</div></div>",
+            f"<div style='background:rgba(40,200,64,.08);border:1px solid rgba(40,200,64,.35);"
+            f"border-radius:6px;padding:10px 14px;margin-bottom:8px;text-align:center'>"
+            f"<div style='color:{C_GREEN};font-size:0.85rem;font-weight:700;letter-spacing:3px;"
+            f"font-family:{FONT}'>● READY</div></div>",
             unsafe_allow_html=True,
         )
     else:
-        # Cache unreadable or config incomplete
+        items = "".join(
+            f"<div style='color:{C_DIM};font-size:0.62rem;margin-top:3px;padding-left:4px'>"
+            f"· {iss}</div>"
+            for iss in issues
+        )
         st.markdown(
-            f"<div style='background:{C_CARD};border:1px solid {C_BORDER};"
-            f"border-radius:6px;padding:8px 12px;margin-bottom:8px'>"
-            f"<div style='color:{C_DIM};font-size:0.65rem;font-weight:700;letter-spacing:1px;"
-            f"font-family:{FONT}'>○ SETUP REQUIRED</div></div>",
+            f"<div style='background:rgba(255,68,68,.06);border:1px solid rgba(255,68,68,.3);"
+            f"border-radius:6px;padding:10px 14px;margin-bottom:8px'>"
+            f"<div style='color:{C_RED};font-size:0.75rem;font-weight:700;letter-spacing:2px;"
+            f"font-family:{FONT}'>○ SETUP NOT COMPLETE</div>"
+            f"{items}</div>",
             unsafe_allow_html=True,
         )
 
@@ -338,7 +329,7 @@ with st.sidebar:
         f"copilot-eval-agent · v1.1</div></div>",
         unsafe_allow_html=True,
     )
-    render_auth_status()
+    render_readiness()
     render_agent_controls()
     st.markdown(
         f"<div style='border-top:1px solid {C_BORDER};margin:10px 0'></div>",
