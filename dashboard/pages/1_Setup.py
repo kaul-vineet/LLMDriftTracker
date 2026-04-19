@@ -142,10 +142,11 @@ def render_step_bar(current: int):
     for i, label in enumerate(STEP_LABELS, 1):
         state = "done" if i < current else ("active" if i == current else "pending")
         sym   = "✓" if state == "done" else str(i)
+        active_cls = "active" if state == "active" else ""
         nodes += (
             f"<div class='step-node'>"
             f"<div class='step-circle {state}'>{sym}</div>"
-            f"<div class='step-label {\"active\" if state == \"active\" else \"\"}'>{label}</div>"
+            f"<div class='step-label {active_cls}'>{label}</div>"
             f"</div>"
         )
         if i < len(STEP_LABELS):
