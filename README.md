@@ -121,7 +121,7 @@ flowchart TD
   ║   📈 dashboard/app.py      ─── router · sidebar · agent controls   ║
   ║   ⚙️  dashboard/pages/     ─── multi-page Streamlit app             ║
   ║        ashoka.py           ─── fleet · detail · identity · timeline ║
-  ║        1_Setup.py          ─── 7-step browser-based setup wizard    ║
+  ║        1_Setup.py          ─── single-screen setup form             ║
   ║                                                                      ║
   ║   🕸️ Radar · 📈 Trend lines · 📊 Delta bars · 🧠 LLM analysis       ║
   ╚══════════════════════════════════════════════════════════════════════╝
@@ -141,12 +141,12 @@ flowchart TD
 | 🔐 | **Unified MSAL auth** | Single token cache shared across Eval API, BAPI, and Dataverse |
 | 📋 | **Mission event log** | Append-only `events.jsonl` records every agent action for the timeline |
 | ⚡ | **Force-eval trigger** | File-based trigger — drop `force_eval.trigger` or run `.\drift.bat eval` |
-| ⚙️ | **Browser setup wizard** | 7-step wizard in the dashboard — no CLI required for configuration |
+| ⚙️ | **Single-screen setup** | Single-screen form in the dashboard — ✓/✗ section status, LLM validation, no CLI required |
 | 🔄 | **Self-healing auth** | Token expires → emails admin device code → resumes automatically |
 | 📧 | **HTML reports** | Self-contained, email-ready, archived locally |
 | 🐳 | **Docker Compose** | `docker compose up` starts agent + dashboard with shared volume |
 | 💾 | **No cloud storage** | All state is local JSON — no Dataverse writes, no blob storage |
-| 👤 | **ASHOKA identity page** | Agent lore, Ashoka titles, radar sweep, live mission timeline |
+| 👤 | **ASHOKA identity page** | Agent lore, WHO I AM bio, radar sweep animation, live mission timeline |
 
 ---
 
@@ -236,7 +236,7 @@ The agent auto-loads `.env` on startup — no manual `set` or `export` needed.
 ./drift setup
 ```
 
-**Option B — Browser wizard:**
+**Option B — Browser setup form:**
 ```powershell
 # Windows
 .\drift.bat dashboard
@@ -246,17 +246,18 @@ The agent auto-loads `.env` on startup — no manual `set` or `export` needed.
 # → open http://localhost:8501 → sidebar → Setup page
 ```
 
-The wizard auto-discovers your Power Platform environments via BAPI and lets you pick which bots to monitor.
+The setup form auto-discovers your Power Platform environments via BAPI and lets you pick which bots to monitor. Each section shows a ✓ (green) or ✗ (red) status indicator — the sidebar shows **● READY** when all prerequisites are met:
 
-| # | Step | What it does |
-|---|---|---|
-| 1 | App Registration | Client ID + Tenant ID |
-| 2 | Connect | MSAL device flow — one-time browser sign-in |
-| 3 | Environments | Discovers all envs from BAPI — pick which to include |
-| 4 | Bots | Lists active bots per env — pick which to monitor |
-| 5 | LLM | Endpoint + model (key via `.env`) |
-| 6 | Notifications | SMTP config (optional) |
-| 7 | Review + Save | Writes `config.json` |
+| Section | What it does |
+|---|---|
+| App Registration | Client ID + Tenant ID |
+| Authentication | MSAL device flow — one-time browser sign-in |
+| Environments | Discovers all envs from BAPI — pick which to include |
+| Bots | Lists active bots per env — pick which to monitor |
+| LLM Endpoint | Endpoint + model — **Test** button validates with a live call, writes `data/llm_status.json` |
+| Notifications | SMTP config (optional) |
+
+> 💡 The **Start Agent** button in the sidebar stays disabled until the sidebar shows **● READY**.
 
 ---
 
@@ -373,8 +374,6 @@ Two pages, accessible from the sidebar:
           THE INCORRUPTIBLE JUDGE
     copilot-eval-agent · N agents monitored
 
- DHARMARAJA   DEVANAMPIYA   PRIYADARSHI   CHAKRAVARTIN
-
 [ MONITORED ]  [ EVAL RUNS ]  [ IMPROVED ]  [ REGRESSIONS ]  [ ALERT NOW ]
 
 ── MONITORED AGENTS ──────────────────────────────────────
@@ -407,9 +406,9 @@ Click any bot tile to open the detail view:
 - **Trend chart** — metric trajectory across all runs
 - **Back to fleet** — top of page
 
-### Setup — 7-step browser wizard
+### Setup — single-screen configuration form
 
-Configure environments, bots, LLM endpoint, and SMTP without touching the terminal. Writes `config.json` directly.
+Configure environments, bots, LLM endpoint, and SMTP without touching the terminal. Writes `config.json` directly. Each section displays a ✓ or ✗ status indicator. The sidebar shows **● READY** (green) when all five prerequisites are met; otherwise **○ SETUP NOT COMPLETE** with a bullet list of what's missing. The **Start Agent** button is disabled until the setup is complete.
 
 ---
 
@@ -445,6 +444,9 @@ Every agent action is recorded as a JSON line:
 ```
 data/
 ├── events.jsonl                    ← append-only agent action log
+├── agent.pid                       ← running agent PID (deleted on stop)
+├── llm_status.json                 ← LLM validation result written by Setup → Test button
+├── force_eval.trigger              ← created by dashboard to request immediate eval
 │
 └── {botId}/
     ├── tracking.json               ← last known model version + trigger GUID
@@ -482,7 +484,7 @@ LLMDriftTracker/
 │   ├── 📈 app.py            ← fleet view · bot detail · run comparison
 │   └── pages/
 │       ├── ⚡ ashoka.py     ← fleet · bot detail · identity · mission timeline
-│       └── ⚙️  1_Setup.py   ← 7-step browser-based setup wizard
+│       └── ⚙️  1_Setup.py   ← single-screen setup form with ✓/✗ section status
 │
 ├── 🐳 docker-compose.yml    ← two-service local stack
 ├── 🐳 Dockerfile
@@ -494,6 +496,8 @@ LLMDriftTracker/
 ├── 🔑 msal_token_cache.json ← gitignored — mount into Docker
 └── 💾 data/                 ← runtime state — mount into Docker
     ├── events.jsonl
+    ├── agent.pid
+    ├── llm_status.json
     └── {botId}/runs/{triggerGuid}/
 ```
 
@@ -521,7 +525,8 @@ All three token types (Eval API, BAPI, Dataverse) share one `PublicClientApplica
 | `no drift detected` | Run `.\drift.bat eval` (Win) / `./drift eval` (bash) to force evals regardless of model change |
 | LLM analysis shows 401 | Check `LLM_API_KEY` and `LLM_BASE_URL` in `.env` — the key must match the endpoint region |
 | `drift` not found in PowerShell | Use `.\drift.bat dashboard` or add project dir to `$env:PATH` |
-| `MSAL auth failed` | Re-run setup (Step 2 — Connect) |
+| `MSAL auth failed` | Re-authenticate via the Setup page — click **Sign In** to trigger device-code flow |
+| BAPI 401 on Load Environments | Ensure the app registration has admin consent for `service.powerapps.com` — add delegated permission scope `https://service.powerapps.com/.default` and grant admin consent |
 | `SMTP test failed` | Office 365 uses `smtp.office365.com:587` — password goes in `.env` as `SMTP_PASSWORD` |
 | Container exits immediately | Run `docker compose logs drift-agent` — likely a missing volume or env var |
 | Timeline shows no events | Run `.\drift.bat eval` — it will append the first real events to `data/events.jsonl` |
