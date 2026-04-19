@@ -7,6 +7,9 @@ import os
 import time
 from datetime import datetime, timezone
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -382,6 +385,14 @@ def chart_radar(classifications: list[dict], label_a: str, label_b: str) -> go.F
                              tickfont=dict(color=C_TEXT, size=9)),
         ),
         height=320,
+        legend=dict(
+            orientation="h",
+            x=0.5, xanchor="center",
+            y=-0.12, yanchor="top",
+            bgcolor="rgba(0,0,0,0)",
+            font=dict(size=9, color=C_DIM),
+        ),
+        showlegend=True,
     )
     return fig
 
@@ -413,7 +424,7 @@ def chart_delta_bar(cases_prev: list[dict], cases_curr: list[dict], title: str) 
     fig.update_layout(**CHART_LAYOUT, title=dict(text=title, font=dict(size=11, color=C_DIM)),
                       height=240, showlegend=False)
     fig.update_xaxes(**_AXIS)
-    fig.update_yaxes(**_AXIS, zeroline=True, zerolinecolor=C_BORDER, zerolinewidth=1)
+    fig.update_yaxes(**_AXIS, zeroline=True, zerolinewidth=1)
     return fig
 
 
@@ -647,6 +658,10 @@ def page_bot_detail(bot: dict):
     name     = bot["botName"]
     env      = bot["envName"]
 
+    if st.button("← Back to fleet", key="back_btn"):
+        st.session_state.page = "overview"
+        st.rerun()
+
     if not triggers:
         st.info("No eval runs yet.")
         return
@@ -654,21 +669,22 @@ def page_bot_detail(bot: dict):
     # Run selector
     def _run_label(t: dict) -> str:
         ts  = _fmt_ts(t.get("triggeredAt", ""))
-        ver = t.get("modelVersion", "?")[:24]
+        ver = t.get("modelVersion", "?")
         gid = _short_guid(t.get("triggerGuid", ""))
         return f"{ts}  ·  {gid}  ·  {ver}"
 
     run_labels = [_run_label(t) for t in triggers]
 
-    c1, c2 = st.columns(2)
-    with c1:
-        idx_a = st.selectbox("Baseline", range(len(triggers)),
-                             format_func=lambda i: run_labels[i],
-                             index=max(0, len(triggers) - 2), key="sel_a")
-    with c2:
-        idx_b = st.selectbox("Current",  range(len(triggers)),
-                             format_func=lambda i: run_labels[i],
-                             index=len(triggers) - 1, key="sel_b")
+    idx_a = st.selectbox("Run A — older / baseline", range(len(triggers)),
+                         format_func=lambda i: run_labels[i],
+                         index=max(0, len(triggers) - 2), key="sel_a")
+    idx_b = st.selectbox("Run B — newer / comparison", range(len(triggers)),
+                         format_func=lambda i: run_labels[i],
+                         index=len(triggers) - 1, key="sel_b")
+
+    if idx_a == idx_b:
+        st.warning("Run A and Run B are the same — select two different runs to compare.")
+        return
 
     trig_a = triggers[idx_a]
     trig_b = triggers[idx_b]
@@ -696,38 +712,42 @@ def page_bot_detail(bot: dict):
     # LLM Analysis at TOP
     analysis = (trig_b.get("analysis") or trig_a.get("analysis") or "").strip()
     if analysis:
-        st.markdown(f"""
-        <div class='analysis-panel'>
-          <div class='analysis-label'>⚡ LLM DRIFT ANALYSIS</div>
-          {analysis.replace(chr(10), '<br>')}
-        </div>
-        """, unsafe_allow_html=True)
-
-    # Radar + metric summary table
-    col_r, col_t = st.columns([1, 2])
-    with col_r:
-        st.markdown(f"<div class='sec-label'>RADAR</div>", unsafe_allow_html=True)
-        fig_r = chart_radar(cls, lbl_a, lbl_b)
-        if fig_r.data:
-            st.plotly_chart(fig_r, use_container_width=True, config={"displayModeBar": False})
-
-    with col_t:
-        st.markdown(f"<div class='sec-label'>METRIC SUMMARY</div>", unsafe_allow_html=True)
-        if cls:
-            rows = []
-            for c in cls:
-                rows.append({
-                    "Metric":   c["key"],
-                    "Verdict":  c["verdict"],
-                    "Prev":     round(c["prev"], 4) if c["prev"] is not None else None,
-                    "Curr":     round(c["curr"], 4) if c["curr"] is not None else None,
-                    "Δ":        f"{c['delta']:+.4f}" if c["delta"] is not None else "—",
-                })
-            df = pd.DataFrame(rows)
-            st.dataframe(df, use_container_width=True, hide_index=True,
-                         height=min(380, 48 + len(rows) * 38))
+        _is_err = "LLM analysis unavailable" in analysis or "Error code" in analysis
+        if _is_err:
+            st.caption("⚠ LLM analysis unavailable — check LLM_API_KEY / LLM_BASE_URL in your .env")
         else:
-            st.caption("No metrics — first run establishes baseline.")
+            st.markdown(f"""
+            <div class='analysis-panel'>
+              <div class='analysis-label'>⚡ LLM DRIFT ANALYSIS</div>
+              {analysis.replace(chr(10), '<br>')}
+            </div>
+            """, unsafe_allow_html=True)
+
+    # Radar — full width, legend overlaid at bottom
+    st.markdown(f"<div class='sec-label'>RADAR</div>", unsafe_allow_html=True)
+    fig_r = chart_radar(cls, lbl_a, lbl_b)
+    if fig_r.data:
+        st.plotly_chart(fig_r, width="stretch", config={"displayModeBar": False})
+
+    st.divider()
+
+    # Metric summary — full width below
+    st.markdown(f"<div class='sec-label'>METRIC SUMMARY</div>", unsafe_allow_html=True)
+    if cls:
+        rows = []
+        for c in cls:
+            rows.append({
+                "Metric":   c["key"],
+                "Verdict":  c["verdict"],
+                "Prev":     round(c["prev"], 4) if c["prev"] is not None else None,
+                "Curr":     round(c["curr"], 4) if c["curr"] is not None else None,
+                "Δ":        f"{c['delta']:+.4f}" if c["delta"] is not None else "—",
+            })
+        df = pd.DataFrame(rows)
+        st.dataframe(df, width="stretch", hide_index=True,
+                     height=min(260, 48 + len(rows) * 38))
+    else:
+        st.caption("No metrics — first run establishes baseline.")
 
     # Per-metric-type sections (REGRESSED expanded first)
     st.markdown(f"<div class='sec-label'>PER METRIC TYPE</div>", unsafe_allow_html=True)
@@ -762,7 +782,7 @@ def page_bot_detail(bot: dict):
             if cases_prev and cases_curr:
                 fig_d = chart_delta_bar(cases_prev, cases_curr, "Score Δ per case (worst first)")
                 if fig_d.data:
-                    st.plotly_chart(fig_d, use_container_width=True,
+                    st.plotly_chart(fig_d, width="stretch",
                                     config={"displayModeBar": False})
 
             # Status transition grid
@@ -770,7 +790,7 @@ def page_bot_detail(bot: dict):
                 st.caption("Status transitions")
                 fig_g = chart_status_grid(cases_prev, cases_curr)
                 if fig_g.data:
-                    st.plotly_chart(fig_g, use_container_width=True,
+                    st.plotly_chart(fig_g, width="stretch",
                                     config={"displayModeBar": False})
 
             # Case table
@@ -793,7 +813,7 @@ def page_bot_detail(bot: dict):
                     })
                 rows.sort(key=lambda r: (r["Δ"] or 0))
                 df = pd.DataFrame(rows).set_index("#")
-                st.dataframe(df, use_container_width=True,
+                st.dataframe(df, width="stretch",
                              height=min(420, 48 + len(rows) * 38))
 
                 # Failing cases
@@ -816,7 +836,7 @@ def page_bot_detail(bot: dict):
         st.markdown(f"<div class='sec-label'>METRIC TRENDS</div>", unsafe_allow_html=True)
         fig_t = chart_metric_trend(bot)
         if fig_t.data:
-            st.plotly_chart(fig_t, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig_t, width="stretch", config={"displayModeBar": False})
 
     # Run timeline
     st.markdown(f"<div class='sec-label'>RUN HISTORY</div>", unsafe_allow_html=True)

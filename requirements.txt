@@ -6,3 +6,4 @@ azure-identity
 streamlit
 plotly
 pandas
+python-dotenv

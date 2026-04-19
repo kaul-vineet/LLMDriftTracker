@@ -13,10 +13,13 @@ import os
 import schedule
 import time
 import uuid
+from dotenv import load_dotenv
+load_dotenv()
 from datetime import datetime, timezone
 
 from . import dataverse
 from . import eval_client
+from . import events as ev
 from . import lore
 from . import notifier
 from . import reasoning
@@ -95,6 +98,8 @@ def run_cycle(cfg: dict, force: bool = False):
     lore.cycle_start(ts)
 
     store_dir   = cfg.get("store_dir", "data")
+    ev.cycle_start(store_dir, forced=force)
+
     bots        = dataverse.list_all_bots(cfg)
     bot_results = []
 
@@ -105,18 +110,22 @@ def run_cycle(cfg: dict, force: bool = False):
 
         if not force and not store.model_changed(store_dir, bot_id, curr_ver):
             lore.no_change(bot_name)
+            ev.stable(store_dir, bot_name, bot_id)
             continue
 
         tracking = store.load_tracking(store_dir, bot_id)
         old_ver  = tracking.get("modelVersion", curr_ver if force else "unknown")
         if not force:
             lore.model_changed(bot_name, old_ver, curr_ver)
+            ev.model_change(store_dir, bot_name, bot_id, old_ver, curr_ver)
 
         trigger_guid = str(uuid.uuid4()).replace("-", "")[:12]
 
         try:
+            ev.eval_start(store_dir, bot_name, bot_id, 0)
             results_by_type = eval_client.run_eval_for_bot(bot, cfg)
             if not results_by_type:
+                ev.eval_no_sets(store_dir, bot_name, bot_id)
                 store.save_tracking(store_dir, bot_id, curr_ver, None,
                                     bot_name=bot_name, env_name=bot.get("envName", ""))
                 continue
@@ -125,6 +134,21 @@ def run_cycle(cfg: dict, force: bool = False):
 
             br = _build_bot_result(bot_name, old_ver, curr_ver, trigger_guid,
                                    results_by_type, prev_trigger, cfg)
+
+            # Log verdict events
+            cls = br.get("classifications", [])
+            reg_metrics = [c["key"] for c in cls if c["verdict"] == "REGRESSED"]
+            imp_metrics = [c["key"] for c in cls if c["verdict"] == "IMPROVED"]
+            curr_m = br.get("currMetrics", {})
+            pass_rate = curr_m.get("CompareMeaning.passRate", 0.0)
+            avg_score = curr_m.get("CompareMeaning.score", 0.0)
+            verdict   = br.get("verdictSummary", "STABLE")
+
+            ev.eval_complete(store_dir, bot_name, bot_id, pass_rate, avg_score, verdict)
+            if reg_metrics:
+                ev.regression(store_dir, bot_name, bot_id, reg_metrics)
+            elif imp_metrics:
+                ev.improvement(store_dir, bot_name, bot_id, imp_metrics)
 
             store.save_trigger(store_dir, bot_id, trigger_guid, curr_ver,
                                results_by_type, analysis=br["analysis"])
@@ -135,6 +159,7 @@ def run_cycle(cfg: dict, force: bool = False):
 
         except Exception as e:
             lore.eval_error(bot_name, e)
+            ev.error(store_dir, bot_name, bot_id, str(e))
 
     if not bot_results:
         lore.cycle_idle()
@@ -154,6 +179,7 @@ def main():
     def _scheduled_or_triggered():
         if _check_file_trigger(store_dir):
             print("\n[agent] force_eval.trigger detected — running immediately\n")
+            ev.force_eval(store_dir)
             run_cycle(cfg, force=True)
         else:
             run_cycle(cfg)

@@ -19,6 +19,9 @@ import os
 import time
 from datetime import datetime, timezone
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import streamlit as st
 
 # ── Page config ───────────────────────────────────────────────────────────────
