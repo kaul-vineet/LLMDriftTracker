@@ -191,26 +191,50 @@ def _stop_agent():
         pass
 
 
+def _check_msal_cache(cfg: dict):
+    """Read MSAL cache directly — works whether agent is running or not."""
+    try:
+        import msal
+        cache_path = cfg.get("token_cache_file", "msal_token_cache.json")
+        if not os.path.exists(cache_path):
+            return None, None
+        cache = msal.SerializableTokenCache()
+        cache.deserialize(open(cache_path).read())
+        app = msal.PublicClientApplication(
+            client_id=cfg["eval_app_client_id"],
+            authority=f"https://login.microsoftonline.com/{cfg['eval_app_tenant_id']}",
+            token_cache=cache,
+        )
+        accs = app.get_accounts()
+        if accs:
+            return "AUTHENTICATED", accs[0].get("username", "")
+        return "NOT_AUTHENTICATED", None
+    except Exception:
+        return None, None
+
+
 def render_auth_status():
     from agent.auth import get_auth_state
-    try:
-        cfg   = json.loads(open("config.json").read()) if os.path.exists("config.json") else {}
-        state = get_auth_state(cfg) if cfg else {"status": "UNKNOWN"}
-    except Exception:
-        state = {"status": "UNKNOWN"}
-    status  = state.get("status", "UNKNOWN")
-    account = state.get("account", "")
-    if status == "AUTHENTICATED":
+
+    if not os.path.exists("config.json"):
         st.markdown(
-            f"<div style='background:rgba(40,200,64,.08);border:1px solid rgba(40,200,64,.3);"
+            f"<div style='background:{C_CARD};border:1px solid {C_BORDER};"
             f"border-radius:6px;padding:8px 12px;margin-bottom:8px'>"
-            f"<div style='color:{C_GREEN};font-size:0.65rem;font-weight:700;letter-spacing:1px;"
-            f"font-family:{FONT}'>● TOKEN VALID</div>"
-            f"<div style='color:{C_DIM};font-size:0.65rem;margin-top:2px'>{account}</div></div>",
+            f"<div style='color:{C_DIM};font-size:0.65rem;font-weight:700;letter-spacing:1px;"
+            f"font-family:{FONT}'>○ SETUP REQUIRED</div></div>",
             unsafe_allow_html=True,
         )
-    elif status == "PENDING_DEVICE_FLOW":
-        code = state.get("user_code", "")
+        return
+
+    try:
+        cfg = json.loads(open("config.json").read())
+    except Exception:
+        cfg = {}
+
+    # Prefer agent-written auth_state.json for PENDING_DEVICE_FLOW (live agent signal)
+    agent_state = get_auth_state(cfg) if cfg else {"status": "UNKNOWN"}
+    if agent_state.get("status") == "PENDING_DEVICE_FLOW":
+        code = agent_state.get("user_code", "")
         st.markdown(
             f"<div style='background:rgba(255,68,68,.08);border:1px solid {C_RED};"
             f"border-radius:6px;padding:10px 12px;margin-bottom:8px'>"
@@ -221,12 +245,36 @@ def render_auth_status():
             f"font-family:{FONT};margin-top:6px;text-align:center'>{code}</div></div>",
             unsafe_allow_html=True,
         )
+        return
+
+    # Check MSAL cache directly — works without agent running
+    status, account = _check_msal_cache(cfg)
+
+    if status == "AUTHENTICATED":
+        st.markdown(
+            f"<div style='background:rgba(40,200,64,.08);border:1px solid rgba(40,200,64,.3);"
+            f"border-radius:6px;padding:8px 12px;margin-bottom:8px'>"
+            f"<div style='color:{C_GREEN};font-size:0.65rem;font-weight:700;letter-spacing:1px;"
+            f"font-family:{FONT}'>● TOKEN VALID</div>"
+            f"<div style='color:{C_DIM};font-size:0.65rem;margin-top:2px'>{account}</div></div>",
+            unsafe_allow_html=True,
+        )
+    elif status == "NOT_AUTHENTICATED":
+        st.markdown(
+            f"<div style='background:rgba(255,68,68,.06);border:1px solid {C_BORDER};"
+            f"border-radius:6px;padding:8px 12px;margin-bottom:8px'>"
+            f"<div style='color:{C_RED};font-size:0.65rem;font-weight:700;letter-spacing:1px;"
+            f"font-family:{FONT}'>○ NOT AUTHENTICATED</div>"
+            f"<div style='color:{C_DIM};font-size:0.62rem;margin-top:2px'>Sign in via Setup page</div></div>",
+            unsafe_allow_html=True,
+        )
     else:
+        # Cache unreadable or config incomplete
         st.markdown(
             f"<div style='background:{C_CARD};border:1px solid {C_BORDER};"
             f"border-radius:6px;padding:8px 12px;margin-bottom:8px'>"
             f"<div style='color:{C_DIM};font-size:0.65rem;font-weight:700;letter-spacing:1px;"
-            f"font-family:{FONT}'>● AUTH UNKNOWN</div></div>",
+            f"font-family:{FONT}'>○ SETUP REQUIRED</div></div>",
             unsafe_allow_html=True,
         )
 
