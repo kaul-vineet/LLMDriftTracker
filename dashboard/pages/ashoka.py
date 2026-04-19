@@ -438,7 +438,7 @@ def render_header(bots, raw_events):
         </div>
       </div>
 
-      <div style='font-size:0.78rem;letter-spacing:4px;color:{sys_color};
+      <div style='font-size:1.05rem;letter-spacing:4px;color:{sys_color};
                   font-weight:700;font-family:{FONT};margin-bottom:10px'>
         <span class="sys-dot-hdr"></span>{sys_label} &nbsp;·&nbsp; {dot_label}
       </div>
