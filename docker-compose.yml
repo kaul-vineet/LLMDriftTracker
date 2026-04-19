@@ -1,0 +1,60 @@
+# LLM Drift Tracker — two services, one image, shared volume
+#
+# Local usage:
+#   docker compose up --build -d
+#   docker compose logs -f drift-agent
+#   open http://localhost:8501            # dashboard
+#
+# Azure Container Apps usage:
+#   - Build + push image to ACR
+#   - Create two container apps pointing at the same image
+#   - Mount an Azure Files share at /app/data on both
+#   - Set env vars (LLM_API_KEY, SMTP_PASSWORD, etc.) as secrets
+#   - Override command per container app (same as below)
+#
+# Secrets: never put real values here.
+# Use a .env file (gitignored) or Azure Key Vault references for production.
+
+services:
+
+  drift-agent:
+    build: .
+    image: llm-drift-tracker:latest
+    container_name: drift-agent
+    restart: unless-stopped
+    command: python -m agent.main
+    volumes:
+      - ./data:/app/data
+      - ./config.json:/app/config.json:ro
+      - ./msal_token_cache.json:/app/msal_token_cache.json
+    environment:
+      LLM_API_KEY:    ${LLM_API_KEY:-}
+      LLM_BASE_URL:   ${LLM_BASE_URL:-}
+      LLM_MODEL:      ${LLM_MODEL:-}
+      SMTP_HOST:      ${SMTP_HOST:-}
+      SMTP_USER:      ${SMTP_USER:-}
+      SMTP_PASSWORD:  ${SMTP_PASSWORD:-}
+      SMTP_RECIPIENT: ${SMTP_RECIPIENT:-}
+
+  drift-dashboard:
+    image: llm-drift-tracker:latest
+    container_name: drift-dashboard
+    restart: unless-stopped
+    command: >
+      streamlit run dashboard/app.py
+        --server.port 8501
+        --server.address 0.0.0.0
+        --server.headless true
+        --server.fileWatcherType none
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data
+      - ./config.json:/app/config.json:ro
+      - ./msal_token_cache.json:/app/msal_token_cache.json
+    environment:
+      LLM_API_KEY:    ${LLM_API_KEY:-}
+      LLM_BASE_URL:   ${LLM_BASE_URL:-}
+      LLM_MODEL:      ${LLM_MODEL:-}
+    depends_on:
+      - drift-agent

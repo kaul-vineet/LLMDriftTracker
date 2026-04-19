@@ -1,8 +1,11 @@
 """
 agent/wizard.py — one-time setup wizard for copilot-eval-agent
 Invoked via:  drift setup
+
+Step order: credentials → sign-in → environments → agent settings → SMTP
+Credentials must come first so MSAL tokens are available for BAPI/Dataverse discovery.
 """
-import json, msal, os, sys, time, threading, smtplib, getpass, subprocess, requests
+import json, msal, os, sys, time, threading, smtplib, getpass, requests
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime, timezone
@@ -16,7 +19,6 @@ MG = "\033[95m";  BL = "\033[94m";  DM = "\033[2m";   BD = "\033[1m"
 RS = "\033[0m"
 
 TOTAL_STEPS = 5
-_AZ = "az.cmd" if sys.platform == "win32" else "az"
 
 
 # ── Logo ──────────────────────────────────────────────────────────────────────
@@ -139,8 +141,9 @@ def celebrate():
         time.sleep(0.09)
 
 
-# ── MSAL auth ─────────────────────────────────────────────────────────────────
+# ── MSAL auth (wizard-local device flow) ──────────────────────────────────────
 def authenticate(cfg: dict) -> str:
+    """Run device flow and cache token. Returns access token."""
     SCOPES     = ["https://api.powerplatform.com/.default"]
     cache_file = cfg.get("token_cache_file", "msal_token_cache.json")
     cache = msal.SerializableTokenCache()
@@ -213,13 +216,10 @@ def _send_test_email(host: str, port: int, user: str, password: str, recipient: 
 
 
 # ── Tenant / environment discovery via BAPI ───────────────────────────────────
-def _fetch_environments_from_bapi() -> list:
-    token = subprocess.check_output(
-        [_AZ, "account", "get-access-token",
-         "--resource", "https://service.powerapps.com/",
-         "--query", "accessToken", "-o", "tsv"],
-        stderr=subprocess.DEVNULL,
-    ).decode().strip()
+def _fetch_environments_from_bapi(cfg: dict) -> list:
+    """Fetch all environments using MSAL-acquired BAPI token."""
+    from .auth import get_bapi_token
+    token = get_bapi_token(cfg)
     resp = requests.get(
         "https://api.bap.microsoft.com/providers/Microsoft.BusinessAppPlatform/environments",
         params={"api-version": "2020-10-01"},
@@ -227,8 +227,14 @@ def _fetch_environments_from_bapi() -> list:
         timeout=20,
     )
     resp.raise_for_status()
+
+    # Show raw response for connectivity diagnostics
+    raw = resp.json()
+    total = len(raw.get("value", []))
+    hint(f"  BAPI returned {total} environment(s).")
+
     envs = []
-    for item in resp.json().get("value", []):
+    for item in raw.get("value", []):
         env_id  = item.get("name", "")
         props   = item.get("properties", {})
         display = props.get("displayName", env_id)
@@ -238,23 +244,13 @@ def _fetch_environments_from_bapi() -> list:
     return envs
 
 
-def _get_tenant_id_from_az() -> str:
-    return subprocess.check_output(
-        [_AZ, "account", "show", "--query", "tenantId", "-o", "tsv"],
-        stderr=subprocess.DEVNULL,
-    ).decode().strip()
-
-
 # ── Bot discovery per environment ─────────────────────────────────────────────
-def _fetch_bots_for_env(org_url: str) -> list:
+def _fetch_bots_for_env(org_url: str, cfg: dict) -> list:
+    """Fetch active bots for one environment using MSAL-acquired Dataverse token."""
+    from .auth import get_dataverse_token
     if not org_url.startswith("http"):
         org_url = "https://" + org_url
-    token = subprocess.check_output(
-        [_AZ, "account", "get-access-token",
-         "--resource", org_url.rstrip("/") + "/",
-         "--query", "accessToken", "-o", "tsv"],
-        stderr=subprocess.DEVNULL,
-    ).decode().strip()
+    token = get_dataverse_token(org_url, cfg)
     resp = requests.get(
         f"{org_url}/api/data/v9.2/bots",
         params={"$select": "botid,name,schemaname,statecode", "$filter": "statecode eq 0"},
@@ -263,14 +259,18 @@ def _fetch_bots_for_env(org_url: str) -> list:
         timeout=20,
     )
     resp.raise_for_status()
-    return resp.json().get("value", [])
+
+    # Show raw response count for diagnostics
+    bots = resp.json().get("value", [])
+    hint(f"  Dataverse returned {len(bots)} active bot(s).")
+    return bots
 
 
-def _pick_bots(env: dict):
+def _pick_bots(env: dict, cfg: dict):
     """Populate env['monitoredBots'] with selected schemanames. Empty list = all."""
     print(f"\n  {CY}{BD}── 🤖 Bots in  {BD}{env['name']}{RS}  {'─' * 20}{RS}")
     try:
-        bots = with_spinner(f"Fetching bots…", _fetch_bots_for_env, env["orgUrl"])
+        bots = with_spinner(f"Fetching bots…", _fetch_bots_for_env, env["orgUrl"], cfg)
     except Exception as e:
         step_fail(f"Could not fetch bots ({e}) — will monitor all")
         env["monitoredBots"] = []
@@ -338,13 +338,14 @@ def _step_environments_manual() -> list:
     return envs
 
 
-def step_environments() -> list:
+def step_environments(cfg: dict) -> list:
+    """Discover environments via BAPI (uses MSAL token from cfg), fall back to manual."""
     print()
     try:
-        raw = with_spinner("Fetching environments from tenant…", _fetch_environments_from_bapi)
+        raw = with_spinner("Fetching environments from tenant…", _fetch_environments_from_bapi, cfg)
     except Exception as e:
         step_fail(f"BAPI lookup failed: {e}")
-        hint("Make sure you are signed in with:  az login")
+        hint("Verify your App registration has Power Platform API permissions.")
         hint("Falling back to manual entry.\n")
         return _step_environments_manual()
 
@@ -386,7 +387,7 @@ def step_environments() -> list:
     # Bot picker — one sub-section per environment
     print()
     for env in chosen:
-        _pick_bots(env)
+        _pick_bots(env, cfg)
 
     return chosen
 
@@ -394,18 +395,7 @@ def step_environments() -> list:
 def step_credentials() -> dict:
     hint("App registration with CopilotStudio.MakerOperations delegated permissions.\n")
     client_id = ask("App (client) ID")
-
-    tenant_id = ""
-    try:
-        tenant_id = with_spinner("Reading tenant ID from az account…", _get_tenant_id_from_az)
-    except Exception:
-        pass
-
-    if not tenant_id:
-        tenant_id = ask("Tenant ID")
-    else:
-        print(f"  {GR}✓{RS}  Tenant  {DM}{tenant_id}{RS}  {DM}(from az account){RS}")
-
+    tenant_id = ask("Tenant ID  (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)")
     return {"eval_app_client_id": client_id, "eval_app_tenant_id": tenant_id,
             "token_cache_file": "msal_token_cache.json"}
 
@@ -474,11 +464,12 @@ def print_summary(cfg: dict):
 
 
 # ── Top-level re-run menu ─────────────────────────────────────────────────────
+# Step order: 1=Credentials, 2=Sign-In, 3=Environments, 4=Agent Settings, 5=SMTP
 _MENU = [
+    ("🔑", "Credentials  (App ID / Tenant ID)"),
+    ("🔐", "Sign-In  (Microsoft device flow)"),
     ("🌐", "Environments & monitored bots"),
-    ("🔑", "Credentials"),
     ("⚙️ ", "Agent Settings"),
-    ("🔐", "Sign-In"),
     ("📧", "SMTP / Email"),
 ]
 
@@ -499,19 +490,11 @@ def _top_menu() -> str:
 
 def _run_step(n: str, cfg: dict):
     if n == "1":
-        section_header(1, "🌐", "Power Platform Environments")
-        cfg["environments"] = step_environments()
-        section_ok(1, "Environments")
-    elif n == "2":
-        section_header(2, "🔑", "Eval App Credentials")
+        section_header(1, "🔑", "Eval App Credentials")
         cfg.update(step_credentials())
-        section_ok(2, "Credentials")
-    elif n == "3":
-        section_header(3, "⚙️ ", "Agent Settings")
-        cfg.update(step_agent_settings())
-        section_ok(3, "Agent Settings")
-    elif n == "4":
-        section_header(4, "🔐", "Microsoft Sign-In")
+        section_ok(1, "Credentials")
+    elif n == "2":
+        section_header(2, "🔐", "Microsoft Sign-In")
         if cfg.get("eval_app_client_id") and cfg.get("eval_app_tenant_id"):
             try:
                 authenticate(cfg)
@@ -520,8 +503,19 @@ def _run_step(n: str, cfg: dict):
                 step_fail(f"Auth failed: {e}")
                 hint("Re-run  drift setup  to retry sign-in.")
         else:
-            hint("Credentials not in config — run step 2 first.")
-        section_ok(4, "Sign-In")
+            hint("Credentials not in config — run step 1 (Credentials) first.")
+        section_ok(2, "Sign-In")
+    elif n == "3":
+        section_header(3, "🌐", "Power Platform Environments")
+        if cfg.get("eval_app_client_id") and cfg.get("eval_app_tenant_id"):
+            cfg["environments"] = step_environments(cfg)
+        else:
+            hint("Credentials not in config — run step 1 first, then sign in (step 2).")
+        section_ok(3, "Environments")
+    elif n == "4":
+        section_header(4, "⚙️ ", "Agent Settings")
+        cfg.update(step_agent_settings())
+        section_ok(4, "Agent Settings")
     elif n == "5":
         section_header(5, "📧", "Email Reports")
         cfg["smtp"] = step_smtp()
@@ -551,23 +545,23 @@ def main():
         time.sleep(0.3)
         cfg = {}
 
-    # Step 1 — Environments + bot picker
-    section_header(1, "🌐", "Power Platform Environments")
-    cfg["environments"] = step_environments()
-    section_ok(1, "Environments")
-
-    # Step 2 — Credentials
-    section_header(2, "🔑", "Eval App Credentials")
+    # Step 1 — Credentials first: client_id + tenant_id needed for token acquisition
+    section_header(1, "🔑", "Eval App Credentials")
     cfg.update(step_credentials())
-    section_ok(2, "Credentials")
+    section_ok(1, "Credentials")
 
-    # Step 3 — Agent settings
-    section_header(3, "⚙️ ", "Agent Settings")
+    # Step 2 — Microsoft sign-in (device flow, caches token)
+    _run_step("2", cfg)
+
+    # Step 3 — Environments + bot picker (uses BAPI + Dataverse tokens)
+    section_header(3, "🌐", "Power Platform Environments")
+    cfg["environments"] = step_environments(cfg)
+    section_ok(3, "Environments")
+
+    # Step 4 — Agent settings
+    section_header(4, "⚙️ ", "Agent Settings")
     cfg.update(step_agent_settings())
-    section_ok(3, "Agent Settings")
-
-    # Step 4 — Microsoft sign-in
-    _run_step("4", cfg)
+    section_ok(4, "Agent Settings")
 
     # Step 5 — SMTP
     section_header(5, "📧", "Email Reports")
@@ -610,23 +604,23 @@ def main():
         ("│   ├── notifier.py",    "SMTP email"),
         ("│   └── report.py",      "HTML report generator"),
         ("├── dashboard/",         "Streamlit read-only UI"),
-        ("│   └── app.py",         "fleet heatmap, radar, trends"),
+        ("│   ├── app.py",         "fleet overview, radar, trends"),
+        ("│   └── pages/",         ""),
+        ("│       └── 1_Setup.py", "7-step Streamlit setup wizard"),
         ("├── .streamlit/",        "dark theme config"),
         ("├── drift / drift.bat",  "CLI entry points"),
         ("├── config.json",        "← generated by this wizard"),
-        ("├── Dockerfile",         "production container"),
+        ("├── Dockerfile",         "production container image"),
+        ("├── docker-compose.yml", "agent + dashboard services"),
         ("├── requirements.txt",   "Python deps"),
         ("└── README.md",          "full docs"),
     ]
     for path, desc in tree:
         print(f"  {DM}{path:<32}{RS}  {DM}{desc}{RS}")
     print()
-    print(f"  {DM}Docker  →  docker build -t copilot-eval-agent .{RS}")
-    print(f"  {DM}           docker run -d \\{RS}")
-    print(f"  {DM}             -v $(pwd)/data:/app/data \\{RS}")
-    print(f"  {DM}             -v $(pwd)/msal_token_cache.json:/app/msal_token_cache.json \\{RS}")
-    print(f"  {DM}             -v $(pwd)/config.json:/app/config.json \\{RS}")
-    print(f"  {DM}             copilot-eval-agent{RS}")
+    print(f"  {DM}Docker  →  docker compose up -d{RS}")
+    print(f"  {DM}           docker compose logs -f drift-agent{RS}")
+    print(f"  {DM}           open http://localhost:8501  # dashboard{RS}")
     print(f"  {DM}{'─' * 56}{RS}\n")
 
 

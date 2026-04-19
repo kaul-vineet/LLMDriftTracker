@@ -5,3 +5,4 @@ openai
 azure-identity
 streamlit
 plotly
+pandas

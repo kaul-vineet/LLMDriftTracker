@@ -1,3 +1,10 @@
+"""
+agent/eval_client.py — Copilot Studio Eval API wrapper.
+
+run_eval_for_bot() now runs ALL active test sets for a bot and returns
+dict[metric_type -> run_result]. Each test set is assumed to cover one
+primary metric type (inferred from the first completed test case).
+"""
 import time
 import requests
 from .auth import get_eval_token
@@ -59,8 +66,40 @@ def get_historical_runs(pp_env_id: str, bot_id: str, token: str, n: int = 5) -> 
     return sorted(runs, key=lambda x: x.get("startTime", ""), reverse=True)[:n]
 
 
-def run_eval_for_bot(bot: dict, cfg: dict) -> dict | None:
-    token = get_eval_token(cfg)
+def _infer_metric_type(result: dict) -> str:
+    """Infer the primary metric type from the first completed test case result."""
+    for case in result.get("testCasesResults", []):
+        for m in case.get("metricsResults", []):
+            t = m.get("type", "").strip()
+            if t:
+                return t
+    return "Unknown"
+
+
+def probe_test_sets(pp_env_id: str, bot_id: str, cfg: dict) -> dict:
+    """Connectivity probe — list test sets and return raw response. For diagnostics."""
+    try:
+        token     = get_eval_token(cfg)
+        test_sets = get_test_sets(pp_env_id, bot_id, token)
+        active    = [s for s in test_sets if s.get("state") == "Active"]
+        return {
+            "ok":          True,
+            "total":       len(test_sets),
+            "active":      len(active),
+            "test_sets":   [{"id": s["id"], "displayName": s.get("displayName", ""), "state": s.get("state")}
+                            for s in test_sets],
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def run_eval_for_bot(bot: dict, cfg: dict) -> dict[str, dict] | None:
+    """
+    Run ALL active test sets for a bot.
+    Returns dict[metric_type -> full_run_result] or None if no active test sets found.
+    Each test set is run sequentially. Individual failures are logged but don't abort others.
+    """
+    token     = get_eval_token(cfg)
     pp_env_id = bot["ppEnvId"]
     bot_id    = bot["botId"]
 
@@ -74,13 +113,31 @@ def run_eval_for_bot(bot: dict, cfg: dict) -> dict | None:
         lore.eval_no_testsets(bot["name"])
         return None
 
-    test_set_id = active[0]["id"]
-    lore.eval_start(bot["name"], active[0].get("displayName", test_set_id))
+    results_by_type: dict[str, dict] = {}
 
-    run_id = trigger_run(pp_env_id, bot_id, test_set_id, token)
-    result = poll_run(
-        pp_env_id, bot_id, run_id, token,
-        timeout_s=cfg.get("eval_poll_timeout_seconds", 300),
-        interval_s=cfg.get("eval_poll_interval_seconds", 15)
-    )
-    return result
+    for test_set in active:
+        test_set_id   = test_set["id"]
+        display_name  = test_set.get("displayName", test_set_id)
+        lore.eval_start(bot["name"], display_name)
+
+        try:
+            run_id = trigger_run(pp_env_id, bot_id, test_set_id, token)
+            result = poll_run(
+                pp_env_id, bot_id, run_id, token,
+                timeout_s=cfg.get("eval_poll_timeout_seconds", 300),
+                interval_s=cfg.get("eval_poll_interval_seconds", 15),
+            )
+            metric_type = _infer_metric_type(result)
+
+            # If two test sets share the same inferred metric type, suffix with display name
+            if metric_type in results_by_type:
+                metric_type = f"{metric_type}_{display_name}"
+
+            results_by_type[metric_type] = result
+            lore.eval_done(bot["name"])
+
+        except Exception as e:
+            lore.eval_error(bot["name"], e)
+            continue
+
+    return results_by_type if results_by_type else None

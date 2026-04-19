@@ -8,11 +8,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY agent/ agent/
 COPY dashboard/ dashboard/
 COPY .streamlit/ .streamlit/
-COPY config.json .
 
-# Mounted at runtime:
-#   -v ./data:/app/data                      (bot state + run history)
-#   -v ./msal_token_cache.json:/app/msal_token_cache.json  (MSAL token)
+# config.json, msal_token_cache.json, and data/ are mounted at runtime.
+# They are NOT baked into the image so secrets never land in layers.
+#
+# docker-compose.yml mounts:
+#   ./data:/app/data
+#   ./config.json:/app/config.json
+#   ./msal_token_cache.json:/app/msal_token_cache.json  (created on first auth)
 VOLUME ["/app/data"]
 
 ENV LLM_BASE_URL=""
