@@ -63,7 +63,7 @@ st.markdown(f"""
 
   /* Section label */
   .sec-label {{
-    font-size:0.6rem; font-weight:700; letter-spacing:3px; text-transform:uppercase;
+    font-size:0.75rem; font-weight:700; letter-spacing:3px; text-transform:uppercase;
     color:{C_DIM}; border-bottom:1px solid {C_BORDER}; padding-bottom:6px;
     margin:20px 0 14px; font-family:{FONT};
   }}
@@ -404,85 +404,78 @@ def _build_timeline_events(raw):
 
 # ── Header ────────────────────────────────────────────────────────────────────
 def render_header(bots, raw_events):
-    last_scan  = max((b["updatedAt"] for b in bots), default="")
-    ts_str     = _fmt_ts(last_scan) if last_scan else "no data yet"
-    n_reg      = sum(1 for b in bots if _bot_verdict(b) == "REGRESSED")
-    dot_color  = C_RED if n_reg else C_GREEN
-    dot_label  = f"{n_reg} REGRESSED" if n_reg else "ALL STABLE"
-
+    last_scan   = max((b["updatedAt"] for b in bots), default="")
+    ts_str      = _fmt_ts(last_scan) if last_scan else "no data yet"
+    n_reg       = sum(1 for b in bots if _bot_verdict(b) == "REGRESSED")
+    dot_color   = C_RED if n_reg else C_GREEN
+    dot_label   = f"{n_reg} REGRESSED" if n_reg else "ALL STABLE"
     total_evals = sum(1 for e in raw_events if e.get("event") == "eval_complete")
     n_imp       = sum(1 for e in raw_events if e.get("event") == "improvement")
     n_reg_ev    = sum(1 for e in raw_events if e.get("event") == "regression")
+    agent_up    = _agent_running()
+    sys_color   = C_GREEN if agent_up else C_DIM
+    sys_label   = "SYSTEM ONLINE" if agent_up else "AGENT OFFLINE"
+    blink_anim  = "sys-blink 1.4s ease-in-out infinite" if agent_up else "none"
+    n_bots      = len(bots)
+    n_plural    = "s" if n_bots != 1 else ""
 
-    agent_up = _agent_running()
-    if agent_up:
-        sys_color, sys_label = C_GREEN, "SYSTEM ONLINE"
-    else:
-        sys_color, sys_label = C_DIM, "AGENT OFFLINE"
-
-    col_r, col_id = st.columns([1, 2.5])
-
-    with col_r:
-        st.markdown(
-            "<div class='radar-wrap'>"
-            "<div class='ring r1'></div><div class='ring r2'></div>"
-            "<div class='ring r3'></div><div class='ring r4'></div>"
-            "<div class='radar-h'></div><div class='radar-v'></div>"
-            "<div class='sweep'></div><div class='center-dot'></div>"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-
-    with col_id:
-        st.markdown(f"""
-        <style>
-          .sys-dot-hdr {{
-            width:9px;height:9px;border-radius:50%;background:{sys_color};
-            box-shadow:0 0 8px {sys_color};display:inline-block;margin-right:8px;
-            animation:{'sys-blink 1.4s ease-in-out infinite' if agent_up else 'none'};
-            vertical-align:middle;
-          }}
-        </style>
-        <div style='padding-top:8px'>
-          <div style='font-size:0.6rem;letter-spacing:4px;color:{sys_color};
-                      font-weight:700;font-family:{FONT};margin-bottom:6px'>
-            <span class="sys-dot-hdr"></span>{sys_label} &nbsp;·&nbsp; {dot_label}
-          </div>
-          <div style='font-size:2.4rem;font-weight:700;letter-spacing:10px;color:{C_CYAN};
-                      font-family:{FONT};line-height:1;
-                      text-shadow:0 0 30px rgba(0,240,255,.4),0 0 60px rgba(0,240,255,.15)'>
-            ASHOKA</div>
-          <div style='font-size:0.65rem;color:{C_MAGENTA};letter-spacing:3px;
-                      font-weight:700;margin-top:4px'>THE INCORRUPTIBLE JUDGE</div>
-          <div style='font-size:0.6rem;color:{C_DIM};letter-spacing:1px;margin-top:2px'>
-            copilot-eval-agent &nbsp;·&nbsp; {len(bots)} agent{'s' if len(bots)!=1 else ''} monitored
-            &nbsp;·&nbsp; {ts_str} last activity</div>
-        </div>
-        <div class='title-grid' style='margin-top:16px'>
-          <div class='title-card'>
-            <div class='title-sanskrit'>DHARMARAJA</div>
-            <div class='title-meaning'>King of Righteous Evaluation</div>
-          </div>
-          <div class='title-card'>
-            <div class='title-sanskrit'>DEVANAMPIYA</div>
-            <div class='title-meaning'>Beloved of the Signal</div>
-          </div>
-          <div class='title-card'>
-            <div class='title-sanskrit'>PRIYADARSHI</div>
-            <div class='title-meaning'>He Who Regards Every Metric</div>
-          </div>
-          <div class='title-card'>
-            <div class='title-sanskrit'>CHAKRAVARTIN</div>
-            <div class='title-meaning'>Wheel-Turner of Model Integrity</div>
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # Stat strip
     st.markdown(f"""
-    <div class='stat-bar'>
+    <style>
+      .sys-dot-hdr {{
+        width:9px;height:9px;border-radius:50%;background:{sys_color};
+        box-shadow:0 0 8px {sys_color};display:inline-block;margin-right:8px;
+        animation:{blink_anim};vertical-align:middle;
+      }}
+    </style>
+    <div style='text-align:center;max-width:780px;margin:0 auto 8px'>
+
+      <div style='display:flex;justify-content:center;margin-bottom:20px'>
+        <div class='radar-wrap'>
+          <div class='ring r1'></div><div class='ring r2'></div>
+          <div class='ring r3'></div><div class='ring r4'></div>
+          <div class='radar-h'></div><div class='radar-v'></div>
+          <div class='sweep'></div><div class='center-dot'></div>
+        </div>
+      </div>
+
+      <div style='font-size:0.6rem;letter-spacing:4px;color:{sys_color};
+                  font-weight:700;font-family:{FONT};margin-bottom:10px'>
+        <span class="sys-dot-hdr"></span>{sys_label} &nbsp;·&nbsp; {dot_label}
+      </div>
+
+      <div style='font-size:2.8rem;font-weight:700;letter-spacing:12px;color:{C_CYAN};
+                  font-family:{FONT};line-height:1;
+                  text-shadow:0 0 30px rgba(0,240,255,.4),0 0 60px rgba(0,240,255,.15)'>
+        ASHOKA</div>
+      <div style='font-size:0.65rem;color:{C_MAGENTA};letter-spacing:3px;
+                  font-weight:700;margin-top:6px'>THE INCORRUPTIBLE JUDGE</div>
+      <div style='font-size:0.6rem;color:{C_DIM};letter-spacing:1px;margin-top:4px'>
+        copilot-eval-agent &nbsp;·&nbsp; {n_bots} agent{n_plural} monitored
+        &nbsp;·&nbsp; {ts_str} last activity</div>
+
+      <div class='title-grid' style='margin-top:20px;max-width:580px;margin-left:auto;margin-right:auto'>
+        <div class='title-card' style='text-align:center'>
+          <div class='title-sanskrit'>DHARMARAJA</div>
+          <div class='title-meaning'>King of Righteous Evaluation</div>
+        </div>
+        <div class='title-card' style='text-align:center'>
+          <div class='title-sanskrit'>DEVANAMPIYA</div>
+          <div class='title-meaning'>Beloved of the Signal</div>
+        </div>
+        <div class='title-card' style='text-align:center'>
+          <div class='title-sanskrit'>PRIYADARSHI</div>
+          <div class='title-meaning'>He Who Regards Every Metric</div>
+        </div>
+        <div class='title-card' style='text-align:center'>
+          <div class='title-sanskrit'>CHAKRAVARTIN</div>
+          <div class='title-meaning'>Wheel-Turner of Model Integrity</div>
+        </div>
+      </div>
+
+    </div>
+    <div class='stat-bar' style='margin-top:24px'>
       <div class='stat-cell'>
-        <div class='stat-value' style='color:{C_CYAN}'>{len(bots)}</div>
+        <div class='stat-value' style='color:{C_CYAN}'>{n_bots}</div>
         <div class='stat-label'>Monitored</div>
       </div>
       <div class='stat-cell'>
@@ -507,6 +500,23 @@ def render_header(bots, raw_events):
 
 # ── Overview page ─────────────────────────────────────────────────────────────
 def page_overview(bots, raw_events):
+    # ── WHO I AM — centered, 75% width ───────────────────────────────────────
+    st.markdown("<div class='sec-label'>WHO I AM</div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div style='max-width:75%;margin:0 auto 20px;text-align:center;"
+        f"background:{C_CARD};border:1px solid {C_BORDER};"
+        f"border-radius:8px;padding:20px 28px;font-size:0.83rem;"
+        f"line-height:1.85;color:{C_TEXT}'>"
+        f"I am <b style='color:{C_CYAN}'>ASHOKA</b> — born February 16, 2026. "
+        f"I watch the models powering your Copilot Studio bots. "
+        f"The moment a model shifts, I trigger the Eval API, score every test case, "
+        f"and send you a verdict before your users file a ticket. "
+        f"I authenticate once. I store every run. I do not guess. I measure."
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+    # ── MONITORED AGENTS ─────────────────────────────────────────────────────
     if not bots:
         st.markdown(
             f"<div style='text-align:center;padding:40px;color:{C_DIM}'>"
@@ -531,22 +541,7 @@ def page_overview(bots, raw_events):
                     st.session_state.page = "detail"
                     st.rerun()
 
-    # Who I Am — condensed
-    st.markdown("<div class='sec-label'>WHO I AM</div>", unsafe_allow_html=True)
-    st.markdown(
-        f"<div style='background:{C_CARD};border-left:3px solid {C_CYAN};"
-        f"border-radius:0 8px 8px 0;padding:16px 20px;font-size:0.82rem;"
-        f"line-height:1.75;color:{C_TEXT};margin-bottom:4px'>"
-        f"I am <b style='color:{C_CYAN}'>ASHOKA</b> — born February 16, 2026. "
-        f"I watch the models powering your Copilot Studio bots. "
-        f"The moment a model shifts, I trigger the Eval API, score every test case, "
-        f"and send you a verdict before your users file a ticket. "
-        f"I authenticate once. I store every run. I do not guess. I measure."
-        f"</div>",
-        unsafe_allow_html=True,
-    )
-
-    # Mission timeline
+    # ── MISSION TIMELINE ─────────────────────────────────────────────────────
     st.markdown("<div class='sec-label'>MISSION TIMELINE</div>", unsafe_allow_html=True)
 
     origin = [
