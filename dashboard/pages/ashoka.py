@@ -1,9 +1,10 @@
 """
-dashboard/pages/ashoka.py — Fleet view + bot detail comparison page.
+dashboard/pages/ashoka.py — Fleet view, bot detail, identity, and mission timeline.
 """
 import json
 import os
 import sys
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -23,24 +24,169 @@ from agent.reasoning import (
     classify_run,
     verdict_summary,
 )
+from agent.events import load_events
 
 STORE_DIR = os.environ.get("STORE_DIR", "data")
+PID_FILE  = os.path.join(STORE_DIR, "agent.pid")
+
+
+def _agent_running():
+    try:
+        pid = int(open(PID_FILE).read().strip())
+    except Exception:
+        return False
+    try:
+        if sys.platform == "win32":
+            import subprocess as _sp
+            r = _sp.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+                        capture_output=True, text=True, timeout=3)
+            return str(pid) in r.stdout
+        else:
+            os.kill(pid, 0)
+            return True
+    except Exception:
+        return False
+
+
+# ── Page-specific CSS ─────────────────────────────────────────────────────────
+st.markdown(f"""
+<style>
+  /* Stat bar */
+  .stat-bar {{
+    display:grid; grid-template-columns:repeat(5,1fr);
+    gap:1px; background:{C_BORDER}; border:1px solid {C_BORDER};
+    border-radius:8px; overflow:hidden; margin-bottom:20px;
+  }}
+  .stat-cell {{ background:{C_CARD}; padding:14px 20px; text-align:center; }}
+  .stat-value {{ font-size:1.8rem; font-weight:700; font-family:{FONT}; line-height:1; }}
+  .stat-label {{ font-size:0.6rem; color:{C_DIM}; letter-spacing:2px; text-transform:uppercase; margin-top:4px; }}
+
+  /* Section label */
+  .sec-label {{
+    font-size:0.6rem; font-weight:700; letter-spacing:3px; text-transform:uppercase;
+    color:{C_DIM}; border-bottom:1px solid {C_BORDER}; padding-bottom:6px;
+    margin:20px 0 14px; font-family:{FONT};
+  }}
+
+  /* Analysis panel */
+  .analysis-panel {{
+    background:{C_BG}; border-left:3px solid {C_MAGENTA};
+    border-radius:0 8px 8px 0; padding:16px 20px;
+    font-size:0.875rem; line-height:1.75; color:{C_TEXT}; margin-bottom:20px;
+  }}
+  .analysis-label {{
+    font-size:0.65rem; font-weight:700; color:{C_MAGENTA};
+    letter-spacing:2px; margin-bottom:8px; font-family:{FONT};
+  }}
+
+  /* Run history timeline */
+  .rh-timeline {{ padding:8px 0; }}
+  .rh-item {{
+    display:flex; gap:16px; padding:12px 0;
+    border-bottom:1px solid {C_BORDER}; align-items:flex-start;
+  }}
+  .rh-dot {{ width:10px; height:10px; border-radius:50%; margin-top:4px; flex-shrink:0; }}
+  .rh-content {{ flex:1; }}
+  .rh-model {{ font-size:0.78rem; color:{C_TEXT}; font-family:{FONT}; }}
+  .rh-guid  {{ font-size:0.7rem; color:{C_DIM}; font-family:{FONT}; }}
+  .rh-ts    {{ font-size:0.68rem; color:{C_DIM}; }}
+
+  /* Radar */
+  .radar-wrap {{
+    position:relative; width:200px; height:200px; margin:0 auto 8px;
+    border-radius:50%;
+    background:radial-gradient(circle, rgba(0,15,25,0.95) 0%, rgba(0,5,10,0.98) 100%);
+    box-shadow:0 0 40px rgba(0,240,255,0.12), inset 0 0 60px rgba(0,0,0,0.7);
+  }}
+  .ring {{
+    position:absolute; border-radius:50%; border:1px solid;
+    top:50%; left:50%; transform:translate(-50%,-50%);
+  }}
+  .r1 {{ width:200px;height:200px; border-color:rgba(0,240,255,0.30); }}
+  .r2 {{ width:145px;height:145px; border-color:rgba(0,240,255,0.45); }}
+  .r3 {{ width:90px; height:90px;  border-color:rgba(0,240,255,0.65); }}
+  .r4 {{ width:38px; height:38px;  border-color:{C_CYAN}; box-shadow:0 0 8px {C_CYAN}; }}
+  .radar-h,.radar-v {{
+    position:absolute; background:rgba(0,240,255,0.20);
+    top:50%; left:50%; transform:translate(-50%,-50%);
+  }}
+  .radar-h {{ width:200px; height:1px; }}
+  .radar-v {{ width:1px; height:200px; }}
+  .sweep {{
+    position:absolute; top:0; left:0; width:100%; height:100%; border-radius:50%;
+    background:conic-gradient(rgba(0,240,255,0) 0deg, rgba(0,240,255,0) 250deg,
+                               rgba(0,240,255,0.15) 290deg, rgba(0,240,255,0.55) 340deg,
+                               rgba(0,240,255,0.85) 358deg, rgba(0,240,255,0) 360deg);
+    animation:spin 3s linear infinite;
+  }}
+  .center-dot {{
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    width:10px; height:10px; border-radius:50%;
+    background:{C_CYAN}; box-shadow:0 0 16px {C_CYAN},0 0 30px rgba(0,240,255,0.5);
+  }}
+  @keyframes spin {{ from{{transform:rotate(0deg)}} to{{transform:rotate(360deg)}} }}
+  @keyframes sys-blink {{ 0%,100%{{opacity:1}} 50%{{opacity:0.2}} }}
+  @keyframes blink {{ 0%,100%{{opacity:1}} 50%{{opacity:0.25}} }}
+
+  /* Title cards */
+  .title-grid {{
+    display:grid; grid-template-columns:repeat(2,1fr); gap:8px; margin:12px 0 16px;
+  }}
+  .title-card {{
+    background:{C_CARD}; border:1px solid {C_BORDER}; border-radius:6px; padding:10px 14px;
+  }}
+  .title-sanskrit {{ font-size:0.6rem; letter-spacing:2px; color:{C_GOLD}; font-weight:700; margin-bottom:3px; }}
+  .title-meaning  {{ font-size:0.72rem; color:{C_TEXT}; font-weight:600; }}
+
+  /* Mission timeline */
+  .etl-wrap {{ position:relative; padding-left:28px; margin-top:8px; }}
+  .etl-line {{
+    position:absolute; left:9px; top:0; bottom:0; width:1px;
+    background:linear-gradient({C_CYAN}, {C_MAGENTA}, {C_BORDER});
+  }}
+  .etl-event {{ position:relative; margin-bottom:16px; }}
+  .etl-dot {{
+    position:absolute; left:-24px; top:4px;
+    width:9px; height:9px; border-radius:50%;
+    border:2px solid; background:{C_BG};
+  }}
+  .etl-dot.ok     {{ border-color:{C_GREEN};   box-shadow:0 0 5px {C_GREEN}; }}
+  .etl-dot.warn   {{ border-color:{C_GOLD};    box-shadow:0 0 5px {C_GOLD}; }}
+  .etl-dot.bad    {{ border-color:{C_RED};     box-shadow:0 0 5px {C_RED}; }}
+  .etl-dot.info   {{ border-color:{C_CYAN};    box-shadow:0 0 5px {C_CYAN}; }}
+  .etl-dot.origin {{ border-color:{C_MAGENTA}; box-shadow:0 0 8px {C_MAGENTA}; }}
+  .etl-ts   {{ font-size:0.68rem; color:{C_DIM}; letter-spacing:1px; margin-bottom:1px; }}
+  .etl-head {{ font-size:0.85rem; font-weight:700; color:{C_TEXT}; margin-bottom:1px; }}
+  .etl-body {{ font-size:0.78rem; color:{C_DIM}; line-height:1.5; }}
+  .etl-badge {{
+    display:inline-block; font-size:0.52rem; letter-spacing:1px; font-weight:700;
+    padding:1px 6px; border-radius:3px; margin-left:7px; vertical-align:middle;
+  }}
+  .etl-badge.reg   {{ background:rgba(255,68,68,.18);  color:{C_RED}; }}
+  .etl-badge.imp   {{ background:rgba(40,200,64,.18);  color:{C_GREEN}; }}
+  .etl-badge.stb   {{ background:rgba(102,102,102,.18);color:{C_DIM}; }}
+  .etl-badge.new   {{ background:rgba(0,240,255,.12);  color:{C_CYAN}; }}
+  .etl-badge.birth {{ background:rgba(255,0,170,.15);  color:{C_MAGENTA}; }}
+  .etl-badge.warn  {{ background:rgba(255,215,0,.15);  color:{C_GOLD}; }}
+</style>
+""", unsafe_allow_html=True)
+
 
 # ── Data helpers ──────────────────────────────────────────────────────────────
-def _load_json(path):
-    try:
-        return json.loads(open(path).read())
-    except Exception:
-        return {}
-
-
 def _fmt_ts(iso):
-    from datetime import datetime
     try:
         dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
         return dt.strftime("%b %d, %H:%M")
     except Exception:
         return iso or "—"
+
+
+def _fmt_ts_long(iso):
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        return dt.strftime("%b %d, %Y  %H:%M UTC")
+    except Exception:
+        return iso[:16] if iso else "—"
 
 
 def _short_guid(g):
@@ -77,8 +223,8 @@ def _metrics_for(trigger):
     return _extract_metrics(trigger.get("resultsByType", {}))
 
 
-def _classifications_for(trigger_a, trigger_b):
-    return classify_run(_metrics_for(trigger_a), _metrics_for(trigger_b))
+def _classifications_for(ta, tb):
+    return classify_run(_metrics_for(ta), _metrics_for(tb))
 
 
 def _bot_verdict(bot):
@@ -86,15 +232,13 @@ def _bot_verdict(bot):
     if len(triggers) < 2:
         return "BASELINE"
     cls = _classifications_for(triggers[-2], triggers[-1])
-    if any(c["verdict"] == "REGRESSED" for c in cls):
-        return "REGRESSED"
-    if any(c["verdict"] == "IMPROVED" for c in cls):
-        return "IMPROVED"
+    if any(c["verdict"] == "REGRESSED" for c in cls): return "REGRESSED"
+    if any(c["verdict"] == "IMPROVED"  for c in cls): return "IMPROVED"
     return "STABLE"
 
 
 def _cases_for_type(trigger, metric_type):
-    wrapper  = trigger.get("resultsByType", {}).get(metric_type, {})
+    wrapper    = trigger.get("resultsByType", {}).get(metric_type, {})
     run_result = wrapper.get("results", wrapper) if isinstance(wrapper, dict) else {}
     cases = []
     for case in run_result.get("testCasesResults", []):
@@ -102,16 +246,10 @@ def _cases_for_type(trigger, metric_type):
         for m in case.get("metricsResults", []):
             r   = m.get("result", {})
             raw = r.get("data", {}).get("score")
-            try:
-                score = float(raw)
-            except (ValueError, TypeError):
-                score = None
-            cases.append({
-                "caseId": cid,
-                "status": r.get("status", ""),
-                "score":  score,
-                "reason": r.get("aiResultReason", ""),
-            })
+            try:   score = float(raw)
+            except: score = None
+            cases.append({"caseId": cid, "status": r.get("status",""),
+                          "score": score, "reason": r.get("aiResultReason","")})
     return cases
 
 
@@ -119,10 +257,9 @@ def _all_metric_types(trigger):
     return list(trigger.get("resultsByType", {}).keys())
 
 
-# ── Chart builders ────────────────────────────────────────────────────────────
-CHART_LAYOUT = dict(
-    paper_bgcolor="rgba(0,0,0,0)",
-    plot_bgcolor="rgba(0,0,0,0)",
+# ── Charts ────────────────────────────────────────────────────────────────────
+_LAYOUT = dict(
+    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
     font=dict(color=C_TEXT, family=FONT, size=10),
     margin=dict(l=10, r=10, t=30, b=10),
     legend=dict(bgcolor="rgba(0,0,0,0)", bordercolor=C_BORDER, borderwidth=1,
@@ -135,53 +272,30 @@ _AXIS = dict(gridcolor=C_BORDER, linecolor=C_BORDER, zerolinecolor=C_BORDER,
 def chart_radar(classifications, label_a, label_b):
     if not classifications:
         return go.Figure()
-
     def _norm(v):
         return round(v * 100, 1) if (v is not None and v <= 1) else round(v or 0, 1)
-
     labels    = [c["key"].split(".")[-1][:18] for c in classifications]
     prev_vals = [_norm(c["prev"]) for c in classifications]
     curr_vals = [_norm(c["curr"]) for c in classifications]
-    n         = len(labels)
-    width_each = max(8, int(280 / max(n, 1)))
-
+    n = len(labels)
+    w = max(8, int(280 / max(n, 1)))
     fig = go.Figure()
-    fig.add_trace(go.Barpolar(
-        r=prev_vals, theta=labels,
-        name=f"A: {label_a[:30]}",
-        width=width_each,
-        marker=dict(color="rgba(255,215,0,0.35)", line=dict(color=C_GOLD, width=2.5)),
-    ))
-    fig.add_trace(go.Barpolar(
-        r=curr_vals, theta=labels,
-        name=f"B: {label_b[:30]}",
-        width=width_each,
-        marker=dict(color="rgba(0,240,255,0.25)", line=dict(color=C_CYAN, width=2.5)),
-    ))
-    fig.update_layout(
-        **CHART_LAYOUT,
-        polar=dict(
-            bgcolor="rgba(0,0,0,0)",
-            radialaxis=dict(
-                visible=True, range=[0, 100],
-                gridcolor=C_BORDER, linecolor=C_BORDER,
-                tickfont=dict(size=7, color=C_DIM),
-                tickvals=[25, 50, 75, 100],
-            ),
-            angularaxis=dict(
-                gridcolor=C_BORDER, linecolor=C_BORDER,
-                tickfont=dict(color=C_TEXT, size=9),
-                direction="clockwise",
-            ),
-            barmode="overlay",
-        ),
-        height=340, showlegend=True,
-    )
-    fig.update_layout(legend=dict(
-        orientation="h", x=0.5, xanchor="center",
-        y=-0.1, yanchor="top",
-        bgcolor="rgba(0,0,0,0)", font=dict(size=8, color=C_DIM),
-    ))
+    fig.add_trace(go.Barpolar(r=prev_vals, theta=labels, name=f"A: {label_a[:30]}", width=w,
+                               marker=dict(color="rgba(255,215,0,0.35)", line=dict(color=C_GOLD, width=2.5))))
+    fig.add_trace(go.Barpolar(r=curr_vals, theta=labels, name=f"B: {label_b[:30]}", width=w,
+                               marker=dict(color="rgba(0,240,255,0.25)", line=dict(color=C_CYAN, width=2.5))))
+    fig.update_layout(**_LAYOUT,
+        polar=dict(bgcolor="rgba(0,0,0,0)",
+                   radialaxis=dict(visible=True, range=[0,100], gridcolor=C_BORDER,
+                                   linecolor=C_BORDER, tickfont=dict(size=7,color=C_DIM),
+                                   tickvals=[25,50,75,100]),
+                   angularaxis=dict(gridcolor=C_BORDER, linecolor=C_BORDER,
+                                    tickfont=dict(color=C_TEXT,size=9), direction="clockwise"),
+                   barmode="overlay"),
+        height=340, showlegend=True)
+    fig.update_layout(legend=dict(orientation="h", x=0.5, xanchor="center",
+                                  y=-0.1, yanchor="top",
+                                  bgcolor="rgba(0,0,0,0)", font=dict(size=8,color=C_DIM)))
     return fig
 
 
@@ -190,8 +304,7 @@ def chart_delta_bar(cases_prev, cases_curr, title):
     items = []
     for i, cc in enumerate(cases_curr):
         pc    = prev_by_id.get(cc["caseId"], {})
-        psc   = pc.get("score")
-        csc   = cc.get("score")
+        psc, csc = pc.get("score"), cc.get("score")
         delta = round(csc - psc, 1) if isinstance(psc, float) and isinstance(csc, float) else 0
         items.append({"label": f"#{i+1}", "delta": delta})
     items.sort(key=lambda x: x["delta"])
@@ -200,7 +313,7 @@ def chart_delta_bar(cases_prev, cases_curr, title):
     colors = [C_RED if d < -2 else (C_GREEN if d > 2 else C_DIM) for d in deltas]
     fig = go.Figure(go.Bar(x=labels, y=deltas, marker_color=colors,
                            hovertemplate="%{x}: Δ%{y}<extra></extra>"))
-    fig.update_layout(**CHART_LAYOUT, title=dict(text=title, font=dict(size=11, color=C_DIM)),
+    fig.update_layout(**_LAYOUT, title=dict(text=title, font=dict(size=11,color=C_DIM)),
                       height=240, showlegend=False)
     fig.update_xaxes(**_AXIS)
     fig.update_yaxes(**_AXIS, zeroline=True, zerolinewidth=1)
@@ -212,24 +325,20 @@ def chart_status_grid(cases_prev, cases_curr):
     pp = ff = pf = fp = 0
     for cc in cases_curr:
         pc = prev_by_id.get(cc["caseId"])
-        if not pc:
-            continue
+        if not pc: continue
         pv = pc.get("status") == "Pass"
         cv = cc.get("status") == "Pass"
         if pv and cv:         pp += 1
         if not pv and not cv: ff += 1
         if pv and not cv:     pf += 1
         if not pv and cv:     fp += 1
-    z    = [[pp, pf], [fp, ff]]
-    text = [[f"Stayed Pass\n{pp}", f"Pass→Fail\n{pf}"],
-            [f"Fail→Pass\n{fp}", f"Stayed Fail\n{ff}"]]
     fig = go.Figure(go.Heatmap(
-        z=z, x=["→ Pass", "→ Fail"], y=["Prev Pass", "Prev Fail"],
-        text=text, texttemplate="%{text}",
-        colorscale=[[0, C_BG], [0.5, C_CARD], [1, C_GREEN]],
-        showscale=False, hovertemplate="%{text}<extra></extra>",
-    ))
-    fig.update_layout(**CHART_LAYOUT, height=200)
+        z=[[pp,pf],[fp,ff]], x=["→ Pass","→ Fail"], y=["Prev Pass","Prev Fail"],
+        text=[[f"Stayed Pass\n{pp}",f"Pass→Fail\n{pf}"],[f"Fail→Pass\n{fp}",f"Stayed Fail\n{ff}"]],
+        texttemplate="%{text}",
+        colorscale=[[0,C_BG],[0.5,C_CARD],[1,C_GREEN]],
+        showscale=False, hovertemplate="%{text}<extra></extra>"))
+    fig.update_layout(**_LAYOUT, height=200)
     fig.update_xaxes(**_AXIS)
     fig.update_yaxes(**_AXIS)
     return fig
@@ -237,152 +346,257 @@ def chart_status_grid(cases_prev, cases_curr):
 
 def chart_metric_trend(bot):
     triggers = bot["triggers"]
-    if len(triggers) < 2:
-        return go.Figure()
+    if len(triggers) < 2: return go.Figure()
     all_keys: set = set()
     data = []
     for t in triggers:
         m = _metrics_for(t)
         all_keys.update(m.keys())
-        data.append({"label": _fmt_ts(t.get("triggeredAt", "")), "metrics": m})
+        data.append({"label": _fmt_ts(t.get("triggeredAt","")), "metrics": m})
     x = [d["label"] for d in data]
     fig = go.Figure()
-    colors = [C_CYAN, C_MAGENTA, C_GOLD, C_GREEN, C_RED]
     for i, key in enumerate(sorted(all_keys)):
-        y     = [d["metrics"].get(key) for d in data]
-        color = colors[i % len(colors)]
-        fig.add_trace(go.Scatter(
-            x=x, y=y, name=key.split(".")[-1],
-            mode="lines+markers",
-            line=dict(color=color, width=2),
-            marker=dict(color=color, size=5, line=dict(color=C_BG, width=1)),
-        ))
-    fig.update_layout(**CHART_LAYOUT, height=280)
+        color = [C_CYAN,C_MAGENTA,C_GOLD,C_GREEN,C_RED][i % 5]
+        fig.add_trace(go.Scatter(x=x, y=[d["metrics"].get(key) for d in data],
+                                 name=key.split(".")[-1], mode="lines+markers",
+                                 line=dict(color=color,width=2),
+                                 marker=dict(color=color,size=5,line=dict(color=C_BG,width=1))))
+    fig.update_layout(**_LAYOUT, height=280)
     fig.update_xaxes(**_AXIS)
     fig.update_yaxes(**_AXIS)
     return fig
 
 
 # ── Verdict helpers ───────────────────────────────────────────────────────────
-_V_COLORS = {
-    "REGRESSED": C_RED, "IMPROVED": C_GREEN,
-    "STABLE": C_DIM, "NEW": C_GOLD, "BASELINE": C_GOLD,
+_V_COLORS = {"REGRESSED":C_RED,"IMPROVED":C_GREEN,"STABLE":C_DIM,"NEW":C_GOLD,"BASELINE":C_GOLD}
+
+
+# ── Timeline helpers ──────────────────────────────────────────────────────────
+_EVENT_META = {
+    "model_change":  ("warn","⚠","MODEL SHIFT","warn"),
+    "eval_start":    ("info","▶","EVAL START", "new"),
+    "eval_complete": ("info","✓","EVAL DONE",  "stb"),
+    "eval_timeout":  ("bad", "✗","TIMEOUT",    "reg"),
+    "eval_no_sets":  ("warn","·","NO TEST SETS","warn"),
+    "regression":    ("bad", "✗","REGRESSION", "reg"),
+    "improvement":   ("ok",  "✓","IMPROVED",   "imp"),
+    "force_eval":    ("info","⚡","FORCE EVAL", "new"),
+    "error":         ("bad", "✗","ERROR",       "reg"),
 }
+
+def _build_timeline_events(raw):
+    out = []
+    for e in raw:
+        et = e.get("event","")
+        if et in ("cycle_start","stable"):
+            continue
+        dot, icon, badge, badge_c = _EVENT_META.get(et, ("info","·",et.upper(),"stb"))
+        if et == "eval_complete":
+            v = e.get("verdict","")
+            if v == "REGRESSED":  dot,badge,badge_c = "bad","REGRESSED","reg"
+            elif v == "IMPROVED": dot,badge,badge_c = "ok","IMPROVED","imp"
+            else:                 dot,badge,badge_c = "info","STABLE","stb"
+        out.append({"ts":e.get("ts",""), "dot":dot, "icon":icon,
+                    "head":e.get("botName") or "Agent",
+                    "badge":badge, "badge_c":badge_c, "body":e.get("detail","")})
+    return list(reversed(out))
 
 
 # ── Header ────────────────────────────────────────────────────────────────────
-def render_header(bots):
-    last_scan = max((b["updatedAt"] for b in bots), default="")
-    ts_str    = _fmt_ts(last_scan) if last_scan else "no data yet"
-    n_reg     = sum(1 for b in bots if _bot_verdict(b) == "REGRESSED")
-    from datetime import datetime, timezone
-    now_utc   = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    dot_color = C_RED if n_reg else C_GREEN
-    dot_label = f"{n_reg} REGRESSED" if n_reg else "ALL STABLE"
+def render_header(bots, raw_events):
+    last_scan  = max((b["updatedAt"] for b in bots), default="")
+    ts_str     = _fmt_ts(last_scan) if last_scan else "no data yet"
+    n_reg      = sum(1 for b in bots if _bot_verdict(b) == "REGRESSED")
+    dot_color  = C_RED if n_reg else C_GREEN
+    dot_label  = f"{n_reg} REGRESSED" if n_reg else "ALL STABLE"
 
-    st.markdown(f"""
-    <style>
-      @keyframes sys-blink {{ 0%,100%{{opacity:1}} 50%{{opacity:0.2}} }}
-      .sys-dot-hdr {{
-        width:9px;height:9px;border-radius:50%;background:{dot_color};
-        box-shadow:0 0 8px {dot_color};display:inline-block;margin-right:8px;
-        animation:sys-blink 1.4s ease-in-out infinite;vertical-align:middle;
-      }}
-    </style>
-    <div style='margin-bottom:20px'>
-      <div style='display:flex;align-items:center;justify-content:space-between;
-                  padding:8px 0 14px;border-bottom:1px solid {C_BORDER}'>
-        <div>
-          <div style='font-size:0.6rem;letter-spacing:4px;color:{dot_color};
+    total_evals = sum(1 for e in raw_events if e.get("event") == "eval_complete")
+    n_imp       = sum(1 for e in raw_events if e.get("event") == "improvement")
+    n_reg_ev    = sum(1 for e in raw_events if e.get("event") == "regression")
+
+    agent_up = _agent_running()
+    if agent_up:
+        sys_color, sys_label = C_GREEN, "SYSTEM ONLINE"
+    else:
+        sys_color, sys_label = C_DIM, "AGENT OFFLINE"
+
+    col_r, col_id = st.columns([1, 2.5])
+
+    with col_r:
+        st.markdown(
+            "<div class='radar-wrap'>"
+            "<div class='ring r1'></div><div class='ring r2'></div>"
+            "<div class='ring r3'></div><div class='ring r4'></div>"
+            "<div class='radar-h'></div><div class='radar-v'></div>"
+            "<div class='sweep'></div><div class='center-dot'></div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+    with col_id:
+        st.markdown(f"""
+        <style>
+          .sys-dot-hdr {{
+            width:9px;height:9px;border-radius:50%;background:{sys_color};
+            box-shadow:0 0 8px {sys_color};display:inline-block;margin-right:8px;
+            animation:{'sys-blink 1.4s ease-in-out infinite' if agent_up else 'none'};
+            vertical-align:middle;
+          }}
+        </style>
+        <div style='padding-top:8px'>
+          <div style='font-size:0.6rem;letter-spacing:4px;color:{sys_color};
                       font-weight:700;font-family:{FONT};margin-bottom:6px'>
-            <span class="sys-dot-hdr"></span>SYSTEM ONLINE &nbsp;·&nbsp; {dot_label}
+            <span class="sys-dot-hdr"></span>{sys_label} &nbsp;·&nbsp; {dot_label}
           </div>
-          <div style='font-size:2rem;font-weight:700;letter-spacing:8px;color:{C_CYAN};
+          <div style='font-size:2.4rem;font-weight:700;letter-spacing:10px;color:{C_CYAN};
                       font-family:{FONT};line-height:1;
                       text-shadow:0 0 30px rgba(0,240,255,.4),0 0 60px rgba(0,240,255,.15)'>
             ASHOKA</div>
           <div style='font-size:0.65rem;color:{C_MAGENTA};letter-spacing:3px;
                       font-weight:700;margin-top:4px'>THE INCORRUPTIBLE JUDGE</div>
           <div style='font-size:0.6rem;color:{C_DIM};letter-spacing:1px;margin-top:2px'>
-            copilot-eval-agent &nbsp;·&nbsp; {len(bots)} agent{'s' if len(bots)!=1 else ''} monitored</div>
+            copilot-eval-agent &nbsp;·&nbsp; {len(bots)} agent{'s' if len(bots)!=1 else ''} monitored
+            &nbsp;·&nbsp; {ts_str} last activity</div>
         </div>
-        <div style='text-align:right'>
-          <div style='font-size:0.6rem;color:{C_DIM};letter-spacing:1px'>LAST ACTIVITY</div>
-          <div style='font-size:0.75rem;color:{C_TEXT};font-family:{FONT};margin-top:2px'>{ts_str}</div>
-          <div style='font-size:0.6rem;color:{C_DIM};margin-top:6px'>{now_utc}</div>
+        <div class='title-grid' style='margin-top:16px'>
+          <div class='title-card'>
+            <div class='title-sanskrit'>DHARMARAJA</div>
+            <div class='title-meaning'>King of Righteous Evaluation</div>
+          </div>
+          <div class='title-card'>
+            <div class='title-sanskrit'>DEVANAMPIYA</div>
+            <div class='title-meaning'>Beloved of the Signal</div>
+          </div>
+          <div class='title-card'>
+            <div class='title-sanskrit'>PRIYADARSHI</div>
+            <div class='title-meaning'>He Who Regards Every Metric</div>
+          </div>
+          <div class='title-card'>
+            <div class='title-sanskrit'>CHAKRAVARTIN</div>
+            <div class='title-meaning'>Wheel-Turner of Model Integrity</div>
+          </div>
         </div>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
-
-# ── Pages ─────────────────────────────────────────────────────────────────────
-def page_overview(bots):
-    total_cases = sum(
-        len(_cases_for_type(b["lastTrigger"], mt))
-        for b in bots for mt in _all_metric_types(b["lastTrigger"])
-    )
-    verdicts = [_bot_verdict(b) for b in bots]
-    n_reg    = verdicts.count("REGRESSED")
-    n_imp    = verdicts.count("IMPROVED")
-    n_sta    = verdicts.count("STABLE")
-    n_base   = verdicts.count("BASELINE")
-
+    # Stat strip
     st.markdown(f"""
     <div class='stat-bar'>
       <div class='stat-cell'>
-        <div class='stat-value' style='color:{C_CYAN}'>{total_cases}</div>
-        <div class='stat-label'>Total Cases</div>
+        <div class='stat-value' style='color:{C_CYAN}'>{len(bots)}</div>
+        <div class='stat-label'>Monitored</div>
       </div>
       <div class='stat-cell'>
-        <div class='stat-value' style='color:{""+C_RED if n_reg else C_DIM}'>{n_reg}</div>
-        <div class='stat-label'>Regressed</div>
+        <div class='stat-value' style='color:{C_TEXT}'>{total_evals}</div>
+        <div class='stat-label'>Eval Runs</div>
       </div>
       <div class='stat-cell'>
-        <div class='stat-value' style='color:{""+C_GREEN if n_imp else C_DIM}'>{n_imp}</div>
+        <div class='stat-value' style='color:{C_GREEN if n_imp else C_DIM}'>{n_imp}</div>
         <div class='stat-label'>Improved</div>
       </div>
       <div class='stat-cell'>
-        <div class='stat-value' style='color:{C_DIM}'>{n_sta}</div>
-        <div class='stat-label'>Stable</div>
+        <div class='stat-value' style='color:{C_RED if n_reg_ev else C_DIM}'>{n_reg_ev}</div>
+        <div class='stat-label'>Regressions</div>
       </div>
       <div class='stat-cell'>
-        <div class='stat-value' style='color:{""+C_GOLD if n_base else C_DIM}'>{n_base}</div>
-        <div class='stat-label'>Baseline</div>
+        <div class='stat-value' style='color:{C_RED if n_reg else C_DIM}'>{n_reg}</div>
+        <div class='stat-label'>Alert Now</div>
       </div>
     </div>
     """, unsafe_allow_html=True)
 
+
+# ── Overview page ─────────────────────────────────────────────────────────────
+def page_overview(bots, raw_events):
     if not bots:
         st.markdown(
-            f"<div style='text-align:center;padding:60px;color:{C_DIM}'>"
-            f"<div style='font-size:2rem;margin-bottom:12px'>⚡</div>"
-            f"<div style='color:{C_TEXT};font-size:0.9rem'>No bots tracked yet</div>"
+            f"<div style='text-align:center;padding:40px;color:{C_DIM}'>"
+            f"<div style='font-size:0.9rem;color:{C_TEXT}'>No bots tracked yet</div>"
             f"<div style='font-size:0.75rem;margin-top:6px'>Start the agent or click ▶ Force Eval Now</div>"
             f"</div>",
             unsafe_allow_html=True,
         )
-        return
+    else:
+        st.markdown("<div class='sec-label'>MONITORED AGENTS</div>", unsafe_allow_html=True)
+        cols = st.columns(4)
+        for i, bot in enumerate(bots):
+            verdict = _bot_verdict(bot)
+            with cols[i % 4]:
+                icon = {"REGRESSED":"🔴","IMPROVED":"🟢","BASELINE":"🟡"}.get(verdict,"⚪")
+                if st.button(
+                    f"{icon} {bot['botName']}\n{bot['modelVersion'][:26]}\n"
+                    f"{_fmt_ts(bot['updatedAt'])} · {bot['triggerCount']} run{'s' if bot['triggerCount']!=1 else ''}",
+                    key=f"tile_{bot['botId']}", use_container_width=True,
+                ):
+                    st.session_state.selected_bot = bot["botId"]
+                    st.session_state.page = "detail"
+                    st.rerun()
 
-    st.markdown("<div class='sec-label'>MONITORED AGENTS</div>", unsafe_allow_html=True)
+    # Who I Am — condensed
+    st.markdown("<div class='sec-label'>WHO I AM</div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<div style='background:{C_CARD};border-left:3px solid {C_CYAN};"
+        f"border-radius:0 8px 8px 0;padding:16px 20px;font-size:0.82rem;"
+        f"line-height:1.75;color:{C_TEXT};margin-bottom:4px'>"
+        f"I am <b style='color:{C_CYAN}'>ASHOKA</b> — born February 16, 2026. "
+        f"I watch the models powering your Copilot Studio bots. "
+        f"The moment a model shifts, I trigger the Eval API, score every test case, "
+        f"and send you a verdict before your users file a ticket. "
+        f"I authenticate once. I store every run. I do not guess. I measure."
+        f"</div>",
+        unsafe_allow_html=True,
+    )
 
-    cols = st.columns(4)
-    for i, bot in enumerate(bots):
-        verdict = _bot_verdict(bot)
-        v_color = _V_COLORS.get(verdict, C_DIM)
-        with cols[i % 4]:
-            if st.button(
-                f"{'🔴' if verdict=='REGRESSED' else '🟢' if verdict=='IMPROVED' else '🟡' if verdict=='BASELINE' else '⚪'} "
-                f"{bot['botName']}\n{bot['modelVersion'][:26]}\n"
-                f"{_fmt_ts(bot['updatedAt'])} · {bot['triggerCount']} run{'s' if bot['triggerCount']!=1 else ''}",
-                key=f"tile_{bot['botId']}",
-                use_container_width=True,
-            ):
-                st.session_state.selected_bot = bot["botId"]
-                st.session_state.page = "detail"
-                st.rerun()
+    # Mission timeline
+    st.markdown("<div class='sec-label'>MISSION TIMELINE</div>", unsafe_allow_html=True)
+
+    origin = [
+        {"ts":"2026-02-16T20:01:00+00:00","dot":"origin","icon":"🎂",
+         "head":"Born","badge":"ORIGIN","badge_c":"birth",
+         "body":"First boot. Received a config.json and a mandate."},
+        {"ts":"2026-02-17T00:01:00+00:00","dot":"info","icon":"🌙",
+         "head":"Creator Goes to Sleep","badge":"AUTONOMOUS","badge_c":"new",
+         "body":"Began autonomous polling. 20 evolution cycles by morning."},
+        {"ts":"2026-02-17T08:33:00+00:00","dot":"info","icon":"☀️",
+         "head":"Creator Returns","badge":"MILESTONE","badge_c":"new",
+         "body":'"I built this in a cave with a box of scraps." Identity confirmed.'},
+    ]
+
+    live       = _build_timeline_events(raw_events)
+    all_events = sorted(origin + live, key=lambda e: e.get("ts",""))
+
+    parts = []
+    for ev in all_events:
+        parts.append(
+            f'<div class="etl-event">'
+            f'<div class="etl-dot {ev["dot"]}"></div>'
+            f'<div class="etl-ts">{_fmt_ts_long(ev["ts"])}</div>'
+            f'<div class="etl-head">{ev["icon"]}&nbsp; {ev["head"]}'
+            f'<span class="etl-badge {ev["badge_c"]}">{ev["badge"]}</span></div>'
+            f'<div class="etl-body">{ev["body"]}</div>'
+            f'</div>'
+        )
+
+    st.markdown(
+        '<div style="max-width:680px;margin:0 auto">'
+        '<div class="etl-wrap"><div class="etl-line"></div>'
+        + "".join(parts)
+        + '</div>'
+        + f'<div style="text-align:center;margin-top:28px;padding-top:16px;'
+          f'border-top:1px solid {C_BORDER}">'
+          f'<div style="font-size:0.55rem;letter-spacing:3px;color:{C_DIM};'
+          f'font-family:{FONT};font-weight:700">CONCEIVED &amp; BUILT BY</div>'
+          f'<div style="font-size:1.1rem;font-weight:700;letter-spacing:6px;'
+          f'color:{C_MAGENTA};font-family:{FONT};margin-top:4px;'
+          f'text-shadow:0 0 20px rgba(255,0,170,0.4)">OUROBOROS</div>'
+          f'<div style="font-size:0.55rem;color:{C_DIM};letter-spacing:2px;margin-top:3px">'
+          f'THE SNAKE THAT EATS ITS OWN TAIL &nbsp;·&nbsp; 2026</div>'
+          f'</div>'
+        + '</div>',
+        unsafe_allow_html=True,
+    )
 
 
+# ── Bot detail page ───────────────────────────────────────────────────────────
 def page_bot_detail(bot):
     import pandas as pd
     triggers = bot["triggers"]
@@ -398,44 +612,36 @@ def page_bot_detail(bot):
         return
 
     def _run_label(t):
-        ts  = _fmt_ts(t.get("triggeredAt", ""))
-        ver = t.get("modelVersion", "?")
-        gid = _short_guid(t.get("triggerGuid", ""))
-        return f"{ts}  ·  {gid}  ·  {ver}"
+        return f"{_fmt_ts(t.get('triggeredAt',''))}  ·  {_short_guid(t.get('triggerGuid',''))}  ·  {t.get('modelVersion','?')}"
 
     run_labels = [_run_label(t) for t in triggers]
-
     idx_a = st.selectbox("Run A — older / baseline", range(len(triggers)),
                          format_func=lambda i: run_labels[i],
-                         index=max(0, len(triggers) - 2), key="sel_a")
+                         index=max(0, len(triggers)-2), key="sel_a")
     idx_b = st.selectbox("Run B — newer / comparison", range(len(triggers)),
                          format_func=lambda i: run_labels[i],
-                         index=len(triggers) - 1, key="sel_b")
+                         index=len(triggers)-1, key="sel_b")
 
     if idx_a == idx_b:
         st.warning("Run A and Run B are the same — select two different runs to compare.")
         return
 
-    trig_a = triggers[idx_a]
-    trig_b = triggers[idx_b]
-    lbl_a  = run_labels[idx_a]
-    lbl_b  = run_labels[idx_b]
-    cls    = _classifications_for(trig_a, trig_b)
-    v_sum  = verdict_summary(cls)
-    reg_count = sum(1 for c in cls if c["verdict"] == "REGRESSED")
-    v_color   = C_RED if reg_count else (C_GREEN if any(c["verdict"]=="IMPROVED" for c in cls) else C_DIM)
+    trig_a, trig_b = triggers[idx_a], triggers[idx_b]
+    lbl_a,  lbl_b  = run_labels[idx_a], run_labels[idx_b]
+    cls      = _classifications_for(trig_a, trig_b)
+    v_sum    = verdict_summary(cls)
+    reg_cnt  = sum(1 for c in cls if c["verdict"]=="REGRESSED")
+    v_color  = C_RED if reg_cnt else (C_GREEN if any(c["verdict"]=="IMPROVED" for c in cls) else C_DIM)
 
-    st.markdown(f"""
-    <div style='padding:16px 0 8px;border-bottom:1px solid {C_BORDER};margin-bottom:16px;
-                display:flex;justify-content:space-between;align-items:center'>
-      <div>
-        <span style='font-size:1.1rem;font-weight:700;color:{C_TEXT};font-family:{FONT}'>{name}</span>
-        <span style='color:{C_DIM};font-size:0.75rem;margin-left:12px'>{env}</span>
-      </div>
-      <span style='color:{v_color};font-weight:700;font-family:{FONT};
-                   letter-spacing:2px;font-size:0.8rem'>{v_sum}</span>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(
+        f"<div style='padding:14px 0 8px;border-bottom:1px solid {C_BORDER};margin-bottom:16px;"
+        f"display:flex;justify-content:space-between;align-items:center'>"
+        f"<div><span style='font-size:1.1rem;font-weight:700;color:{C_TEXT};font-family:{FONT}'>{name}</span>"
+        f"<span style='color:{C_DIM};font-size:0.75rem;margin-left:12px'>{env}</span></div>"
+        f"<span style='color:{v_color};font-weight:700;font-family:{FONT};letter-spacing:2px;font-size:0.8rem'>{v_sum}</span>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
 
     analysis = (trig_b.get("analysis") or trig_a.get("analysis") or "").strip()
     if analysis:
@@ -445,7 +651,7 @@ def page_bot_detail(bot):
             st.markdown(
                 f"<div class='analysis-panel'>"
                 f"<div class='analysis-label'>⚡ LLM DRIFT ANALYSIS</div>"
-                f"{analysis.replace(chr(10), '<br>')}</div>",
+                f"{analysis.replace(chr(10),'<br>')}</div>",
                 unsafe_allow_html=True,
             )
 
@@ -458,71 +664,56 @@ def page_bot_detail(bot):
 
     st.markdown("<div class='sec-label'>METRIC SUMMARY</div>", unsafe_allow_html=True)
     if cls:
-        rows = [{"Metric": c["key"], "Verdict": c["verdict"],
-                 "Prev": round(c["prev"], 4) if c["prev"] is not None else None,
-                 "Curr": round(c["curr"], 4) if c["curr"] is not None else None,
-                 "Δ": f"{c['delta']:+.4f}" if c["delta"] is not None else "—"}
-                for c in cls]
-        import pandas as pd
-        df = pd.DataFrame(rows)
-        st.dataframe(df, width="stretch", hide_index=True,
-                     height=min(260, 48 + len(rows) * 38))
+        rows = [{"Metric":c["key"],"Verdict":c["verdict"],
+                 "Prev":round(c["prev"],4) if c["prev"] is not None else None,
+                 "Curr":round(c["curr"],4) if c["curr"] is not None else None,
+                 "Δ":f"{c['delta']:+.4f}" if c["delta"] is not None else "—"} for c in cls]
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True,
+                     height=min(260, 48+len(rows)*38))
     else:
         st.caption("No metrics — first run establishes baseline.")
 
     st.markdown("<div class='sec-label'>PER METRIC TYPE</div>", unsafe_allow_html=True)
-    _prio = {"REGRESSED": 0, "IMPROVED": 1, "STABLE": 2, "NEW": 3}
-    verdict_by_type = {}
+    _prio = {"REGRESSED":0,"IMPROVED":1,"STABLE":2,"NEW":3}
+    vbt = {}
     for c in cls:
         for mt in _all_metric_types(trig_b):
-            if c["key"].startswith(mt + "."):
-                existing = verdict_by_type.get(mt, "STABLE")
-                if _prio.get(c["verdict"], 9) < _prio.get(existing, 9):
-                    verdict_by_type[mt] = c["verdict"]
+            if c["key"].startswith(mt+"."):
+                if _prio.get(c["verdict"],9) < _prio.get(vbt.get(mt,"STABLE"),9):
+                    vbt[mt] = c["verdict"]
     for mt in _all_metric_types(trig_b):
-        if mt not in verdict_by_type:
-            verdict_by_type[mt] = "NEW" if not _metrics_for(trig_a) else "STABLE"
+        if mt not in vbt:
+            vbt[mt] = "NEW" if not _metrics_for(trig_a) else "STABLE"
 
-    sorted_types = sorted(_all_metric_types(trig_b),
-                          key=lambda t: _prio.get(verdict_by_type.get(t, "STABLE"), 9))
-
-    for metric_type in sorted_types:
-        verdict    = verdict_by_type.get(metric_type, "STABLE")
-        cases_prev = _cases_for_type(trig_a, metric_type)
-        cases_curr = _cases_for_type(trig_b, metric_type)
-        expanded   = verdict == "REGRESSED"
-
-        with st.expander(f"{metric_type}  —  {verdict}", expanded=expanded):
+    for mt in sorted(_all_metric_types(trig_b), key=lambda t: _prio.get(vbt.get(t,"STABLE"),9)):
+        verdict    = vbt.get(mt,"STABLE")
+        cases_prev = _cases_for_type(trig_a, mt)
+        cases_curr = _cases_for_type(trig_b, mt)
+        with st.expander(f"{mt}  —  {verdict}", expanded=(verdict=="REGRESSED")):
             if cases_prev and cases_curr:
                 fig_d = chart_delta_bar(cases_prev, cases_curr, "Score Δ per case (worst first)")
                 if fig_d.data:
-                    st.plotly_chart(fig_d, width="stretch", config={"displayModeBar": False})
+                    st.plotly_chart(fig_d, width="stretch", config={"displayModeBar":False})
                 st.caption("Status transitions")
                 fig_g = chart_status_grid(cases_prev, cases_curr)
                 if fig_g.data:
-                    st.plotly_chart(fig_g, width="stretch", config={"displayModeBar": False})
-
+                    st.plotly_chart(fig_g, width="stretch", config={"displayModeBar":False})
             if cases_curr:
-                prev_by_id = {c["caseId"]: c for c in cases_prev}
+                prev_by_id = {c["caseId"]:c for c in cases_prev}
                 rows = []
                 for i, cc in enumerate(cases_curr):
-                    pc    = prev_by_id.get(cc["caseId"], {})
-                    psc   = pc.get("score")
-                    csc   = cc.get("score")
-                    delta = round(csc - psc, 1) if isinstance(psc, float) and isinstance(csc, float) else None
-                    rows.append({
-                        "#": i + 1, "Prev status": pc.get("status", "—"),
-                        "Prev score": int(psc) if isinstance(psc, float) else None,
-                        "Curr status": cc.get("status", "—"),
-                        "Curr score": int(csc) if isinstance(csc, float) else None,
-                        "Δ": delta, "AI reason": cc.get("reason", ""),
-                    })
+                    pc  = prev_by_id.get(cc["caseId"],{})
+                    psc,csc = pc.get("score"),cc.get("score")
+                    delta = round(csc-psc,1) if isinstance(psc,float) and isinstance(csc,float) else None
+                    rows.append({"#":i+1,"Prev status":pc.get("status","—"),
+                                 "Prev score":int(psc) if isinstance(psc,float) else None,
+                                 "Curr status":cc.get("status","—"),
+                                 "Curr score":int(csc) if isinstance(csc,float) else None,
+                                 "Δ":delta,"AI reason":cc.get("reason","")})
                 rows.sort(key=lambda r: (r["Δ"] or 0))
-                import pandas as pd
-                df = pd.DataFrame(rows).set_index("#")
-                st.dataframe(df, width="stretch", height=min(420, 48 + len(rows) * 38))
-
-                failures = [r for r in rows if r["Curr status"] == "Fail"]
+                st.dataframe(pd.DataFrame(rows).set_index("#"), width="stretch",
+                             height=min(420,48+len(rows)*38))
+                failures = [r for r in rows if r["Curr status"]=="Fail"]
                 if failures:
                     st.markdown(
                         f"<div style='font-size:0.65rem;color:{C_RED};font-weight:700;"
@@ -540,38 +731,39 @@ def page_bot_detail(bot):
         st.markdown("<div class='sec-label'>METRIC TRENDS</div>", unsafe_allow_html=True)
         fig_t = chart_metric_trend(bot)
         if fig_t.data:
-            st.plotly_chart(fig_t, width="stretch", config={"displayModeBar": False})
+            st.plotly_chart(fig_t, width="stretch", config={"displayModeBar":False})
 
     st.markdown("<div class='sec-label'>RUN HISTORY</div>", unsafe_allow_html=True)
-    tl_html = ""
+    rh_html = ""
     for t in reversed(triggers):
-        mt_list = ", ".join(t.get("metricTypes", ["—"]))
+        mt_list = ", ".join(t.get("metricTypes",["—"]))
         dot_col = C_CYAN if not t.get("_legacy") else C_DIM
-        tl_html += (
-            "<div class='tl-item'>"
-            f"<div class='tl-dot' style='background:{dot_col}'></div>"
-            "<div class='tl-content'>"
-            f"<div class='tl-model'>{t.get('modelVersion','—')[:36]}</div>"
-            f"<div class='tl-guid'>{_short_guid(t.get('triggerGuid',''))}  ·  {mt_list}</div>"
-            f"<div class='tl-ts'>{_fmt_ts(t.get('triggeredAt',''))}</div>"
+        rh_html += (
+            "<div class='rh-item'>"
+            f"<div class='rh-dot' style='background:{dot_col}'></div>"
+            "<div class='rh-content'>"
+            f"<div class='rh-model'>{t.get('modelVersion','—')[:36]}</div>"
+            f"<div class='rh-guid'>{_short_guid(t.get('triggerGuid',''))}  ·  {mt_list}</div>"
+            f"<div class='rh-ts'>{_fmt_ts(t.get('triggeredAt',''))}</div>"
             "</div></div>"
         )
-    st.markdown("<div class='timeline'>" + tl_html + "</div>", unsafe_allow_html=True)
+    st.markdown("<div class='rh-timeline'>" + rh_html + "</div>", unsafe_allow_html=True)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
-bots     = load_all_bots()
-page     = st.session_state.get("page", "overview")
-selected = st.session_state.get("selected_bot")
+bots       = load_all_bots()
+raw_events = load_events(STORE_DIR)
+page       = st.session_state.get("page", "overview")
+selected   = st.session_state.get("selected_bot")
 
-render_header(bots)
+render_header(bots, raw_events)
 
-if page == "overview" or page not in ("detail",):
-    page_overview(bots)
-else:
+if page == "detail":
     bot = next((b for b in bots if b["botId"] == selected), None)
     if bot:
         page_bot_detail(bot)
     else:
         st.session_state.page = "overview"
         st.rerun()
+else:
+    page_overview(bots, raw_events)

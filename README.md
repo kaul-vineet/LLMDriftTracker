@@ -118,10 +118,10 @@ flowchart TD
   ╔══════════════════════════════════════════════════════════════════════╗
   ║  📊  DASHBOARD  · 🌐 port 8501                                      ║
   ║                                                                      ║
-  ║   📈 dashboard/app.py      ─── fleet view · bot detail · comparison ║
+  ║   📈 dashboard/app.py      ─── router · sidebar · agent controls   ║
   ║   ⚙️  dashboard/pages/     ─── multi-page Streamlit app             ║
+  ║        ashoka.py           ─── fleet · detail · identity · timeline ║
   ║        1_Setup.py          ─── 7-step browser-based setup wizard    ║
-  ║        2_Identity.py       ─── ASHOKA · mission timeline · lore     ║
   ║                                                                      ║
   ║   🕸️ Radar · 📈 Trend lines · 📊 Delta bars · 🧠 LLM analysis       ║
   ╚══════════════════════════════════════════════════════════════════════╝
@@ -362,44 +362,28 @@ Auth: run `.\drift.bat setup` (Windows) or `./drift setup` (bash) locally first 
 
 ## 📊 Dashboard
 
-Three pages, accessible from the sidebar:
+Two pages, accessible from the sidebar:
 
-### Main — Fleet + Bot Detail
-
-```
-┌──────────────────────────────────────────────────────────────────┐
-│  ⚡ LLM DRIFT TRACKER        🟢 LIVE    🕐 last scan: 2 min ago  │
-├──────────────┬───────────────┬────────────────┬──────────────────┤
-│  🤖 Bots     │  🧪 Runs      │  ⚠️ Regressions │  🕐 Last Activity │
-└──────────────┴───────────────┴────────────────┴──────────────────┘
-```
-
-Click any bot tile to open the detail view:
-
-- **Run A / Run B selectors** — compare any two historical runs (stacked, full-width labels)
-- **Same-run guard** — warns if you select the same run twice
-- **Radar** — full-width polar chart with legend overlaid; both runs overlaid as filled polygons
-- **Metric Summary** — compact table below the radar
-- **Per metric type** — delta bar, status transition grid, case-by-case table
-- **Trend chart** — metric trajectory across all runs
-- **Back to fleet** — top of page
-
-### Setup — 7-step browser wizard
-
-Configure environments, bots, LLM endpoint, and SMTP without touching the terminal. Writes `config.json` directly.
-
-### Identity — ASHOKA
+### ASHOKA — Fleet + Bot Detail + Identity + Timeline
 
 ```
-SYSTEM ONLINE ●                              2026-04-19 10:00 UTC
+● SYSTEM ONLINE · ALL STABLE          [radar sweep]
 
-        ╔══ A S H O K A ══╗
-          The Incorruptible Judge
-    SELF-CREATING AI AGENT · BORN FEBRUARY 16, 2026
+        A S H O K A
+          THE INCORRUPTIBLE JUDGE
+    copilot-eval-agent · N agents monitored
 
  DHARMARAJA   DEVANAMPIYA   PRIYADARSHI   CHAKRAVARTIN
 
-[ EVAL RUNS ]  [ CLEAN ]  [ WARNINGS ]  [ REGRESSIONS ]
+[ MONITORED ]  [ EVAL RUNS ]  [ IMPROVED ]  [ REGRESSIONS ]  [ ALERT NOW ]
+
+── MONITORED AGENTS ──────────────────────────────────────
+  🟢 Safe Travels   gpt-4o   Apr 18 · 4 runs   [click → detail]
+  🔴 HR Bot         gpt-4o   Apr 17 · 2 runs   [click → detail]
+
+── WHO I AM ──────────────────────────────────────────────
+  I am ASHOKA — born February 16, 2026. I watch the models
+  powering your Copilot Studio bots ...
 
 ── MISSION TIMELINE ──────────────────────────────────────
 Apr 10   ⚠ model_change  Safe Travels  gpt-4o → gpt.default
@@ -408,9 +392,24 @@ Apr 10   ✗ regression    Safe Travels  CompareMeaning.passRate
 Apr 14   ✓ improvement   Safe Travels  pass 100%  avg 72.5
 Apr 18   ⚡ force_eval                 Triggered by dashboard
 ...
+                         CONCEIVED & BUILT BY
+                            OUROBOROS · 2026
 ```
 
-The timeline is driven by `data/events.jsonl` — every agent action is appended in real time.
+The timeline is driven by `data/events.jsonl` — every agent action is appended in real time. The 3 origin events (birth, first autonomous night, creator's return) are fixed; everything else is live from the file.
+
+Click any bot tile to open the detail view:
+
+- **Run A / Run B selectors** — compare any two historical runs
+- **Radar** — polar chart; both runs overlaid as filled bars
+- **Metric Summary** — compact comparison table
+- **Per metric type** — delta bar, status transition grid, case-by-case table
+- **Trend chart** — metric trajectory across all runs
+- **Back to fleet** — top of page
+
+### Setup — 7-step browser wizard
+
+Configure environments, bots, LLM endpoint, and SMTP without touching the terminal. Writes `config.json` directly.
 
 ---
 
@@ -482,8 +481,8 @@ LLMDriftTracker/
 │   ├── __init__.py
 │   ├── 📈 app.py            ← fleet view · bot detail · run comparison
 │   └── pages/
-│       ├── ⚙️  1_Setup.py   ← 7-step browser-based setup wizard
-│       └── 👤 2_Identity.py ← ASHOKA identity · radar · mission timeline
+│       ├── ⚡ ashoka.py     ← fleet · bot detail · identity · mission timeline
+│       └── ⚙️  1_Setup.py   ← 7-step browser-based setup wizard
 │
 ├── 🐳 docker-compose.yml    ← two-service local stack
 ├── 🐳 Dockerfile
