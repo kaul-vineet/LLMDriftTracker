@@ -1,16 +1,16 @@
 # LLM Drift Tracker — two services, one image, shared volume
 #
-# Local usage:
-#   docker compose up --build -d
-#   docker compose logs -f drift-agent
-#   open http://localhost:8501            # dashboard
+# Local usage (run from repo root):
+#   docker compose -f docker/docker-compose.yml up --build -d
+#   docker compose -f docker/docker-compose.yml logs -f drift-agent
+#   open http://localhost:8501
 #
-# Azure Container Apps usage:
+# Azure Container Apps:
 #   - Build + push image to ACR
-#   - Create two container apps pointing at the same image
+#   - Create two container apps from the same image
 #   - Mount an Azure Files share at /app/data on both
 #   - Set env vars (LLM_API_KEY, SMTP_PASSWORD, etc.) as secrets
-#   - Override command per container app (same as below)
+#   - Override startup command per container app (same as below)
 #
 # Secrets: never put real values here.
 # Use a .env file (gitignored) or Azure Key Vault references for production.
@@ -18,15 +18,17 @@
 services:
 
   drift-agent:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     image: llm-drift-tracker:latest
     container_name: drift-agent
     restart: unless-stopped
     command: python -m agent.main
     volumes:
-      - ./data:/app/data
-      - ./config.json:/app/config.json:ro
-      - ./msal_token_cache.json:/app/msal_token_cache.json
+      - ../data:/app/data
+      - ../config.json:/app/config.json:ro
+      - ../msal_token_cache.json:/app/msal_token_cache.json
     environment:
       LLM_API_KEY:    ${LLM_API_KEY:-}
       LLM_BASE_URL:   ${LLM_BASE_URL:-}
@@ -49,9 +51,9 @@ services:
     ports:
       - "8501:8501"
     volumes:
-      - ./data:/app/data
-      - ./config.json:/app/config.json:ro
-      - ./msal_token_cache.json:/app/msal_token_cache.json
+      - ../data:/app/data
+      - ../config.json:/app/config.json:ro
+      - ../msal_token_cache.json:/app/msal_token_cache.json
     environment:
       LLM_API_KEY:    ${LLM_API_KEY:-}
       LLM_BASE_URL:   ${LLM_BASE_URL:-}

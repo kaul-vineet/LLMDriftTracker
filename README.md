@@ -1,12 +1,12 @@
 ```
-   █████╗ ███████╗██╗  ██╗ ██████╗ ██╗  ██╗ █████╗
-  ██╔══██╗██╔════╝██║  ██║██╔═══██╗██║ ██╔╝██╔══██╗
-  ███████║███████╗███████║██║   ██║█████╔╝ ███████║
-  ██╔══██║╚════██║██╔══██║██║   ██║██╔═██╗ ██╔══██║
-  ██║  ██║███████║██║  ██║╚██████╔╝██║  ██╗██║  ██║
-  ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝
+                    █████╗ ███████╗██╗  ██╗ ██████╗ ██╗  ██╗ █████╗
+                   ██╔══██╗██╔════╝██║  ██║██╔═══██╗██║ ██╔╝██╔══██╗
+                   ███████║███████╗███████║██║   ██║█████╔╝ ███████║
+                   ██╔══██║╚════██║██╔══██║██║   ██║██╔═██╗ ██╔══██║
+                   ██║  ██║███████║██║  ██║╚██████╔╝██║  ██╗██║  ██║
+                   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝
 
-  ⚡  LLM DRIFT TRACKER  ·  THE INCORRUPTIBLE JUDGE  ·  v1.1
+                   ⚡  LLM DRIFT TRACKER  ·  THE INCORRUPTIBLE JUDGE  ·  v1.1
 ```
 
 <div align="center">
@@ -239,9 +239,9 @@ Expected terminal output:
 cp config.example.json config.json   # fill in your values, or use the Setup page
 cp .env.example .env                 # add LLM_API_KEY
 
-docker compose up --build -d
+docker compose -f docker/docker-compose.yml up --build -d
 
-docker compose logs -f drift-agent   # watch agent output
+docker compose -f docker/docker-compose.yml logs -f drift-agent
 # open http://localhost:8501
 ```
 
@@ -399,8 +399,9 @@ LLMDriftTracker/
 │   └── seed_events.py        seed the event log with sample events
 │
 ├── config.example.json       template — copy to config.json and fill in
-├── docker-compose.yml        two-service local stack
-├── Dockerfile
+├── docker/
+│   ├── Dockerfile
+│   └── docker-compose.yml    two-service local stack
 ├── drift                     CLI entry point (bash / Mac / Linux)
 ├── drift.bat                 CLI entry point (Windows)
 ├── requirements.txt
