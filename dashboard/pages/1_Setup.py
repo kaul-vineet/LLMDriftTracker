@@ -228,6 +228,8 @@ def _sec_status():
 
 ok1, ok2, ok3, ok4, ok5 = _sec_status()
 
+_load_ph = st.empty()
+_spinner(_load_ph, "LOADING")
 
 # ── Page header ───────────────────────────────────────────────────────────────
 st.markdown(
@@ -607,3 +609,5 @@ with col_s2:
 
 if not _ready:
     st.caption("⚠ Client ID and Tenant ID are required to save.")
+
+_load_ph.empty()
