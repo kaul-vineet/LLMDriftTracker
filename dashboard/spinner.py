@@ -12,11 +12,13 @@ def _overlay(label: str, animation_html: str, keyframes_css: str) -> str:
       display:flex; flex-direction:column; align-items:center; justify-content:center;
       cursor:wait;
     ">
-      {animation_html}
-      <div style="color:#00f0ff;font-size:0.75rem;letter-spacing:5px;
-                  margin-top:22px;font-family:monospace;font-weight:700;
-                  text-shadow:0 0 12px rgba(0,240,255,0.6)">
-        {label}
+      <div style="display:flex;flex-direction:column;align-items:center;margin-left:500px">
+        {animation_html}
+        <div style="color:#00f0ff;font-size:0.75rem;letter-spacing:5px;
+                    margin-top:22px;font-family:monospace;font-weight:700;
+                    text-shadow:0 0 12px rgba(0,240,255,0.6)">
+          {label}
+        </div>
       </div>
     </div>
     """
