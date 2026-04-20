@@ -47,6 +47,47 @@ st.markdown(f"""
   [data-testid="stHeader"] {{ display: none; }}
   [data-testid="stSidebarCollapsed"],
   [data-testid="stSidebarCollapseButton"] {{ display: none !important; }}
+
+  /* Hide nav until our CSS is applied — prevents flash of default Streamlit styles */
+  @keyframes nav-appear {{ from {{ opacity:0; }} to {{ opacity:1; }} }}
+  [data-testid="stSidebarNav"] {{
+    opacity: 0;
+    animation: nav-appear 0.15s ease-out 0.12s forwards;
+  }}
+
+  /* Nav link base — themed from the start so the reveal looks correct */
+  [data-testid="stSidebarNavLink"] {{
+    background: transparent !important;
+    border-radius: 6px !important;
+    padding: 5px 10px !important;
+    text-decoration: none !important;
+    border: none !important;
+  }}
+  [data-testid="stSidebarNavLink"] p,
+  [data-testid="stSidebarNavLink"] span,
+  [data-testid="stSidebarNavLink"] div {{
+    font-family: {FONT} !important;
+    font-size: 0.78rem !important;
+    letter-spacing: 1px !important;
+    color: {C_DIM} !important;
+  }}
+  [data-testid="stSidebarNavLink"]:hover {{
+    background: rgba(0,240,255,0.07) !important;
+  }}
+  [data-testid="stSidebarNavLink"]:hover p,
+  [data-testid="stSidebarNavLink"]:hover span,
+  [data-testid="stSidebarNavLink"]:hover div {{
+    color: {C_CYAN} !important;
+  }}
+  [data-testid="stSidebarNavLink"][aria-current="page"] {{
+    background: rgba(0,240,255,0.09) !important;
+    border-left: 2px solid {C_CYAN} !important;
+  }}
+  [data-testid="stSidebarNavLink"][aria-current="page"] p,
+  [data-testid="stSidebarNavLink"][aria-current="page"] span,
+  [data-testid="stSidebarNavLink"][aria-current="page"] div {{
+    color: {C_CYAN} !important;
+  }}
   .stPlotlyChart {{ background: transparent !important; }}
   ::-webkit-scrollbar {{ width: 5px; }}
   ::-webkit-scrollbar-track {{ background: {C_BG}; }}
