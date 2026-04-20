@@ -380,9 +380,10 @@ _load_ph = st.empty()
 _spinner(_load_ph, "LOADING")
 bots    = _load_all_bots()
 reports = _load_reports()
-_load_ph.empty()
 
 render_summary(bots, reports)
 render_bots(bots)
 render_events()
 render_reports(reports)
+
+_load_ph.empty()

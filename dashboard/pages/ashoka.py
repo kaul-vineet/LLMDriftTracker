@@ -763,7 +763,6 @@ _load_ph = st.empty()
 _spinner(_load_ph, "LOADING")
 bots       = load_all_bots()
 raw_events = load_events(STORE_DIR)
-_load_ph.empty()
 page       = st.session_state.get("page", "overview")
 selected   = st.session_state.get("selected_bot")
 
@@ -778,3 +777,5 @@ if page == "detail":
         st.rerun()
 else:
     page_overview(bots, raw_events)
+
+_load_ph.empty()
