@@ -189,12 +189,8 @@ def _fmt_ts_long(iso):
         return iso[:16] if iso else "—"
 
 
-def _short_guid(g):
-    return g[:8] if len(g) >= 8 else g
-
-
 def load_all_bots():
-    from agent.store import list_triggers, load_tracking
+    from agent.store import list_runs, load_tracking
     bots = []
     if not os.path.exists(STORE_DIR):
         return bots
@@ -205,40 +201,40 @@ def load_all_bots():
         tracking = load_tracking(STORE_DIR, bot_id)
         if not tracking:
             continue
-        triggers = list_triggers(STORE_DIR, bot_id)
+        runs = list_runs(STORE_DIR, bot_id)
         bots.append({
             "botId":        bot_id,
             "botName":      tracking.get("botName", bot_id),
             "envName":      tracking.get("envName", "—"),
             "modelVersion": tracking.get("modelVersion", "unknown"),
             "updatedAt":    tracking.get("updatedAt", ""),
-            "triggerCount": len(triggers),
-            "triggers":     triggers,
-            "lastTrigger":  triggers[-1] if triggers else {},
+            "runCount":     len(runs),
+            "runs":         runs,
+            "lastRun":      runs[-1] if runs else {},
         })
     return sorted(bots, key=lambda b: b["updatedAt"], reverse=True)
 
 
-def _metrics_for(trigger):
-    return _extract_metrics(trigger.get("resultsByType", {}))
+def _metrics_for(run):
+    return _extract_metrics(run.get("testSets", {}))
 
 
-def _classifications_for(ta, tb):
-    return classify_run(_metrics_for(ta), _metrics_for(tb))
+def _classifications_for(ra, rb):
+    return classify_run(_metrics_for(ra), _metrics_for(rb))
 
 
 def _bot_verdict(bot):
-    triggers = bot["triggers"]
-    if len(triggers) < 2:
+    runs = bot["runs"]
+    if len(runs) < 2:
         return "BASELINE"
-    cls = _classifications_for(triggers[-2], triggers[-1])
+    cls = _classifications_for(runs[-2], runs[-1])
     if any(c["verdict"] == "REGRESSED" for c in cls): return "REGRESSED"
     if any(c["verdict"] == "IMPROVED"  for c in cls): return "IMPROVED"
     return "STABLE"
 
 
-def _cases_for_type(trigger, metric_type):
-    wrapper    = trigger.get("resultsByType", {}).get(metric_type, {})
+def _cases_for_type(run, metric_type):
+    wrapper    = run.get("testSets", {}).get(metric_type, {})
     run_result = wrapper.get("results", wrapper) if isinstance(wrapper, dict) else {}
     cases = []
     for case in run_result.get("testCasesResults", []):
@@ -253,8 +249,8 @@ def _cases_for_type(trigger, metric_type):
     return cases
 
 
-def _all_metric_types(trigger):
-    return list(trigger.get("resultsByType", {}).keys())
+def _all_metric_types(run):
+    return list(run.get("testSets", {}).keys())
 
 
 # ── Charts ────────────────────────────────────────────────────────────────────
@@ -345,14 +341,14 @@ def chart_status_grid(cases_prev, cases_curr):
 
 
 def chart_metric_trend(bot):
-    triggers = bot["triggers"]
-    if len(triggers) < 2: return go.Figure()
+    runs = bot["runs"]
+    if len(runs) < 2: return go.Figure()
     all_keys: set = set()
     data = []
-    for t in triggers:
-        m = _metrics_for(t)
+    for r in runs:
+        m = _metrics_for(r)
         all_keys.update(m.keys())
-        data.append({"label": _fmt_ts(t.get("triggeredAt","")), "metrics": m})
+        data.append({"label": _fmt_ts(r.get("triggeredAt","")), "metrics": m})
     x = [d["label"] for d in data]
     fig = go.Figure()
     for i, key in enumerate(sorted(all_keys)):
@@ -502,7 +498,7 @@ def page_overview(bots, raw_events):
         st.markdown(
             f"<div style='text-align:center;padding:40px;color:{C_DIM}'>"
             f"<div style='font-size:1.17rem;color:{C_TEXT}'>No bots tracked yet</div>"
-            f"<div style='font-size:0.98rem;margin-top:6px'>Start the agent or click ▶ Force Eval Now</div>"
+            f"<div style='font-size:0.98rem;margin-top:6px'>Start the agent — it will begin evaluating on the next poll cycle</div>"
             f"</div>",
             unsafe_allow_html=True,
         )
@@ -515,7 +511,7 @@ def page_overview(bots, raw_events):
                 icon = {"REGRESSED":"🔴","IMPROVED":"🟢","BASELINE":"🟡"}.get(verdict,"⚪")
                 if st.button(
                     f"{icon} {bot['botName']}\n{bot['modelVersion'][:26]}\n"
-                    f"{_fmt_ts(bot['updatedAt'])} · {bot['triggerCount']} run{'s' if bot['triggerCount']!=1 else ''}",
+                    f"{_fmt_ts(bot['updatedAt'])} · {bot['runCount']} run{'s' if bot['runCount']!=1 else ''}",
                     key=f"tile_{bot['botId']}", use_container_width=True,
                 ):
                     st.session_state.selected_bot = bot["botId"]
@@ -560,10 +556,12 @@ def page_overview(bots, raw_events):
         + f'<div style="text-align:center;margin-top:28px;padding-top:16px;'
           f'border-top:1px solid {C_BORDER}">'
           f'<div style="font-size:0.72rem;letter-spacing:3px;color:{C_DIM};'
-          f'font-family:{FONT};font-weight:700">CONCEIVED &amp; BUILT BY</div>'
+          f'font-family:{FONT};font-weight:700">UI INSPIRED BY</div>'
           f'<div style="font-size:1.43rem;font-weight:700;letter-spacing:6px;'
           f'color:{C_MAGENTA};font-family:{FONT};margin-top:4px;'
-          f'text-shadow:0 0 20px rgba(255,0,170,0.4)">OUROBOROS</div>'
+          f'text-shadow:0 0 20px rgba(255,0,170,0.4)">'
+          f'<a href="https://joi-lab.github.io/ouroboros/" target="_blank" '
+          f'style="color:{C_MAGENTA};text-decoration:none">OUROBOROS</a></div>'
           f'<div style="font-size:0.72rem;color:{C_DIM};letter-spacing:2px;margin-top:3px">'
           f'THE SNAKE THAT EATS ITS OWN TAIL &nbsp;·&nbsp; 2026</div>'
           f'</div>'
@@ -575,39 +573,60 @@ def page_overview(bots, raw_events):
 # ── Bot detail page ───────────────────────────────────────────────────────────
 def page_bot_detail(bot):
     import pandas as pd
-    triggers = bot["triggers"]
-    name     = bot["botName"]
-    env      = bot["envName"]
+    runs = bot["runs"]
+    name = bot["botName"]
+    env  = bot["envName"]
 
-    if st.button("← Back", key="back_btn"):
-        st.session_state.page = "overview"
-        st.rerun()
+    col_back, col_eval = st.columns([3, 1])
+    with col_back:
+        if st.button("← Back", key="back_btn"):
+            st.session_state.page = "overview"
+            st.rerun()
+    with col_eval:
+        trigger_path = os.path.join(STORE_DIR, f"force_eval_{bot['botId']}.trigger")
+        pending      = os.path.exists(trigger_path)
+        agent_up     = _agent_running()
+        if pending:
+            st.markdown(
+                f"<div style='color:{C_GOLD};font-size:0.7rem;font-family:{FONT};"
+                f"text-align:right;padding:6px 0'>⏳ Eval queued</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            if st.button("▶ Force Eval", key="force_eval_btn",
+                         use_container_width=True, type="secondary",
+                         disabled=not agent_up,
+                         help=None if agent_up else "Start the agent first"):
+                os.makedirs(STORE_DIR, exist_ok=True)
+                open(trigger_path, "w").write(datetime.now(timezone.utc).isoformat())
+                st.rerun()
 
-    if not triggers:
+    if not runs:
         st.info("No eval runs yet.")
         return
 
-    def _run_label(t):
-        return f"{_fmt_ts(t.get('triggeredAt',''))}  ·  {_short_guid(t.get('triggerGuid',''))}  ·  {t.get('modelVersion','?')}"
+    def _run_label(r):
+        forced = " · FORCED" if r.get("forced") else ""
+        return f"{_fmt_ts(r.get('triggeredAt',''))}  ·  {r.get('modelVersion','?')}{forced}"
 
-    run_labels = [_run_label(t) for t in triggers]
-    idx_a = st.selectbox("Run A — older / baseline", range(len(triggers)),
+    run_labels = [_run_label(r) for r in runs]
+    idx_a = st.selectbox("Run A — older / baseline", range(len(runs)),
                          format_func=lambda i: run_labels[i],
-                         index=max(0, len(triggers)-2), key="sel_a")
-    idx_b = st.selectbox("Run B — newer / comparison", range(len(triggers)),
+                         index=max(0, len(runs)-2), key="sel_a")
+    idx_b = st.selectbox("Run B — newer / comparison", range(len(runs)),
                          format_func=lambda i: run_labels[i],
-                         index=len(triggers)-1, key="sel_b")
+                         index=len(runs)-1, key="sel_b")
 
     if idx_a == idx_b:
         st.warning("Run A and Run B are the same — select two different runs to compare.")
         return
 
-    trig_a, trig_b = triggers[idx_a], triggers[idx_b]
-    lbl_a,  lbl_b  = run_labels[idx_a], run_labels[idx_b]
-    cls      = _classifications_for(trig_a, trig_b)
-    v_sum    = verdict_summary(cls)
-    reg_cnt  = sum(1 for c in cls if c["verdict"]=="REGRESSED")
-    v_color  = C_RED if reg_cnt else (C_GREEN if any(c["verdict"]=="IMPROVED" for c in cls) else C_DIM)
+    run_a, run_b = runs[idx_a], runs[idx_b]
+    lbl_a, lbl_b = run_labels[idx_a], run_labels[idx_b]
+    cls     = _classifications_for(run_a, run_b)
+    v_sum   = verdict_summary(cls)
+    reg_cnt = sum(1 for c in cls if c["verdict"]=="REGRESSED")
+    v_color = C_RED if reg_cnt else (C_GREEN if any(c["verdict"]=="IMPROVED" for c in cls) else C_DIM)
 
     st.markdown(
         f"<div style='padding:14px 0 8px;border-bottom:1px solid {C_BORDER};margin-bottom:16px;"
@@ -618,18 +637,6 @@ def page_bot_detail(bot):
         f"</div>",
         unsafe_allow_html=True,
     )
-
-    analysis = (trig_b.get("analysis") or trig_a.get("analysis") or "").strip()
-    if analysis:
-        if "LLM analysis unavailable" in analysis or "Error code" in analysis:
-            st.caption("⚠ LLM analysis unavailable — check LLM_API_KEY / LLM_BASE_URL in your .env")
-        else:
-            st.markdown(
-                f"<div class='analysis-panel'>"
-                f"<div class='analysis-label'>⚡ LLM DRIFT ANALYSIS</div>"
-                f"{analysis.replace(chr(10),'<br>')}</div>",
-                unsafe_allow_html=True,
-            )
 
     st.markdown("<div class='sec-label'>RADAR</div>", unsafe_allow_html=True)
     fig_r = chart_radar(cls, lbl_a, lbl_b)
@@ -653,18 +660,18 @@ def page_bot_detail(bot):
     _prio = {"REGRESSED":0,"IMPROVED":1,"STABLE":2,"NEW":3}
     vbt = {}
     for c in cls:
-        for mt in _all_metric_types(trig_b):
+        for mt in _all_metric_types(run_b):
             if c["key"].startswith(mt+"."):
                 if _prio.get(c["verdict"],9) < _prio.get(vbt.get(mt,"STABLE"),9):
                     vbt[mt] = c["verdict"]
-    for mt in _all_metric_types(trig_b):
+    for mt in _all_metric_types(run_b):
         if mt not in vbt:
-            vbt[mt] = "NEW" if not _metrics_for(trig_a) else "STABLE"
+            vbt[mt] = "NEW" if not _metrics_for(run_a) else "STABLE"
 
-    for mt in sorted(_all_metric_types(trig_b), key=lambda t: _prio.get(vbt.get(t,"STABLE"),9)):
+    for mt in sorted(_all_metric_types(run_b), key=lambda t: _prio.get(vbt.get(t,"STABLE"),9)):
         verdict    = vbt.get(mt,"STABLE")
-        cases_prev = _cases_for_type(trig_a, mt)
-        cases_curr = _cases_for_type(trig_b, mt)
+        cases_prev = _cases_for_type(run_a, mt)
+        cases_curr = _cases_for_type(run_b, mt)
         with st.expander(f"{mt}  —  {verdict}", expanded=(verdict=="REGRESSED")):
             if cases_prev and cases_curr:
                 fig_d = chart_delta_bar(cases_prev, cases_curr, "Score Δ per case (worst first)")
@@ -687,8 +694,31 @@ def page_bot_detail(bot):
                                  "Curr score":int(csc) if isinstance(csc,float) else None,
                                  "Δ":delta,"AI reason":cc.get("reason","")})
                 rows.sort(key=lambda r: (r["Δ"] or 0))
-                st.dataframe(pd.DataFrame(rows).set_index("#"), width="stretch",
-                             height=min(420,48+len(rows)*38))
+                df = pd.DataFrame(rows).set_index("#")
+
+                def _style_status(val):
+                    if val == "Pass":
+                        return "background-color:rgba(40,200,64,0.15);color:#28c840;font-weight:700"
+                    if val == "Fail":
+                        return "background-color:rgba(255,68,68,0.15);color:#ff4444;font-weight:700"
+                    return ""
+
+                def _style_delta(val):
+                    try:
+                        v = float(val)
+                        if v > 0:  return f"color:{C_GREEN};font-weight:700"
+                        if v < 0:  return f"color:{C_RED};font-weight:700"
+                    except (TypeError, ValueError):
+                        pass
+                    return f"color:{C_DIM}"
+
+                styled = (
+                    df.style
+                    .map(_style_status, subset=["Prev status", "Curr status"])
+                    .map(_style_delta,  subset=["Δ"])
+                )
+                st.dataframe(styled, width="stretch",
+                             height=min(420, 48+len(rows)*38))
                 failures = [r for r in rows if r["Curr status"]=="Fail"]
                 if failures:
                     st.markdown(
@@ -703,7 +733,7 @@ def page_bot_detail(bot):
             else:
                 st.caption("No test case data for this metric type.")
 
-    if len(triggers) >= 2:
+    if len(runs) >= 2:
         st.markdown("<div class='sec-label'>METRIC TRENDS</div>", unsafe_allow_html=True)
         fig_t = chart_metric_trend(bot)
         if fig_t.data:
@@ -711,16 +741,17 @@ def page_bot_detail(bot):
 
     st.markdown("<div class='sec-label'>RUN HISTORY</div>", unsafe_allow_html=True)
     rh_html = ""
-    for t in reversed(triggers):
-        mt_list = ", ".join(t.get("metricTypes",["—"]))
-        dot_col = C_CYAN if not t.get("_legacy") else C_DIM
+    for r in reversed(runs):
+        mt_list = ", ".join(r.get("testSets", {}).keys()) or "—"
+        dot_col = C_DIM if r.get("_legacy") else (C_GOLD if r.get("forced") else C_CYAN)
+        forced_tag = "  · FORCED" if r.get("forced") else ""
         rh_html += (
             "<div class='rh-item'>"
             f"<div class='rh-dot' style='background:{dot_col}'></div>"
             "<div class='rh-content'>"
-            f"<div class='rh-model'>{t.get('modelVersion','—')[:36]}</div>"
-            f"<div class='rh-guid'>{_short_guid(t.get('triggerGuid',''))}  ·  {mt_list}</div>"
-            f"<div class='rh-ts'>{_fmt_ts(t.get('triggeredAt',''))}</div>"
+            f"<div class='rh-model'>{r.get('modelVersion','—')[:36]}{forced_tag}</div>"
+            f"<div class='rh-guid'>{mt_list}</div>"
+            f"<div class='rh-ts'>{_fmt_ts(r.get('triggeredAt',''))}</div>"
             "</div></div>"
         )
     st.markdown("<div class='rh-timeline'>" + rh_html + "</div>", unsafe_allow_html=True)

@@ -140,13 +140,15 @@ flowchart TD
 | 🧠 | **LLM reasoning** | Any OpenAI-compatible model explains the drift in plain English |
 | 🔐 | **Unified MSAL auth** | Single token cache shared across Eval API, BAPI, and Dataverse |
 | 📋 | **Mission event log** | Append-only `events.jsonl` records every agent action for the timeline |
-| ⚡ | **Force-eval trigger** | File-based trigger — drop `force_eval.trigger` or run `.\drift.bat eval` |
+| ⚡ | **Force-eval trigger** | Global (`force_eval.trigger`) or per-bot (from bot detail page) — file-based, no restart needed |
 | ⚙️ | **Single-screen setup** | Single-screen form in the dashboard — ✓/✗ section status, LLM validation, no CLI required |
 | 🔄 | **Self-healing auth** | Token expires → emails admin device code → resumes automatically |
 | 📧 | **HTML reports** | Self-contained, email-ready, archived locally |
 | 🐳 | **Docker Compose** | `docker compose up` starts agent + dashboard with shared volume |
 | 💾 | **No cloud storage** | All state is local JSON — no Dataverse writes, no blob storage |
-| 👤 | **ASHOKA identity page** | Agent lore, WHO I AM bio, radar sweep animation, live mission timeline |
+| 👤 | **ASHOKA identity page** | Agent lore, WHO I AM bio, spaceship animation, live mission timeline |
+| 🗄️ | **Data management page** | Browse, inspect, and delete stored runs, events, and reports from the dashboard |
+| 🎨 | **Pass/Fail highlighting** | Eval result table colours Pass (green) and Fail (red); Δ column highlights regressions/improvements |
 
 ---
 
@@ -363,12 +365,12 @@ Auth: run `.\drift.bat setup` (Windows) or `./drift setup` (bash) locally first 
 
 ## 📊 Dashboard
 
-Two pages, accessible from the sidebar:
+Three pages, accessible from the sidebar:
 
 ### ASHOKA — Fleet + Bot Detail + Identity + Timeline
 
 ```
-● SYSTEM ONLINE · ALL STABLE          [radar sweep]
+● SYSTEM ONLINE · ALL STABLE          [spaceship animation]
 
         A S H O K A
           THE INCORRUPTIBLE JUDGE
@@ -391,7 +393,7 @@ Apr 10   ✗ regression    Safe Travels  CompareMeaning.passRate
 Apr 14   ✓ improvement   Safe Travels  pass 100%  avg 72.5
 Apr 18   ⚡ force_eval                 Triggered by dashboard
 ...
-                         CONCEIVED & BUILT BY
+                            UI INSPIRED BY
                             OUROBOROS · 2026
 ```
 
@@ -401,14 +403,37 @@ Click any bot tile to open the detail view:
 
 - **Run A / Run B selectors** — compare any two historical runs
 - **Radar** — polar chart; both runs overlaid as filled bars
-- **Metric Summary** — compact comparison table
+- **Metric Summary** — compact comparison table with Pass/Fail highlighted green/red and Δ column colour-coded
 - **Per metric type** — delta bar, status transition grid, case-by-case table
 - **Trend chart** — metric trajectory across all runs
+- **▶ Force Eval** button — queues a per-bot eval immediately (agent must be running)
 - **Back to fleet** — top of page
 
 ### Setup — single-screen configuration form
 
-Configure environments, bots, LLM endpoint, and SMTP without touching the terminal. Writes `config.json` directly. Each section displays a ✓ or ✗ status indicator. The sidebar shows **● READY** (green) when all five prerequisites are met; otherwise **○ SETUP NOT COMPLETE** with a bullet list of what's missing. The **Start Agent** button is disabled until the setup is complete.
+Configure environments, bots, LLM endpoint, and SMTP without touching the terminal. Writes `config.json` directly. Each section displays a ✓ or ✗ status indicator. The sidebar shows **● READY** (green) when all five prerequisites are met; otherwise **○ SETUP NOT COMPLETE** with a bullet list of what's missing. The **Start Agent** button is disabled until the setup is complete. Loading spinners randomly alternate between a hyperspace warp and an orbiting 🛸 animation.
+
+### Data — Storage management
+
+Browse all stored run data, events, and HTML reports. Delete individual runs, all runs for a bot, or an entire bot's data. Clear the event log. Delete individual or all HTML reports. Two-click safety on all delete actions — first click arms, second click fires.
+
+```
+[ AGENTS ]  [ EVAL RUNS ]  [ EVENTS ]  [ TOTAL SIZE ]
+
+── AGENT DATA ─────────────────────────────────────────────
+  ▼ Safe Travels  ·  4 runs  ·  12.3 KB
+    gpt.default  Apr 18, 2026  CompareMeaning  2.1 KB   [✕]
+    gpt-4o       Apr 14, 2026  CompareMeaning  2.0 KB   [✕]
+    ...
+    [ ✕ Delete all runs ]  [ ✕ Remove agent entirely ]
+
+── EVENT LOG ─────────────────────────────────────────────
+  EVENT LOG · 47 events · 8.4 KB                        [✕ Clear]
+
+── HTML REPORTS ──────────────────────────────────────────
+  report_20260418T143012.html  14.2 KB                  [✕]
+  [ ✕ Delete all reports ]
+```
 
 ---
 
@@ -446,17 +471,17 @@ data/
 ├── events.jsonl                    ← append-only agent action log
 ├── agent.pid                       ← running agent PID (deleted on stop)
 ├── llm_status.json                 ← LLM validation result written by Setup → Test button
-├── force_eval.trigger              ← created by dashboard to request immediate eval
+├── force_eval.trigger              ← global force-eval trigger (all bots)
+├── force_eval_{botId}.trigger      ← per-bot force-eval trigger (from bot detail page)
 │
 └── {botId}/
-    ├── tracking.json               ← last known model version + trigger GUID
+    ├── tracking.json               ← last known model version + lastRunFolder pointer
     └── runs/
-        └── {triggerGuid}/          ← one folder per eval trigger
-            ├── meta.json           ← timestamp, model version, verdict, LLM analysis
-            └── CompareMeaning.json ← full Eval API result for this metric type
+        └── {timestamp}_{modelVersion}/   ← one folder per eval run, human-readable key
+            └── run.json            ← all data: model, timestamp, forced flag, all testSets results
 ```
 
-Legacy flat-file runs (`{runId}_{ts}.json`) are detected and wrapped automatically for backward compatibility.
+Each `run.json` contains the full raw Eval API output for every test set (`testSets` dict keyed by metric type). All comparisons, classifications, and LLM analysis are derived on demand — nothing derived is stored. Old trigger-folder format is auto-wrapped for backward compatibility.
 
 ---
 
@@ -477,14 +502,16 @@ LLMDriftTracker/
 │   ├── 📋 events.py         ← append-only JSONL event logger
 │   ├── 📄 report.py         ← HTML report generator
 │   ├── 📧 notifier.py       ← SMTP sender
-│   └── 💾 store.py          ← folder-per-trigger run storage
+│   └── 💾 store.py          ← {timestamp}_{modelVersion} run storage, on-demand derivation
 │
 ├── 📊 dashboard/
 │   ├── __init__.py
-│   ├── 📈 app.py            ← fleet view · bot detail · run comparison
+│   ├── 📈 app.py            ← router · sidebar · agent start/stop controls
+│   ├── 🚀 spinner.py        ← shared spaceship animations (hyperspace + orbit, random)
 │   └── pages/
 │       ├── ⚡ ashoka.py     ← fleet · bot detail · identity · mission timeline
-│       └── ⚙️  1_Setup.py   ← single-screen setup form with ✓/✗ section status
+│       ├── ⚙️  1_Setup.py   ← single-screen setup form with ✓/✗ section status
+│       └── 🗄️  2_Data.py    ← browse, inspect, and delete stored runs/events/reports
 │
 ├── 🐳 docker-compose.yml    ← two-service local stack
 ├── 🐳 Dockerfile
@@ -498,7 +525,7 @@ LLMDriftTracker/
     ├── events.jsonl
     ├── agent.pid
     ├── llm_status.json
-    └── {botId}/runs/{triggerGuid}/
+    └── {botId}/runs/{timestamp}_{modelVersion}/
 ```
 
 ---

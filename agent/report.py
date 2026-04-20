@@ -45,10 +45,10 @@ def _fmt_score(v) -> str:
         return str(v)
 
 
-def _extract_cases_by_type(results_by_type: dict) -> dict[str, list[dict]]:
+def _extract_cases_by_type(test_sets: dict) -> dict[str, list[dict]]:
     """Return {metric_type: [{caseId, status, score, reason}]} for each type."""
     out = {}
-    for metric_type, wrapper in results_by_type.items():
+    for metric_type, wrapper in test_sets.items():
         run_result = wrapper.get("results", wrapper) if isinstance(wrapper, dict) else {}
         cases = []
         for case in run_result.get("testCasesResults", []):
@@ -183,19 +183,19 @@ def _metric_section(metric_type: str, verdict: str,
 
 
 def _bot_section(br: dict) -> str:
-    bot_name       = br["botName"]
-    old_model      = br["oldModel"]
-    new_model      = br["newModel"]
-    trigger_guid   = br["triggerGuid"]
-    verdict_line   = br.get("verdictSummary", "")
-    analysis       = br.get("analysis", "")
+    bot_name        = br["botName"]
+    old_model       = br["oldModel"]
+    new_model       = br["newModel"]
+    run_folder      = br.get("runFolder", "")
+    verdict_line    = br.get("verdictSummary", "")
+    analysis        = br.get("analysis", "")
     classifications = br.get("classifications", [])
-    curr_by_type   = br.get("currResultsByType", {})
-    prev_trigger   = br.get("prevTrigger")
+    curr_test_sets  = br.get("currRun", {}).get("testSets", {})
+    prev_run        = br.get("prevRun")
 
-    curr_cases_by_type = _extract_cases_by_type(curr_by_type)
+    curr_cases_by_type = _extract_cases_by_type(curr_test_sets)
     prev_cases_by_type = _extract_cases_by_type(
-        prev_trigger.get("resultsByType", {}) if prev_trigger else {}
+        prev_run.get("testSets", {}) if prev_run else {}
     )
 
     # Verdict pill color
@@ -284,7 +284,7 @@ def _bot_section(br: dict) -> str:
                       font-family:{FONT};letter-spacing:1px'>{bot_name}</div>
           <div style='font-size:0.85rem;margin-top:4px'>{model_line}</div>
           <div style='font-size:0.65rem;color:{C_DIM};margin-top:4px;
-                      font-family:{FONT}'>trigger: {trigger_guid}</div>
+                      font-family:{FONT}'>run: {run_folder}</div>
         </div>
         <div style='text-align:right'>
           <div style='color:{v_color};font-weight:700;font-family:{FONT};

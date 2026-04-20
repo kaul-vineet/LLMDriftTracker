@@ -271,8 +271,7 @@ def render_readiness():
 
 
 def render_agent_controls():
-    running      = _agent_running()
-    trigger_path = os.path.join(STORE_DIR, "force_eval.trigger")
+    running = _agent_running()
     if running:
         pid = _read_pid()
         st.markdown(
@@ -300,26 +299,6 @@ def render_agent_controls():
             _start_agent()
             time.sleep(1)
             st.rerun()
-    pending = os.path.exists(trigger_path)
-    if running and pending:
-        st.markdown(
-            f"<div style='color:{C_GOLD};font-size:0.7rem;font-family:{FONT};"
-            f"text-align:center;padding:6px'>⏳ Eval queued</div>",
-            unsafe_allow_html=True,
-        )
-    elif not running and pending:
-        # Stale trigger — agent never ran to consume it; offer to clear
-        if st.button("✕ Clear stale trigger", use_container_width=True, type="secondary"):
-            try:
-                os.remove(trigger_path)
-            except Exception:
-                pass
-            st.rerun()
-    else:
-        if st.button("▶ Force Eval Now", use_container_width=True, type="secondary"):
-            os.makedirs(STORE_DIR, exist_ok=True)
-            open(trigger_path, "w").write(datetime.now(timezone.utc).isoformat())
-            st.rerun()
 
 
 # ── Shared sidebar (appears on every page) ────────────────────────────────────
@@ -343,5 +322,6 @@ with st.sidebar:
 pg = st.navigation([
     st.Page("pages/ashoka.py", title="ASHOKA", icon="⚡", default=True),
     st.Page("pages/1_Setup.py", title="Setup", icon="⚙"),
+    st.Page("pages/2_Data.py", title="Data", icon="🗄"),
 ])
 pg.run()

@@ -1,10 +1,9 @@
 """
-Generate dummy trigger data in the new folder-per-trigger format.
-Creates 2 historical triggers to complement the existing legacy run files.
+Generate dummy run data in the new {timestamp}_{modelVersion}/run.json format.
 Run: python scripts/gen_dummy_data.py
 """
-import json, os, uuid
-from datetime import datetime, timezone, timedelta
+import json, os
+from datetime import datetime, timezone
 
 BOT_ID    = "70e4f3ba-782e-f111-88b4-000d3a3ace47"
 BOT_NAME  = "Safe Travels And Times"
@@ -38,8 +37,7 @@ REASONS = [
 ]
 
 
-def make_run(trigger_guid, triggered_at, model_version, scores):
-    """Build the full API run result shape from a list of scores (0/50/75/100)."""
+def make_api_result(api_run_id, triggered_at, scores):
     test_cases = []
     for i, (tc_id, score) in enumerate(zip(TEST_CASES, scores)):
         status = "Pass" if score >= 50 else "Fail"
@@ -56,99 +54,82 @@ def make_run(trigger_guid, triggered_at, model_version, scores):
                 }
             }]
         })
-
-    pass_count = sum(1 for s in scores if s >= 50)
     return {
-        "id": trigger_guid,
+        "id": api_run_id,
         "environmentId": "default-8b7a11d9-6513-4d54-a468-f6630df73c8b",
         "cdsBotId": BOT_ID,
-        "ownerId": "14f91736-72a8-4307-a973-63f6c2bafd80",
         "testSetId": "6bd3ec84-4e4f-4a55-9dfe-ecfc9816848b",
         "state": "Completed",
         "startTime": triggered_at,
-        "endTime": triggered_at,
-        "name": "Automated Test Triggered by API",
+        "endTime":   triggered_at,
         "totalTestCases": len(scores),
-        "mcsConnectionId": None,
         "testCasesResults": test_cases,
     }
 
 
-def write_trigger(trigger_guid, triggered_at, model_version, scores, analysis):
-    trigger_dir = os.path.join(STORE_DIR, BOT_ID, "runs", trigger_guid)
-    os.makedirs(trigger_dir, exist_ok=True)
+def write_run(folder_name, triggered_at, model_version, scores, forced=False):
+    run_dir = os.path.join(STORE_DIR, BOT_ID, "runs", folder_name)
+    os.makedirs(run_dir, exist_ok=True)
 
-    pass_count = sum(1 for s in scores if s >= 50)
-    avg_score  = sum(scores) / len(scores)
+    api_run_id  = folder_name[:12]
+    api_result  = make_api_result(api_run_id, triggered_at, scores)
+    pass_count  = sum(1 for s in scores if s >= 50)
+    avg_score   = sum(scores) / len(scores)
 
-    meta = {
-        "triggerGuid":  trigger_guid,
-        "triggeredAt":  triggered_at,
+    run = {
+        "botId":        BOT_ID,
+        "botName":      BOT_NAME,
+        "envId":        "default-8b7a11d9-6513-4d54-a468-f6630df73c8b",
+        "envName":      ENV_NAME,
+        "orgUrl":       "https://org123.crm.dynamics.com",
         "modelVersion": model_version,
-        "metricTypes":  ["CompareMeaning"],
-        "analysis":     analysis,
+        "triggeredAt":  triggered_at,
+        "forced":       forced,
+        "testSets": {
+            "CompareMeaning": {
+                "apiRunId": api_run_id,
+                "results":  api_result,
+            }
+        },
     }
-    open(os.path.join(trigger_dir, "meta.json"), "w").write(json.dumps(meta, indent=2))
-
-    run_result = make_run(trigger_guid, triggered_at, model_version, scores)
-    payload = {
-        "metricType": "CompareMeaning",
-        "apiRunId":   trigger_guid,
-        "storedAt":   triggered_at,
-        "results":    run_result,
-    }
-    open(os.path.join(trigger_dir, "CompareMeaning.json"), "w").write(
-        json.dumps(payload, indent=2)
-    )
-    print(f"  Written: {trigger_dir}  (pass={pass_count}/{len(scores)}, avg={avg_score:.1f})")
+    open(os.path.join(run_dir, "run.json"), "w").write(json.dumps(run, indent=2))
+    print(f"  Written: {run_dir}  (pass={pass_count}/{len(scores)}, avg={avg_score:.1f})")
+    return folder_name
 
 
-# ── Dummy triggers ────────────────────────────────────────────────────────────
-
-TRIGGERS = [
+RUNS = [
     {
-        "guid":    "d1000000-aaaa-4000-8000-000000000001",
+        "folder":  "20260410T092211_crf98_safeTravels.gpt-4o.default",
         "date":    "2026-04-10T09:22:11.000000+00:00",
         "model":   "crf98_safeTravels.gpt-4o.default",
-        "scores":  [50, 0, 0, 75, 50, 0, 50, 75, 50, 0],   # 60% pass, avg 35
-        "analysis": (
-            "Baseline run on gpt-4o. Pass rate 60% with average score 35. "
-            "Several test cases fail outright — particularly on country-specific entry rules "
-            "and document requirements. The model frequently confuses adjacent countries and "
-            "produces hallucinated document lists. Recommend monitoring after model upgrade."
-        ),
+        "scores":  [50, 0, 0, 75, 50, 0, 50, 75, 50, 0],
+        "forced":  False,
     },
     {
-        "guid":    "d2000000-bbbb-4000-8000-000000000002",
+        "folder":  "20260414T110533_crf98_safeTravels.gpt.default",
         "date":    "2026-04-14T11:05:33.000000+00:00",
         "model":   "crf98_safeTravels.gpt.default",
-        "scores":  [75, 75, 50, 75, 75, 50, 100, 75, 75, 75],  # 100% pass, avg 72.5
-        "analysis": (
-            "Significant improvement following model upgrade to gpt.default. "
-            "Pass rate rose to 100% with average score 72.5. "
-            "The model no longer confuses Australia/NZ scenarios and document requirement "
-            "responses are now accurate. Some test cases still score 50 due to omitted "
-            "supporting context. Overall drift is positive — no regression detected."
-        ),
+        "scores":  [75, 75, 50, 75, 75, 50, 100, 75, 75, 75],
+        "forced":  False,
     },
 ]
 
-print("Generating dummy triggers...")
-for t in TRIGGERS:
-    write_trigger(t["guid"], t["date"], t["model"], t["scores"], t["analysis"])
+print("Generating dummy runs...")
+last_folder = None
+for r in RUNS:
+    last_folder = write_run(r["folder"], r["date"], r["model"], r["scores"], r["forced"])
 
-# Update tracking.json to new format
 tracking_path = os.path.join(STORE_DIR, BOT_ID, "tracking.json")
 existing = json.loads(open(tracking_path).read()) if os.path.exists(tracking_path) else {}
 existing.update({
-    "botId":           BOT_ID,
-    "botName":         BOT_NAME,
-    "envName":         ENV_NAME,
-    "modelVersion":    "crf98_safeTravels.gpt.default",
-    "lastTriggerGuid": "c2eaabc2-73b0-4b82-844e-caabb21b179a",  # real legacy run
-    "updatedAt":       "2026-04-18T14:17:17.449210+00:00",
+    "botId":          BOT_ID,
+    "botName":        BOT_NAME,
+    "envName":        ENV_NAME,
+    "modelVersion":   RUNS[-1]["model"],
+    "lastRunFolder":  last_folder,
+    "updatedAt":      RUNS[-1]["date"],
 })
-# Remove old key if present
+existing.pop("lastTriggerGuid", None)
 existing.pop("lastRunId", None)
 open(tracking_path, "w").write(json.dumps(existing, indent=2))
 print(f"  Updated: {tracking_path}")

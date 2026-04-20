@@ -3,8 +3,8 @@ agent/reasoning.py — metric extraction, drift classification, LLM analysis.
 
 classify_run() returns verdicts sorted REGRESSED → IMPROVED → STABLE.
 _build_prompt() leads with regressions.
-extract_metrics_for_report() handles both old single-run format and new
-dict[metric_type -> result_wrapper] format.
+extract_metrics_for_report() accepts the testSets dict shape:
+  dict[metric_type -> {apiRunId, results: {testCasesResults: [...]}}]
 """
 import json
 import os
@@ -48,19 +48,17 @@ def _extract_metrics(run: dict) -> dict:
     return {k: round(totals[k] / counts[k], 4) for k in totals if k in counts}
 
 
-def extract_metrics_for_report(results_input: dict) -> dict:
+def extract_metrics_for_report(test_sets: dict) -> dict:
     """
-    Accept either:
-    - Old format: single run result dict (has "testCasesResults" key)
-    - New format: dict[metric_type -> {metricType, apiRunId, storedAt, results: ...}]
+    Accept testSets: dict[metric_type -> {apiRunId, results: {testCasesResults: [...]}}]
+    Also accepts a bare run result dict (has "testCasesResults") for legacy callers.
     """
-    if not results_input:
+    if not test_sets:
         return {}
-    if "testCasesResults" in results_input:
-        return _extract_metrics(results_input)
-    # New format
+    if "testCasesResults" in test_sets:
+        return _extract_metrics(test_sets)
     combined = {}
-    for _type, wrapper in results_input.items():
+    for _type, wrapper in test_sets.items():
         if isinstance(wrapper, dict):
             run_result = wrapper.get("results", wrapper)
             combined.update(_extract_metrics(run_result))
@@ -187,19 +185,19 @@ Be concise. Use plain language. Lead with the most important finding. No bullet 
 
 
 def analyse_drift(bot_name: str, old_model: str, new_model: str,
-                  current_results_by_type: dict,
-                  prev_trigger: dict | None,
+                  test_sets: dict,
+                  prev_run: dict | None,
                   cfg: dict) -> str:
-    curr_metrics = extract_metrics_for_report(current_results_by_type)
+    curr_metrics = extract_metrics_for_report(test_sets)
     prev_metrics = (
-        extract_metrics_for_report(prev_trigger.get("resultsByType", {}))
-        if prev_trigger else {}
+        extract_metrics_for_report(prev_run.get("testSets", {}))
+        if prev_run else {}
     )
 
     classifications = classify_run(prev_metrics, curr_metrics)
 
     ai_reasons = []
-    for _type, wrapper in current_results_by_type.items():
+    for _type, wrapper in test_sets.items():
         if isinstance(wrapper, dict):
             run_result = wrapper.get("results", wrapper)
             for case in run_result.get("testCasesResults", []):
