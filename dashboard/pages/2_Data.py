@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import streamlit as st
 from theme import C_BG, C_CARD, C_BORDER, C_CYAN, C_MAGENTA, C_GOLD, C_RED, C_GREEN, C_DIM, C_TEXT, FONT
+from spinner import spinner as _spinner
 
 STORE_DIR = os.environ.get("STORE_DIR", "data")
 
@@ -375,8 +376,11 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+_load_ph = st.empty()
+_spinner(_load_ph, "LOADING")
 bots    = _load_all_bots()
 reports = _load_reports()
+_load_ph.empty()
 
 render_summary(bots, reports)
 render_bots(bots)

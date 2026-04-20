@@ -25,6 +25,7 @@ from agent.reasoning import (
     verdict_summary,
 )
 from agent.events import load_events
+from spinner import spinner as _spinner
 
 STORE_DIR = os.environ.get("STORE_DIR", "data")
 PID_FILE  = os.path.join(STORE_DIR, "agent.pid")
@@ -758,8 +759,11 @@ def page_bot_detail(bot):
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
+_load_ph = st.empty()
+_spinner(_load_ph, "LOADING")
 bots       = load_all_bots()
 raw_events = load_events(STORE_DIR)
+_load_ph.empty()
 page       = st.session_state.get("page", "overview")
 selected   = st.session_state.get("selected_bot")
 
