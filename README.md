@@ -54,7 +54,7 @@ This is deliberate. Automated rollbacks of AI systems carry their own risks. LLM
 - 🚫 No pass/fail verdicts that auto-trigger action
 - 🚫 No automated rollbacks or model changes
 - 🚫 No writes to Dataverse or Copilot Studio
-- 👁️ Pure, unobtrusive observation and reporting
+- 🔭 Pure, unobtrusive observation and reporting
 
 ---
 
