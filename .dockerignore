@@ -1,8 +1,12 @@
-bootstrap.py
-test_viability.py
 msal_token_cache.json
+config.json
 data/
 __pycache__/
 *.pyc
 .venv/
 venv/
+.env
+.git/
+.claude/
+scripts/
+README.md

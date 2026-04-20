@@ -6,7 +6,7 @@
   ███████╗███████╗██║ ╚═╝ ██║    ██████╔╝██║  ██║██║██║        ██║
   ╚══════╝╚══════╝╚═╝     ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚═╝╚═╝        ╚═╝
 
-  ⚡  T R A C K E R      copilot-eval-agent  ·  v1.1
+  ⚡  powered by  A S H O K A  ·  THE INCORRUPTIBLE JUDGE  ·  v1.1
 ```
 
 <div align="center">
@@ -24,10 +24,10 @@
 
 <br/>
 
-> 🤖 **Autonomous model drift detection for Microsoft Copilot Studio bots.**
+> **Autonomous model drift detection for Microsoft Copilot Studio bots.**
 > Watches every configured bot across all your Power Platform environments.
-> Detects model version changes. Triggers evaluations. Emails you a
-> side-by-side drift analysis report. Fully headless after first setup.
+> The moment a model version changes, it evaluates, analyses, and reports —
+> fully headless, after a one-time browser setup.
 
 </div>
 
@@ -35,13 +35,26 @@
 
 ## ⚡ The Problem
 
-🔕 Your Copilot Studio bots run on top of large language models. Microsoft updates those models silently. When they do, your bot's behaviour shifts — subtly or dramatically — with zero warning. Accuracy drops. Tone changes. Topics misfire. **You find out from a support ticket, not a dashboard.**
+Microsoft updates the large language models powering your Copilot Studio bots **silently and without notice**. When a model shifts, your bot's behaviour changes — accuracy drops, tone drifts, topics misfire. You have no visibility. You find out from a support ticket, not a dashboard.
 
 ## 🎯 The Solution
 
-🛡️ LLM Drift Tracker watches every bot you care about, around the clock. The moment a model version change is detected in Dataverse, it fires the Copilot Studio Eval API, pulls the results, runs an LLM analysis of the metric delta, and emails you a clean side-by-side report — all before your users notice anything.
+LLM Drift Tracker runs a persistent background agent called **ASHOKA** that watches every bot you care about, around the clock. The moment a model version change is detected in Dataverse, ASHOKA fires the Copilot Studio Eval API, scores every test case, compares the results against the last known-good run, runs an LLM analysis of the delta, and emails you a clean side-by-side report — before your users notice anything.
 
-> 🚫 No pass/fail verdicts &nbsp;·&nbsp; 🚫 No automated rollbacks &nbsp;·&nbsp; 🚫 No changes to your bots &nbsp;·&nbsp; 👁️ Pure, unobtrusive observation
+---
+
+## 🧭 Philosophy
+
+> **ASHOKA observes. Humans decide.**
+
+ASHOKA is a pure observer. It has no ability to roll back a model, modify a bot, or take any corrective action. Its only job is to surface the truth of what changed and when, with enough data for a human to make an informed decision.
+
+This is deliberate. Automated rollbacks of AI systems carry their own risks. LLM Drift Tracker gives your team the signal — the response is always yours.
+
+- 🚫 No pass/fail verdicts that auto-trigger action
+- 🚫 No automated rollbacks or model changes
+- 🚫 No writes to Dataverse or Copilot Studio
+- 👁️ Pure, unobtrusive observation and reporting
 
 ---
 
@@ -49,27 +62,22 @@
 
 ```mermaid
 flowchart TD
-    A([⏱ Every N minutes]) --> B[Fetch bots from Dataverse]
-    B --> C{Bot in\nmonitoredBots?}
-    C -- No --> D([⏭ Skip])
-    C -- Yes --> E{Model version\nchanged?}
-    E -- No --> F([⏭ Skip — log STABLE])
-    E -- Yes --> G[⚡ Log MODEL_CHANGE\n🚀 Trigger Eval API]
-    G --> H[⏳ Poll until\ncomplete]
-    H --> I[📊 Extract &\naggregate metrics]
-    I --> J[🧠 LLM drift\nanalysis]
-    J --> K[📄 Generate\nHTML report]
-    K --> L[📧 Email report\nto admin]
-    K --> M[💾 Save to\ndata/ volume]
-    M --> N[📋 Append to\nevents.jsonl]
+    A([⏱ Every N minutes]) --> B[Poll Dataverse\nfor bot model versions]
+    B --> C{Model version\nchanged?}
+    C -- No --> D([⏭ Log STABLE · sleep])
+    C -- Yes --> E[⚡ Log MODEL_CHANGE\nTrigger Eval API]
+    E --> F[⏳ Poll until\ncomplete]
+    F --> G[📊 Compare metrics\nvs previous run]
+    G --> H[🧠 LLM drift\nnarrative]
+    H --> I[📄 HTML report\ngenerated]
+    I --> J[📧 Email to admin]
+    I --> K[💾 Saved to data/\nwith full raw results]
 
     style A fill:#1f6feb,color:#fff,stroke:none
-    style G fill:#238636,color:#fff,stroke:none
-    style J fill:#8957e5,color:#fff,stroke:none
-    style L fill:#da3633,color:#fff,stroke:none
-    style N fill:#bf8700,color:#fff,stroke:none
+    style E fill:#238636,color:#fff,stroke:none
+    style H fill:#8957e5,color:#fff,stroke:none
+    style J fill:#da3633,color:#fff,stroke:none
     style D fill:#30363d,color:#8b949e,stroke:none
-    style F fill:#30363d,color:#8b949e,stroke:none
 ```
 
 ---
@@ -77,54 +85,41 @@ flowchart TD
 ## 🏗️ Architecture
 
 ```
-  ╔══════════════════════════════════════════════════════════════════════╗
-  ║  🖥️  HOST  (one-time setup)                                         ║
-  ║                                                                      ║
-  ║   .\drift.bat setup ────────────────────── writes ──► 📄 config.json ║
-  ║                └─────────────────────────── caches ► 🔑 msal_cache  ║
-  ╚══════════════════════╤═══════════════════════════════════════════════╝
-                         │  📦 volume mount
-                         ▼
-  ╔══════════════════════════════════════════════════════════════════════╗
-  ║  🐳  DOCKER  (docker compose up)                                    ║
-  ║                                                                      ║
-  ║   ⚙️  agent/main.py  ── 🔁 poll loop ───────────────────────────── ►║
-  ║        │                                                             ║
-  ║        ├──► 🌐 agent/dataverse.py  · monitoredBots filter ───────► ║─► 🗄️  Dataverse
-  ║        │                                                             ║       bot entity
-  ║        ├──► 🧪 agent/eval_client.py · trigger + poll ────────────► ║─► ☁️  Eval API
-  ║        │                                                             ║       powerplatform.com
-  ║        ├──► 🔐 agent/auth.py · unified MSAL (one cache, all APIs) ►║─► 🪪  Microsoft Identity
-  ║        │                                                             ║       device code flow
-  ║        ├──► 🧠 agent/reasoning.py · classify + LLM narrative ────► ║─► 🤖  LLM endpoint
-  ║        │                                                             ║       (OpenAI-compat)
-  ║        ├──► 📋 agent/events.py · append-only JSONL event log ────► ║
-  ║        ├──► 📧 agent/notifier.py · SMTP HTML report ─────────────► ║─► 📬  email
-  ║        └──► 💾 agent/store.py ──────────────── writes ───────────► ║
-  ║                                                                      ║
-  ╚══════════════════════════════════════╤═════════════════════════════╤╝
-                                         │                             │
-                              ┌──────────▼──────────┐     ┌──────────▼──────────┐
-                              │  💾  data/           │     │  📄  reports/       │
-                              │  📍 tracking.json    │     │  report_*.html      │
-                              │  📋 events.jsonl     │     │  📧 emailed + saved │
-                              │  runs/               │     └─────────────────────┘
-                              │    {triggerGuid}/    │
-                              │      meta.json       │
-                              │      *.json          │
-                              └──────────┬──────────┘
-                                         │ 🔗 shared volume
-                                         ▼
-  ╔══════════════════════════════════════════════════════════════════════╗
-  ║  📊  DASHBOARD  · 🌐 port 8501                                      ║
-  ║                                                                      ║
-  ║   📈 dashboard/app.py      ─── router · sidebar · agent controls   ║
-  ║   ⚙️  dashboard/pages/     ─── multi-page Streamlit app             ║
-  ║        ashoka.py           ─── fleet · detail · identity · timeline ║
-  ║        1_Setup.py          ─── single-screen setup form             ║
-  ║                                                                      ║
-  ║   🕸️ Radar · 📈 Trend lines · 📊 Delta bars · 🧠 LLM analysis       ║
-  ╚══════════════════════════════════════════════════════════════════════╝
+  ┌─────────────────────────────────────────────────────────────┐
+  │  Browser Setup  (one time)                                   │
+  │                                                              │
+  │   http://localhost:8501 → Setup page                        │
+  │        sign in · pick environments · pick bots · save       │
+  │        writes ──► config.json   caches ──► msal_cache       │
+  └──────────────────────────┬──────────────────────────────────┘
+                             │  shared  data/  volume
+                             ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │  ASHOKA  —  autonomous agent  (python -m agent.main)        │
+  │                                                             │
+  │   auth.py        unified MSAL — one cache, three APIs      │──► Microsoft Identity
+  │   dataverse.py   poll bot model versions                   │──► Dataverse
+  │   eval_client.py trigger + poll Eval API                   │──► Copilot Studio Eval API
+  │   reasoning.py   classify metrics · LLM drift narrative    │──► LLM endpoint (OpenAI-compat)
+  │   events.py      append-only JSONL event log               │
+  │   store.py       write run.json per eval run               │
+  │   report.py      generate self-contained HTML report       │
+  │   notifier.py    email report via SMTP                     │──► email
+  └──────────────────────────┬──────────────────────────────────┘
+                             │
+                    data/{botId}/runs/
+                    {timestamp}_{modelVersion}/
+                         run.json  ← full raw Eval API results
+                    events.jsonl   ← every agent action
+                    report_*.html  ← archived reports
+                             │
+  ┌──────────────────────────▼──────────────────────────────────┐
+  │  Dashboard  —  Streamlit  (port 8501)                       │
+  │                                                             │
+  │   ASHOKA    fleet view · bot detail · run comparison       │
+  │   Setup     browser-based config — no terminal needed      │
+  │   Data      browse · delete runs, events, reports          │
+  └─────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -134,85 +129,54 @@ flowchart TD
 | | Feature | Detail |
 |---|---|---|
 | 🌐 | **Multi-environment** | Watches bots across unlimited Power Platform environments |
-| 📋 | **Opt-in per bot** | Select bots to monitor in `config.json` — no code changes ever |
-| 🤖 | **Zero-touch eval** | Discovers test sets, triggers + polls the Eval API automatically |
-| 📊 | **Any-run comparison** | Compare any two historical runs in the dashboard — not just the latest |
-| 🧠 | **LLM reasoning** | Any OpenAI-compatible model explains the drift in plain English |
+| 📋 | **Opt-in per bot** | Choose which bots to monitor — empty list = watch all active bots |
+| 🤖 | **Zero-touch eval** | Discovers all test sets, triggers the Eval API, polls to completion automatically |
+| 📊 | **Any-run comparison** | Compare any two historical runs — not just the latest pair |
+| 🧠 | **LLM narrative** | Any OpenAI-compatible endpoint explains the drift in plain English |
 | 🔐 | **Unified MSAL auth** | Single token cache shared across Eval API, BAPI, and Dataverse |
-| 📋 | **Mission event log** | Append-only `events.jsonl` records every agent action for the timeline |
-| ⚡ | **Force-eval trigger** | Global (`force_eval.trigger`) or per-bot (from bot detail page) — file-based, no restart needed |
-| ⚙️ | **Single-screen setup** | Single-screen form in the dashboard — ✓/✗ section status, LLM validation, no CLI required |
-| 🔄 | **Self-healing auth** | Token expires → emails admin device code → resumes automatically |
-| 📧 | **HTML reports** | Self-contained, email-ready, archived locally |
-| 🐳 | **Docker Compose** | `docker compose up` starts agent + dashboard with shared volume |
+| 📋 | **Event log** | Append-only `events.jsonl` — every agent action timestamped and queryable |
+| ⚡ | **Force eval** | Trigger an eval now — globally or per-bot — without restarting the agent |
+| ⚙️ | **Browser setup** | Full configuration in the dashboard — no terminal, no YAML editing |
+| 📧 | **HTML reports** | Self-contained, email-ready, archived locally with full raw data |
+| 🗄️ | **Data management** | Browse, inspect, and delete runs, events, and reports from the dashboard |
+| 🐳 | **Docker Compose** | `docker compose up` starts agent + dashboard with a shared volume |
 | 💾 | **No cloud storage** | All state is local JSON — no Dataverse writes, no blob storage |
-| 👤 | **ASHOKA identity page** | Agent lore, WHO I AM bio, spaceship animation, live mission timeline |
-| 🗄️ | **Data management page** | Browse, inspect, and delete stored runs, events, and reports from the dashboard |
-| 🎨 | **Pass/Fail highlighting** | Eval result table colours Pass (green) and Fail (red); Δ column highlights regressions/improvements |
 
 ---
 
-## ⚡ CLI reference
+## 🚀 Quick start
 
-**Windows PowerShell:**
+### Step 1 — Prerequisites
 
-| Command | What it does |
-|---|---|
-| `.\drift.bat setup` | Run the terminal setup wizard |
-| `.\drift.bat run` | Start the autonomous polling agent |
-| `.\drift.bat eval` | Force-run evals for all monitored bots right now |
-| `.\drift.bat dashboard` | Launch the Streamlit dashboard on `http://localhost:8501` |
-
-**bash / Mac / Linux:**
-
-| Command | What it does |
-|---|---|
-| `./drift setup` | Run the terminal setup wizard |
-| `./drift run` | Start the autonomous polling agent |
-| `./drift eval` | Force-run evals for all monitored bots right now |
-| `./drift dashboard` | Launch the Streamlit dashboard on `http://localhost:8501` |
-
----
-
-## 🚀 Full setup — A to Z
-
-### 🛒 Step 1 — Prerequisites
-
-| ✅ | What | 🔗 How |
+| | What | Notes |
 |---|---|---|
 | 🐍 | Python 3.12+ | [python.org](https://python.org) |
-| 🐳 | Docker Desktop (optional) | [docker.com](https://docker.com) |
-| 🔑 | Power Platform admin access | For app registration + admin consent |
-| 🤖 | Copilot Studio Maker access | To create test sets |
+| 🔑 | Power Platform admin | For app registration + admin consent |
+| 🤖 | Copilot Studio Maker | To create test sets on your bots |
+| 🐳 | Docker Desktop | Optional — for containerised deployment |
 
----
+### Step 2 — App registration
 
-### 🔑 Step 2 — App registration
+The agent uses **delegated auth** — it calls the Eval API as you, not as a service principal. This is a Microsoft requirement for the Eval API.
 
-🪪 The agent uses **delegated auth** — it calls the Eval API as you, not as a service. A Microsoft requirement for the Eval API.
+1. [portal.azure.com](https://portal.azure.com) → **Azure Active Directory** → **App registrations** → **New registration**
+2. Name: `copilot-eval-agent` · Account type: **Single tenant** → **Register**
+3. Note the **Application (client) ID** and **Directory (tenant) ID**
+4. **API permissions** → **Add a permission** → **APIs my organization uses** → search `Power Platform API`
+5. **Delegated permissions** → tick `CopilotStudio.MakerOperations.Read` + `ReadWrite`
+6. **Grant admin consent for [tenant]** → confirm
 
-1. 🌐 [portal.azure.com](https://portal.azure.com) → **Azure Active Directory** → **App registrations** → **New registration**
-2. 📝 Name: `copilot-eval-agent` · Account type: **Single tenant** → **Register**
-3. 📋 Note the **Application (client) ID** and **Directory (tenant) ID**
-4. 🔐 **API permissions** → **Add a permission** → **APIs my organization uses** → search `Power Platform API`
-5. ✅ **Delegated permissions** → tick `CopilotStudio.MakerOperations.Read` + `ReadWrite`
-6. 🛡️ **Grant admin consent for [tenant]** → confirm
+### Step 3 — Create test sets
 
----
-
-### 🧪 Step 3 — Create test sets in Copilot Studio
-
-> ⚠️ The Eval API runs against test sets you define. Without them the agent skips the bot.
+> Without test sets, ASHOKA has nothing to evaluate and will skip the bot.
 
 ```
-🤖 Copilot Studio → your bot → 📊 Evaluation tab → ➕ New test set
+Copilot Studio → your bot → Evaluation tab → New test set
 ```
 
-📝 Add 10–20 utterances covering the bot's main topics. The agent discovers and runs all test sets automatically.
+Add 10–20 utterances covering your bot's main topics. ASHOKA discovers and runs all test sets automatically.
 
----
-
-### 🧙 Step 4 — Install and configure
+### Step 4 — Install
 
 ```bash
 git clone https://github.com/kaul-vineet/LLMDriftTracker.git
@@ -220,129 +184,68 @@ cd LLMDriftTracker
 pip install -r requirements.txt
 ```
 
-Create a `.env` file for secrets (never commit this):
+Create `.env` for secrets:
 
 ```env
 LLM_API_KEY=your-llm-key-here
 SMTP_PASSWORD=your-smtp-password   # optional
 ```
 
-The agent auto-loads `.env` on startup — no manual `set` or `export` needed.
+### Step 5 — Configure via dashboard
 
-**Option A — Terminal wizard:**
 ```powershell
-# Windows
-.\drift.bat setup
-
-# bash / Mac / Linux
-./drift setup
+.\drift.bat dashboard        # Windows
+./drift dashboard            # bash / Mac / Linux
 ```
 
-**Option B — Browser setup form:**
-```powershell
-# Windows
-.\drift.bat dashboard
+Open `http://localhost:8501` → **Setup** page in the sidebar. Each section shows a ✓ or ✗ status. The sidebar shows **● READY** when all prerequisites are met.
 
-# bash / Mac / Linux
-./drift dashboard
-# → open http://localhost:8501 → sidebar → Setup page
-```
-
-The setup form auto-discovers your Power Platform environments via BAPI and lets you pick which bots to monitor. Each section shows a ✓ (green) or ✗ (red) status indicator — the sidebar shows **● READY** when all prerequisites are met:
-
-| Section | What it does |
+| Section | What it configures |
 |---|---|
 | App Registration | Client ID + Tenant ID |
-| Authentication | MSAL device flow — one-time browser sign-in |
-| Environments | Discovers all envs from BAPI — pick which to include |
-| Bots | Lists active bots per env — pick which to monitor |
-| LLM Endpoint | Endpoint + model — **Test** button validates with a live call, writes `data/llm_status.json` |
+| Authentication | MSAL device flow — one-time browser sign-in, token cached |
+| Environments | Discovers all Power Platform environments via BAPI |
+| Bots | Lists active bots per environment — choose which to monitor |
+| LLM Endpoint | Base URL + model — **Test** button validates live before saving |
 | Notifications | SMTP config (optional) |
 
-> 💡 The **Start Agent** button in the sidebar stays disabled until the sidebar shows **● READY**.
+Click **Save config.json** when all sections show ✓.
 
----
+### Step 6 — Start ASHOKA
 
-### 🗂️ Step 5 — config.json reference
-
-| Field | Description |
-|---|---|
-| `environments[].orgUrl` | Dataverse org URL, e.g. `https://orgXXXXX.crm.dynamics.com` |
-| `environments[].monitoredBots` | Schema names of bots to watch — empty = all active bots |
-| `eval_app_client_id` | App registration client ID |
-| `eval_app_tenant_id` | Azure AD tenant ID |
-| `token_cache_file` | MSAL token cache path — mount on shared volume in Docker |
-| `store_dir` | Local directory for run history (`data/` by default) |
-| `poll_interval_minutes` | How often the agent checks for model changes |
-| `eval_poll_timeout_seconds` | Max wait for an eval run to complete (default 1200) |
-| `llm.base_url` | Any OpenAI-compatible endpoint |
-| `llm.api_key` | Leave blank — use `LLM_API_KEY` in `.env` |
-| `llm.model` | Model name for drift analysis narration |
-| `smtp.*` | Mail server config — all fields overridable via env vars |
-
-**Env var overrides** (for Docker / Azure Container Apps):
-```
-LLM_API_KEY  LLM_BASE_URL  LLM_MODEL
-SMTP_HOST  SMTP_PORT  SMTP_USER  SMTP_PASSWORD  SMTP_RECIPIENT
-```
-
----
-
-### 🧑‍💻 Step 6 — Test locally
+Click **▶ Start Agent** in the sidebar (enabled only when ● READY). Or from the terminal:
 
 ```powershell
-# Windows
-.\drift.bat run
-
-# bash / Mac / Linux
-./drift run
+.\drift.bat run        # Windows
+./drift run            # bash / Mac / Linux
 ```
 
-Expected output (GoT/LotR themed):
+Expected terminal output:
 ```
 🧙  You shall not drift. Watching every 20 minute(s).
-
 🌄  The Fellowship rides at dawn — 2026-04-18 14:30 UTC
-📋  Contoso (default): 1 agent(s) answering the call.
-🌑  Safe Travels: darkness gathers — model drift detected: gpt-4o → gpt.default
-⚔   Safe Travels: trial by combat begins — 'Evaluate Safe Travels'
-   📜  240s  running  10 cases  run=398aa1df
+🌑  Safe Travels: darkness gathers — model drift detected
+⚔   Safe Travels: trial by combat begins
 ⚔   Safe Travels: the verdict is reached.
 📜  The scroll is sealed → data/report_20260418T143012.html
 🦅  The raven flies to admin@contoso.com.
 ```
 
-**Force-run evals now:**
-```powershell
-# Windows
-.\drift.bat eval
-
-# bash / Mac / Linux
-./drift eval
-```
-
-**Or trigger from the dashboard** — the agent checks for `data/force_eval.trigger` every 60 seconds and runs immediately when it appears.
-
 ---
 
-### 🐳 Step 7 — Docker Compose (recommended)
-
-The simplest way to run both the agent and dashboard together:
+## 🐳 Docker Compose
 
 ```bash
-# Copy secrets to environment
-cp .env.example .env   # fill in LLM_API_KEY etc.
+cp config.example.json config.json   # fill in your values, or use the Setup page
+cp .env.example .env                 # add LLM_API_KEY
 
 docker compose up --build -d
 
-# Watch agent logs
-docker compose logs -f drift-agent
-
-# Open dashboard
-open http://localhost:8501
+docker compose logs -f drift-agent   # watch agent output
+# open http://localhost:8501
 ```
 
-`docker-compose.yml` starts two containers from the same image, sharing a `./data` volume:
+Two containers, one image, shared `./data` volume:
 
 | Container | Command | Port |
 |---|---|---|
@@ -351,116 +254,95 @@ open http://localhost:8501
 
 ---
 
-### ☁️ Step 8 — Azure Container Apps (production)
+## ☁️ Azure Container Apps (production)
 
-1. Push image to ACR: `az acr build --registry <acr> --image llm-drift-tracker .`
+1. `az acr build --registry <acr> --image llm-drift-tracker .`
 2. Deploy **two** Container Apps from the same image
-3. Mount an **Azure Files share** at `/app/data` on both — shared volume for run data and MSAL cache
-4. Set secrets as environment variables (`LLM_API_KEY`, `SMTP_PASSWORD`, etc.)
-5. Override command per container app (see `docker-compose.yml` for the exact commands)
-
-Auth: run `.\drift.bat setup` (Windows) or `./drift setup` (bash) locally first so `msal_token_cache.json` is populated, then copy it to the Azure Files share.
+3. Mount an **Azure Files share** at `/app/data` on both
+4. Set secrets as env vars: `LLM_API_KEY`, `SMTP_PASSWORD`, etc.
+5. Override the startup command per container (see `docker-compose.yml`)
+6. Run Setup locally first to populate `msal_token_cache.json`, then upload it to the Azure Files share
 
 ---
 
-## 📊 Dashboard
+## 📊 Dashboard pages
 
-Three pages, accessible from the sidebar:
+### ⚡ ASHOKA — Fleet · Detail · Timeline
 
-### ASHOKA — Fleet + Bot Detail + Identity + Timeline
+The main view. ASHOKA is the agent's identity — named for the incorruptible Mauryan emperor who chose observation and restraint over aggression.
 
 ```
-● SYSTEM ONLINE · ALL STABLE          [spaceship animation]
+● SYSTEM ONLINE · ALL STABLE
 
         A S H O K A
-          THE INCORRUPTIBLE JUDGE
-    copilot-eval-agent · N agents monitored
+     THE INCORRUPTIBLE JUDGE
+  copilot-eval-agent · N agents monitored
 
 [ MONITORED ]  [ EVAL RUNS ]  [ IMPROVED ]  [ REGRESSIONS ]  [ ALERT NOW ]
 
-── MONITORED AGENTS ──────────────────────────────────────
-  🟢 Safe Travels   gpt-4o   Apr 18 · 4 runs   [click → detail]
-  🔴 HR Bot         gpt-4o   Apr 17 · 2 runs   [click → detail]
+── MONITORED AGENTS ──────────────────────────────
+  🟢 Safe Travels  gpt-4o  Apr 18 · 4 runs   →
+  🔴 HR Bot        gpt-4o  Apr 17 · 2 runs   →
 
-── WHO I AM ──────────────────────────────────────────────
-  I am ASHOKA — born February 16, 2026. I watch the models
-  powering your Copilot Studio bots ...
+── WHO I AM ──────────────────────────────────────
+  I am ASHOKA. I watch. I do not interfere.
 
-── MISSION TIMELINE ──────────────────────────────────────
-Apr 10   ⚠ model_change  Safe Travels  gpt-4o → gpt.default
-Apr 10   ▶ eval_start    Safe Travels  Eval triggered
-Apr 10   ✗ regression    Safe Travels  CompareMeaning.passRate
-Apr 14   ✓ improvement   Safe Travels  pass 100%  avg 72.5
-Apr 18   ⚡ force_eval                 Triggered by dashboard
-...
-                            UI INSPIRED BY
-                            OUROBOROS · 2026
+── MISSION TIMELINE ──────────────────────────────
+  Apr 18  ⚡ FORCE EVAL   Safe Travels  triggered by dashboard
+  Apr 18  ✓ EVAL DONE    Safe Travels  pass 90%  avg 67.5  IMPROVED
+  Apr 14  ✓ IMPROVED     Safe Travels  CompareMeaning.passRate
+  Apr 10  ✗ REGRESSION   Safe Travels  CompareMeaning.passRate
+  Apr 10  ⚠ MODEL SHIFT  Safe Travels  gpt-4o → gpt.default
 ```
 
-The timeline is driven by `data/events.jsonl` — every agent action is appended in real time. The 3 origin events (birth, first autonomous night, creator's return) are fixed; everything else is live from the file.
+Click any bot tile to open the **detail view**:
 
-Click any bot tile to open the detail view:
-
-- **Run A / Run B selectors** — compare any two historical runs
-- **Radar** — polar chart; both runs overlaid as filled bars
-- **Metric Summary** — compact comparison table with Pass/Fail highlighted green/red and Δ column colour-coded
-- **Per metric type** — delta bar, status transition grid, case-by-case table
+- **Run A / Run B** — select any two historical runs to compare
+- **Radar chart** — both runs overlaid on a polar chart
+- **Metric table** — Pass/Fail highlighted green/red, Δ column colour-coded
+- **Per-metric breakdown** — delta bar, status grid, case-by-case results
 - **Trend chart** — metric trajectory across all runs
-- **▶ Force Eval** button — queues a per-bot eval immediately (agent must be running)
-- **Back to fleet** — top of page
+- **▶ Force Eval** — queue an immediate eval for this bot only
 
-### Setup — single-screen configuration form
+### ⚙️ Setup — Browser configuration
 
-Configure environments, bots, LLM endpoint, and SMTP without touching the terminal. Writes `config.json` directly. Each section displays a ✓ or ✗ status indicator. The sidebar shows **● READY** (green) when all five prerequisites are met; otherwise **○ SETUP NOT COMPLETE** with a bullet list of what's missing. The **Start Agent** button is disabled until the setup is complete. Loading spinners randomly alternate between a hyperspace warp and an orbiting 🛸 animation.
+Full configuration without touching the terminal. Writes `config.json`. The sidebar shows ● READY / ○ SETUP NOT COMPLETE with a bullet list of what's missing. The Start Agent button is gated on ● READY.
 
-### Data — Storage management
+### 🗄️ Data — Storage management
 
-Browse all stored run data, events, and HTML reports. Delete individual runs, all runs for a bot, or an entire bot's data. Clear the event log. Delete individual or all HTML reports. Two-click safety on all delete actions — first click arms, second click fires.
+Browse and clean up stored data. Two-click safety on all deletes.
 
-```
-[ AGENTS ]  [ EVAL RUNS ]  [ EVENTS ]  [ TOTAL SIZE ]
-
-── AGENT DATA ─────────────────────────────────────────────
-  ▼ Safe Travels  ·  4 runs  ·  12.3 KB
-    gpt.default  Apr 18, 2026  CompareMeaning  2.1 KB   [✕]
-    gpt-4o       Apr 14, 2026  CompareMeaning  2.0 KB   [✕]
-    ...
-    [ ✕ Delete all runs ]  [ ✕ Remove agent entirely ]
-
-── EVENT LOG ─────────────────────────────────────────────
-  EVENT LOG · 47 events · 8.4 KB                        [✕ Clear]
-
-── HTML REPORTS ──────────────────────────────────────────
-  report_20260418T143012.html  14.2 KB                  [✕]
-  [ ✕ Delete all reports ]
-```
+- Per-run delete or bulk delete per bot
+- Clear the event log
+- Delete individual or all HTML reports
+- Storage size summary at a glance
 
 ---
 
-## 📋 Event log — `data/events.jsonl`
+## 📋 Event log
 
-Every agent action is recorded as a JSON line:
+Every agent action is appended to `data/events.jsonl`:
 
 ```jsonl
-{"ts":"2026-04-18T14:14:32+00:00","event":"force_eval","detail":"force_eval.trigger detected"}
+{"ts":"2026-04-18T14:14:32+00:00","event":"model_change","botName":"Safe Travels","detail":"gpt-4o → gpt.default"}
 {"ts":"2026-04-18T14:14:35+00:00","event":"eval_start","botName":"Safe Travels","detail":"Eval triggered"}
-{"ts":"2026-04-18T14:17:17+00:00","event":"eval_complete","botName":"Safe Travels","detail":"pass 80%  ·  avg 52.5  ·  REGRESSED","passRate":0.8,"avgScore":52.5}
-{"ts":"2026-04-18T14:17:18+00:00","event":"regression","botName":"Safe Travels","detail":"Regression in: CompareMeaning.passRate"}
+{"ts":"2026-04-18T14:17:17+00:00","event":"eval_complete","botName":"Safe Travels","passRate":0.8,"avgScore":52.5,"verdict":"REGRESSED"}
+{"ts":"2026-04-18T14:17:18+00:00","event":"regression","botName":"Safe Travels","detail":"CompareMeaning.passRate"}
 ```
 
-| Event | Logged when |
+| Event | When |
 |---|---|
-| `cycle_start` | Poll cycle begins (scheduled or forced) |
-| `model_change` | Model version shift detected |
+| `cycle_start` | Poll cycle begins |
+| `model_change` | Model version shift detected in Dataverse |
 | `eval_start` | Eval API call initiated |
 | `eval_complete` | Eval finished — includes pass rate, avg score, verdict |
 | `eval_timeout` | Eval polling timed out |
-| `eval_no_sets` | No active test sets found — bot skipped |
-| `regression` | One or more metrics regressed vs previous run |
+| `eval_no_sets` | No test sets found — bot skipped |
+| `regression` | One or more metrics regressed |
 | `improvement` | One or more metrics improved |
-| `stable` | No drift — model unchanged |
-| `force_eval` | force_eval.trigger file detected |
-| `error` | Unhandled exception during cycle |
+| `stable` | No change detected |
+| `force_eval` | Triggered manually from dashboard or CLI |
+| `error` | Unhandled exception |
 
 ---
 
@@ -468,78 +350,86 @@ Every agent action is recorded as a JSON line:
 
 ```
 data/
-├── events.jsonl                    ← append-only agent action log
-├── agent.pid                       ← running agent PID (deleted on stop)
-├── llm_status.json                 ← LLM validation result written by Setup → Test button
-├── force_eval.trigger              ← global force-eval trigger (all bots)
-├── force_eval_{botId}.trigger      ← per-bot force-eval trigger (from bot detail page)
+├── events.jsonl                       ← append-only agent event log
+├── agent.pid                          ← agent process ID (deleted on stop)
+├── llm_status.json                    ← result of last LLM validation (Setup → Test)
+├── force_eval.trigger                 ← drop to trigger all-bot eval immediately
+├── force_eval_{botId}.trigger         ← drop to trigger single-bot eval
 │
 └── {botId}/
-    ├── tracking.json               ← last known model version + lastRunFolder pointer
+    ├── tracking.json                  ← current model version + last run pointer
     └── runs/
-        └── {timestamp}_{modelVersion}/   ← one folder per eval run, human-readable key
-            └── run.json            ← all data: model, timestamp, forced flag, all testSets results
+        └── {timestamp}_{modelVersion}/
+            └── run.json               ← full raw Eval API results for all test sets
 ```
 
-Each `run.json` contains the full raw Eval API output for every test set (`testSets` dict keyed by metric type). All comparisons, classifications, and LLM analysis are derived on demand — nothing derived is stored. Old trigger-folder format is auto-wrapped for backward compatibility.
+All comparisons, classifications, and LLM narrative are computed fresh on demand. `run.json` stores only the raw Eval API output — nothing derived.
 
 ---
 
-## 📁 Directory structure
+## 📁 Project structure
 
 ```
 LLMDriftTracker/
 │
-├── 🤖 agent/
-│   ├── __init__.py
-│   ├── ⚙️  main.py          ← poll loop, force-eval trigger, event logging
-│   ├── 🧙 wizard.py         ← terminal setup wizard
-│   ├── 🎭 lore.py           ← GoT/LotR themed terminal output
-│   ├── 🔐 auth.py           ← unified MSAL (one cache for Eval + BAPI + Dataverse)
-│   ├── 🌐 dataverse.py      ← fetches bots + model versions
-│   ├── 🧪 eval_client.py    ← Copilot Studio Eval REST API
-│   ├── 🧠 reasoning.py      ← metric extraction, classify_run, LLM narrative
-│   ├── 📋 events.py         ← append-only JSONL event logger
-│   ├── 📄 report.py         ← HTML report generator
-│   ├── 📧 notifier.py       ← SMTP sender
-│   └── 💾 store.py          ← {timestamp}_{modelVersion} run storage, on-demand derivation
+├── agent/                    autonomous monitoring agent
+│   ├── main.py               poll loop · force-eval triggers · PID management
+│   ├── auth.py               unified MSAL — one cache for all three APIs
+│   ├── dataverse.py          fetch bots + model versions from Dataverse
+│   ├── eval_client.py        Copilot Studio Eval API — trigger + poll
+│   ├── reasoning.py          metric extraction · classify · LLM narrative
+│   ├── events.py             append-only JSONL event logger
+│   ├── store.py              run storage — {timestamp}_{modelVersion}/run.json
+│   ├── report.py             self-contained HTML report generator
+│   ├── notifier.py           SMTP email sender
+│   ├── wizard.py             terminal setup wizard (alternative to dashboard)
+│   └── lore.py               GoT/LotR themed terminal output
 │
-├── 📊 dashboard/
-│   ├── __init__.py
-│   ├── 📈 app.py            ← router · sidebar · agent start/stop controls
-│   ├── 🚀 spinner.py        ← shared spaceship animations (hyperspace + orbit, random)
+├── dashboard/                Streamlit web UI
+│   ├── app.py                entry point — router · sidebar · agent controls
+│   ├── theme.py              colour palette + font constants
+│   ├── spinner.py            full-screen loading overlay (hyperspace + orbit)
 │   └── pages/
-│       ├── ⚡ ashoka.py     ← fleet · bot detail · identity · mission timeline
-│       ├── ⚙️  1_Setup.py   ← single-screen setup form with ✓/✗ section status
-│       └── 🗄️  2_Data.py    ← browse, inspect, and delete stored runs/events/reports
+│       ├── ashoka.py         fleet · bot detail · run comparison · timeline
+│       ├── 1_Setup.py        browser-based configuration form
+│       └── 2_Data.py         storage browser and cleanup
 │
-├── 🐳 docker-compose.yml    ← two-service local stack
-├── 🐳 Dockerfile
-├── ⚡ drift                  ← CLI entry (bash)
-├── ⚡ drift.bat              ← CLI entry (Windows)
-├── 🎨 .streamlit/config.toml
-├── 📦 requirements.txt
-├── 📄 config.json           ← your config (LLM key goes in .env, not here)
-├── 🔑 msal_token_cache.json ← gitignored — mount into Docker
-└── 💾 data/                 ← runtime state — mount into Docker
-    ├── events.jsonl
-    ├── agent.pid
-    ├── llm_status.json
-    └── {botId}/runs/{timestamp}_{modelVersion}/
+├── scripts/                  dev utilities (not part of the app)
+│   ├── gen_dummy_data.py     generate sample run data for testing
+│   └── seed_events.py        seed the event log with sample events
+│
+├── config.example.json       template — copy to config.json and fill in
+├── docker-compose.yml        two-service local stack
+├── Dockerfile
+├── drift                     CLI entry point (bash / Mac / Linux)
+├── drift.bat                 CLI entry point (Windows)
+├── requirements.txt
+└── .streamlit/config.toml   dark theme + server config
 ```
 
 ---
 
-## 🔐 Auth reference
+## ⚡ CLI reference
 
-All three token types (Eval API, BAPI, Dataverse) share one `PublicClientApplication` and one `SerializableTokenCache` file. Device flow is initiated once; subsequent calls acquire silently via the cached refresh token.
+| Command (Windows) | Command (bash) | What it does |
+|---|---|---|
+| `.\drift.bat dashboard` | `./drift dashboard` | Launch dashboard on port 8501 |
+| `.\drift.bat run` | `./drift run` | Start the autonomous agent |
+| `.\drift.bat eval` | `./drift eval` | Force-run evals for all bots now |
+| `.\drift.bat setup` | `./drift setup` | Terminal setup wizard (alternative to browser) |
 
-| Context | Token acquisition |
+---
+
+## 🔐 Auth
+
+All API calls (Eval API, BAPI, Dataverse) share one MSAL `PublicClientApplication` and one `SerializableTokenCache` file. Device flow runs once; all subsequent calls acquire silently via the cached refresh token.
+
+| Scenario | Behaviour |
 |---|---|
-| First run | MSAL device code flow — browser sign-in, token cached to file |
-| Subsequent runs | Silent refresh from cache — no user interaction |
-| Token expired | Agent emails admin a new device code, polls for 15 minutes |
-| Docker / Azure | Mount `msal_token_cache.json` on shared volume — both containers share the session |
+| First run | MSAL device code flow — browser sign-in, token cached |
+| Subsequent runs | Silent refresh — no user interaction |
+| Token expired | Agent emails admin a new device code, polls for 15 min |
+| Docker / Azure | Mount `msal_token_cache.json` on the shared volume |
 
 ---
 
@@ -547,16 +437,15 @@ All three token types (Eval API, BAPI, Dataverse) share one `PublicClientApplica
 
 | Symptom | Fix |
 |---|---|
-| `0 agent(s) found` | Check `monitoredBots` in `config.json` — or run setup to re-pick bots |
+| `0 bots found` | Check `monitoredBots` in `config.json` — or rerun Setup to re-pick |
 | `no test sets found` | Create a test set in Copilot Studio → bot → Evaluation tab |
-| `no drift detected` | Run `.\drift.bat eval` (Win) / `./drift eval` (bash) to force evals regardless of model change |
-| LLM analysis shows 401 | Check `LLM_API_KEY` and `LLM_BASE_URL` in `.env` — the key must match the endpoint region |
-| `drift` not found in PowerShell | Use `.\drift.bat dashboard` or add project dir to `$env:PATH` |
-| `MSAL auth failed` | Re-authenticate via the Setup page — click **Sign In** to trigger device-code flow |
-| BAPI 401 on Load Environments | Ensure the app registration has admin consent for `service.powerapps.com` — add delegated permission scope `https://service.powerapps.com/.default` and grant admin consent |
-| `SMTP test failed` | Office 365 uses `smtp.office365.com:587` — password goes in `.env` as `SMTP_PASSWORD` |
-| Container exits immediately | Run `docker compose logs drift-agent` — likely a missing volume or env var |
-| Timeline shows no events | Run `.\drift.bat eval` — it will append the first real events to `data/events.jsonl` |
+| No drift detected | Use **▶ Force Eval** on the bot detail page, or run `.\drift.bat eval` |
+| LLM 401 error | Check `LLM_API_KEY` in `.env` — key must match the endpoint |
+| `MSAL auth failed` | Re-authenticate via Setup → Authentication → Sign In |
+| BAPI 401 on Load Environments | App registration needs admin consent for `service.powerapps.com` delegated scope |
+| SMTP failed | Office 365: `smtp.office365.com:587` — password in `.env` as `SMTP_PASSWORD` |
+| Container exits immediately | `docker compose logs drift-agent` — likely missing volume or env var |
+| Timeline empty | Run a force eval — it will write the first events to `data/events.jsonl` |
 
 ---
 
@@ -568,9 +457,9 @@ All three token types (Eval API, BAPI, Dataverse) share one `PublicClientApplica
   ·  ✦   ·  ✸  ·   ✦   ★   ·  ✶   ✦  ·  ★  ·
 ```
 
-🐍 Python &nbsp;·&nbsp; 🔐 MSAL &nbsp;·&nbsp; ☁️ Copilot Studio Eval API &nbsp;·&nbsp; 🗄️ Dataverse Web API &nbsp;·&nbsp; 📊 Streamlit
+Python &nbsp;·&nbsp; MSAL &nbsp;·&nbsp; Copilot Studio Eval API &nbsp;·&nbsp; Dataverse &nbsp;·&nbsp; Streamlit
 
-*🏷️ Configure it. 😴 Forget it. ⚡ Know when things change.*
+*Configure it. Forget it. Know when things change.*
 
 **[github.com/kaul-vineet/LLMDriftTracker](https://github.com/kaul-vineet/LLMDriftTracker)**
 

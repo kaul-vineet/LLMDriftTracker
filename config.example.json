@@ -1,0 +1,29 @@
+{
+  "environments": [
+    {
+      "name": "Contoso (default)",
+      "orgUrl": "https://orgXXXXXXXX.crm.dynamics.com",
+      "environmentId": "Default-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "monitoredBots": []
+    }
+  ],
+  "eval_app_client_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "eval_app_tenant_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "token_cache_file": "msal_token_cache.json",
+  "store_dir": "data",
+  "poll_interval_minutes": 20,
+  "eval_poll_timeout_seconds": 1200,
+  "eval_poll_interval_seconds": 20,
+  "llm": {
+    "base_url": "https://api.openai.com/v1",
+    "api_key": "",
+    "model": "gpt-4o"
+  },
+  "smtp": {
+    "host": "smtp.office365.com",
+    "port": 587,
+    "user": "",
+    "password": "",
+    "recipient": ""
+  }
+}

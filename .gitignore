@@ -1,6 +1,7 @@
-# Secrets — never commit
+# Secrets / local config — never commit
 msal_token_cache.json
 .env
+config.json
 
 # Runtime state — local only
 data/
