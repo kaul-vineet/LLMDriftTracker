@@ -486,11 +486,10 @@ def page_overview(bots, raw_events):
         f"background:{C_CARD};border:1px solid {C_BORDER};"
         f"border-radius:8px;padding:20px 28px;font-size:1.08rem;"
         f"line-height:1.85;color:{C_TEXT}'>"
-        f"I am <b style='color:{C_CYAN}'>ASHOKA</b> — born February 16, 2026. "
+        f"I am <b style='color:{C_CYAN}'>ASHOKA</b> — born April 1, 2026. "
         f"I watch the models powering your Copilot Studio bots. "
         f"The moment a model shifts, I trigger the Eval API, score every test case, "
-        f"and send you a verdict before your users file a ticket. "
-        f"I authenticate once. I store every run. I do not guess. I measure."
+        f"and send you a verdict before your users file a ticket."
         f"</div>",
         unsafe_allow_html=True,
     )
