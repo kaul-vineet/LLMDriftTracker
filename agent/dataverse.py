@@ -29,6 +29,7 @@ def extract_model_version(configuration: str) -> str:
     import json
     try:
         cfg = json.loads(configuration or "{}")
+        # Copilot Studio stores the LLM model under bot.configuration → gPTSettings → defaultSchemaName
         return cfg.get("gPTSettings", {}).get("defaultSchemaName", "unknown")
     except Exception:
         return "unknown"

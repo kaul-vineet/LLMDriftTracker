@@ -6,7 +6,7 @@
                    ██║  ██║███████║██║  ██║╚██████╔╝██║  ██╗██║  ██║
                    ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝
 
-                   ⚡  LLM DRIFT TRACKER  ·  THE INCORRUPTIBLE JUDGE  ·  v1.1
+                   ⚡  VARION  ·  THE INCORRUPTIBLE JUDGE  ·  v1.1
 ```
 
 <div align="center">
@@ -24,7 +24,7 @@
 
 <br/>
 
-> **Autonomous model drift detection for Microsoft Copilot Studio bots.**
+> **Autonomous model-swap detection and response variation assessment for Microsoft Copilot Studio bots.**
 > Watches every configured bot across all your Power Platform environments.
 > The moment a model version changes, it evaluates, analyses, and reports —
 > fully headless, after a one-time browser setup.
@@ -35,11 +35,11 @@
 
 ## ⚡ The Problem
 
-Microsoft updates the large language models powering your Copilot Studio bots **silently and without notice**. When a model shifts, your bot's behaviour changes — accuracy drops, tone drifts, topics misfire. You have no visibility. You find out from a support ticket, not a dashboard.
+Microsoft updates the large language models powering your Copilot Studio bots **silently and without notice**. When a model is swapped, your bot's behaviour changes — accuracy drops, tone shifts, topics misfire. You have no visibility. You find out from a support ticket, not a dashboard.
 
 ## 🎯 The Solution
 
-LLM Drift Tracker runs a persistent background agent called **ASHOKA** that watches every bot you care about, around the clock. The moment a model version change is detected in Dataverse, ASHOKA fires the Copilot Studio Eval API, scores every test case, compares the results against the last known-good run, runs an LLM analysis of the delta, and emails you a clean side-by-side report — before your users notice anything.
+VARION runs a persistent background agent called **ASHOKA** that watches every bot you care about, around the clock. The moment a model version change is detected in Dataverse, ASHOKA fires the Copilot Studio Eval API, scores every test case, compares the results against the last known-good run, runs an LLM analysis of the delta, and emails you a clean side-by-side report — before your users notice anything.
 
 ---
 
@@ -49,7 +49,7 @@ LLM Drift Tracker runs a persistent background agent called **ASHOKA** that watc
 
 ASHOKA is a pure observer. It has no ability to roll back a model, modify a bot, or take any corrective action. Its only job is to surface the truth of what changed and when, with enough data for a human to make an informed decision.
 
-This is deliberate. Automated rollbacks of AI systems carry their own risks. LLM Drift Tracker gives your team the signal — the response is always yours.
+This is deliberate. Automated rollbacks of AI systems carry their own risks. VARION gives your team the signal about what changed and by how much — the decision is always yours.
 
 - 🚫 No pass/fail verdicts that auto-trigger action
 - 🚫 No automated rollbacks or model changes
@@ -60,25 +60,36 @@ This is deliberate. Automated rollbacks of AI systems carry their own risks. LLM
 
 ## 🔄 How it works
 
+ASHOKA runs two independent threads inside one process. Detection never waits for evaluation to finish.
+
 ```mermaid
 flowchart TD
-    A([⏱ Every N minutes]) --> B[Poll Dataverse\nfor bot model versions]
-    B --> C{Model version\nchanged?}
-    C -- No --> D([⏭ Log STABLE · sleep])
-    C -- Yes --> E[⚡ Log MODEL_CHANGE\nTrigger Eval API]
-    E --> F[⏳ Poll until\ncomplete]
-    F --> G[📊 Compare metrics\nvs previous run]
-    G --> H[🧠 LLM drift\nnarrative]
-    H --> I[📄 HTML report\ngenerated]
-    I --> J[📧 Email to admin]
-    I --> K[💾 Saved to data/\nwith full raw results]
+    subgraph W ["🔍 Watcher thread  (every 2 min)"]
+        A([⏱ Poll Dataverse\nevery 2 min]) --> B{Model version\nchanged?}
+        B -- No --> C([⏭ Log STABLE · sleep])
+        B -- Yes --> D[⚡ Log MODEL_CHANGE\nWrite trigger file]
+    end
 
-    style A fill:#1f6feb,color:#fff,stroke:none
-    style E fill:#238636,color:#fff,stroke:none
-    style H fill:#8957e5,color:#fff,stroke:none
-    style J fill:#da3633,color:#fff,stroke:none
-    style D fill:#30363d,color:#8b949e,stroke:none
+    subgraph E ["⚙️ Evaluator thread  (checks every 30 s)"]
+        D --> F[Pick up trigger file]
+        F --> G[Trigger Eval API\nfor all pending bots]
+        G --> H[⏳ Poll until\ncomplete]
+        H --> I[📊 Compare metrics\nvs previous run]
+        I --> J[🧠 LLM response\nvariation analysis]
+        J --> K[📄 HTML report\ngenerated]
+        K --> L[📧 Email to admin]
+        K --> M[💾 Saved to data/\nwith full raw results]
+    end
+
+    style D fill:#238636,color:#fff,stroke:none
+    style J fill:#8957e5,color:#fff,stroke:none
+    style L fill:#da3633,color:#fff,stroke:none
+    style C fill:#30363d,color:#8b949e,stroke:none
 ```
+
+> The watcher detects a model change within 2 minutes regardless of whether the evaluator
+> is busy running evals for other bots. A model change for bot 4 is never blocked behind
+> a 20-minute eval cycle running for bots 1, 2, 3.
 
 ---
 
@@ -97,14 +108,21 @@ flowchart TD
   ┌─────────────────────────────────────────────────────────────┐
   │  ASHOKA  —  autonomous agent  (python -m agent.main)        │
   │                                                             │
+  │  ┌─ Watcher thread (every 2 min) ──────────────────────┐   │
+  │  │  dataverse.py   poll bot model versions             │───┼──► Dataverse
+  │  │  → writes force_eval_{botId}.trigger on change      │   │
+  │  └─────────────────────────────────────────────────────┘   │
+  │                                                             │
+  │  ┌─ Evaluator thread (checks every 30 s) ──────────────┐   │
+  │  │  eval_client.py  trigger + poll Eval API            │───┼──► Copilot Studio Eval API
+  │  │  reasoning.py    classify · response variation      │───┼──► LLM endpoint (OpenAI-compat)
+  │  │  store.py        write run.json per eval run        │   │
+  │  │  report.py       generate self-contained HTML       │   │
+  │  │  notifier.py     email report via SMTP              │───┼──► email
+  │  └─────────────────────────────────────────────────────┘   │
+  │                                                             │
   │   auth.py        unified MSAL — one cache, three APIs      │──► Microsoft Identity
-  │   dataverse.py   poll bot model versions                   │──► Dataverse
-  │   eval_client.py trigger + poll Eval API                   │──► Copilot Studio Eval API
-  │   reasoning.py   classify metrics · LLM drift narrative    │──► LLM endpoint (OpenAI-compat)
   │   events.py      append-only JSONL event log               │
-  │   store.py       write run.json per eval run               │
-  │   report.py      generate self-contained HTML report       │
-  │   notifier.py    email report via SMTP                     │──► email
   └──────────────────────────┬──────────────────────────────────┘
                              │
                     data/{botId}/runs/
@@ -132,10 +150,11 @@ flowchart TD
 | 📋 | **Opt-in per bot** | Choose which bots to monitor — empty list = watch all active bots |
 | 🤖 | **Zero-touch eval** | Discovers all test sets, triggers the Eval API, polls to completion automatically |
 | 📊 | **Any-run comparison** | Compare any two historical runs — not just the latest pair |
-| 🧠 | **LLM narrative** | Any OpenAI-compatible endpoint explains the drift in plain English |
+| 🧠 | **LLM narrative** | Any OpenAI-compatible endpoint explains the response variation in plain English |
 | 🔐 | **Unified MSAL auth** | Single token cache shared across Eval API, BAPI, and Dataverse |
 | 📋 | **Event log** | Append-only `events.jsonl` — every agent action timestamped and queryable |
 | ⚡ | **Force eval** | Trigger an eval now — globally or per-bot — without restarting the agent |
+| 🧵 | **Non-blocking detection** | Watcher and evaluator run as separate threads — a model change is detected within 2 min even while a long eval cycle is running for other bots |
 | ⚙️ | **Browser setup** | Full configuration in the dashboard — no terminal, no YAML editing |
 | 📧 | **HTML reports** | Self-contained, email-ready, archived locally with full raw data |
 | 🗄️ | **Data management** | Browse, inspect, and delete runs, events, and reports from the dashboard |
@@ -222,14 +241,21 @@ Click **▶ Start Agent** in the sidebar (enabled only when ● READY). Or from 
 
 Expected terminal output:
 ```
-🧙  You shall not drift. Watching every 20 minute(s).
-🌄  The Fellowship rides at dawn — 2026-04-18 14:30 UTC
-🌑  Safe Travels: darkness gathers — model drift detected
-⚔   Safe Travels: trial by combat begins
-⚔   Safe Travels: the verdict is reached.
+🧙  You shall not falter. Watching every 2 minute(s).
+
+[watcher]  🌑  Safe Travels: darkness gathers — model change detected: gpt-4o → gpt-4o-mini
+[watcher]  ⚔   HR Bot: a new sword is forged — gpt-4o → gpt-4o-mini
+
+[evaluator] 🌄  The Fellowship rides at dawn — 2026-04-18 14:30 UTC
+[evaluator] ⚔   Safe Travels: trial by combat begins
+[evaluator] ⚔   HR Bot: trial by combat begins
+[evaluator] ⚔   Safe Travels: the verdict is reached.
+[evaluator] ⚔   HR Bot: the verdict is reached.
 📜  The scroll is sealed → data/report_20260418T143012.html
 🦅  The raven flies to admin@contoso.com.
 ```
+
+The watcher logs model changes immediately as it finds them. The evaluator picks up all pending bots and runs them concurrently in one cycle.
 
 ---
 
@@ -241,7 +267,7 @@ cp .env.example .env                 # add LLM_API_KEY
 
 docker compose -f docker/docker-compose.yml up --build -d
 
-docker compose -f docker/docker-compose.yml logs -f drift-agent
+docker compose -f docker/docker-compose.yml logs -f varion-agent
 # open http://localhost:8501
 ```
 
@@ -249,14 +275,14 @@ Two containers, one image, shared `./data` volume:
 
 | Container | Command | Port |
 |---|---|---|
-| `drift-agent` | `python -m agent.main` | — |
-| `drift-dashboard` | `streamlit run dashboard/app.py` | 8501 |
+| `varion-agent` | `python -m agent.main` | — |
+| `varion-dashboard` | `streamlit run dashboard/app.py` | 8501 |
 
 ---
 
 ## ☁️ Azure Container Apps (production)
 
-1. `az acr build --registry <acr> --image llm-drift-tracker .`
+1. `az acr build --registry <acr> --image varion .`
 2. Deploy **two** Container Apps from the same image
 3. Mount an **Azure Files share** at `/app/data` on both
 4. Set secrets as env vars: `LLM_API_KEY`, `SMTP_PASSWORD`, etc.
@@ -354,7 +380,8 @@ data/
 ├── agent.pid                          ← agent process ID (deleted on stop)
 ├── llm_status.json                    ← result of last LLM validation (Setup → Test)
 ├── force_eval.trigger                 ← drop to trigger all-bot eval immediately
-├── force_eval_{botId}.trigger         ← drop to trigger single-bot eval
+├── force_eval_{botId}.trigger         ← written by watcher on model change; also written by dashboard Force Eval
+├── eval_active_{botId}.lock           ← written by evaluator while a bot's eval is running; deleted on completion
 │
 └── {botId}/
     ├── tracking.json                  ← current model version + last run pointer
@@ -363,7 +390,7 @@ data/
             └── run.json               ← full raw Eval API results for all test sets
 ```
 
-All comparisons, classifications, and LLM narrative are computed fresh on demand. `run.json` stores only the raw Eval API output — nothing derived.
+All comparisons, classifications, and LLM analysis are computed fresh on demand. `run.json` stores only the raw Eval API output — nothing derived.
 
 ---
 
@@ -373,11 +400,11 @@ All comparisons, classifications, and LLM narrative are computed fresh on demand
 LLMDriftTracker/
 │
 ├── agent/                    autonomous monitoring agent
-│   ├── main.py               poll loop · force-eval triggers · PID management
+│   ├── main.py               watcher thread · evaluator thread · PID management
 │   ├── auth.py               unified MSAL — one cache for all three APIs
 │   ├── dataverse.py          fetch bots + model versions from Dataverse
 │   ├── eval_client.py        Copilot Studio Eval API — trigger + poll
-│   ├── reasoning.py          metric extraction · classify · LLM narrative
+│   ├── reasoning.py          metric extraction · classify · response variation analysis
 │   ├── events.py             append-only JSONL event logger
 │   ├── store.py              run storage — {timestamp}_{modelVersion}/run.json
 │   ├── report.py             self-contained HTML report generator
@@ -391,8 +418,8 @@ LLMDriftTracker/
 │   ├── spinner.py            full-screen loading overlay (hyperspace + orbit)
 │   └── pages/
 │       ├── ashoka.py         fleet · bot detail · run comparison · timeline
-│       ├── 1_Setup.py        browser-based configuration form
-│       └── 2_Data.py         storage browser and cleanup
+│       ├── setup.py          browser-based configuration form
+│       └── data.py           storage browser and cleanup
 │
 ├── scripts/                  dev utilities (not part of the app)
 │   ├── gen_dummy_data.py     generate sample run data for testing
@@ -436,16 +463,18 @@ All API calls (Eval API, BAPI, Dataverse) share one MSAL `PublicClientApplicatio
 
 ## 🩺 Troubleshooting
 
+The watcher interval defaults to 120 seconds. To tune it, add `"watch_interval_seconds": 60` to `config.json`.
+
 | Symptom | Fix |
 |---|---|
 | `0 bots found` | Check `monitoredBots` in `config.json` — or rerun Setup to re-pick |
 | `no test sets found` | Create a test set in Copilot Studio → bot → Evaluation tab |
-| No drift detected | Use **▶ Force Eval** on the bot detail page, or run `.\drift.bat eval` |
+| Nothing in dashboard | Use **▶ Force Eval** on the bot detail page, or run `.\drift.bat eval` |
 | LLM 401 error | Check `LLM_API_KEY` in `.env` — key must match the endpoint |
 | `MSAL auth failed` | Re-authenticate via Setup → Authentication → Sign In |
 | BAPI 401 on Load Environments | App registration needs admin consent for `service.powerapps.com` delegated scope |
 | SMTP failed | Office 365: `smtp.office365.com:587` — password in `.env` as `SMTP_PASSWORD` |
-| Container exits immediately | `docker compose logs drift-agent` — likely missing volume or env var |
+| Container exits immediately | `docker compose logs varion-agent` — likely missing volume or env var |
 | Timeline empty | Run a force eval — it will write the first events to `data/events.jsonl` |
 
 ---

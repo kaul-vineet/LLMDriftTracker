@@ -13,7 +13,7 @@ Event types:
   eval_no_sets    — no test sets found for bot; skipped
   regression      — one or more metrics regressed
   improvement     — one or more metrics improved
-  stable          — no drift detected
+  stable          — no change detected
   force_eval      — force-eval triggered (file trigger or CLI flag)
   error           — unhandled exception during a cycle
 """
@@ -118,7 +118,7 @@ def improvement(store_dir: str, bot_name: str, bot_id: str, metrics: list[str],
 
 def stable(store_dir: str, bot_name: str, bot_id: str):
     _write(store_dir, "stable", bot_name=bot_name, bot_id=bot_id,
-           detail="No drift detected — all metrics stable")
+           detail="No change detected — all metrics stable")
 
 
 def error(store_dir: str, bot_name: str, bot_id: str, err: str):

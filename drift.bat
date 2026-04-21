@@ -6,7 +6,7 @@ if "%1"=="run"       ( python -m agent.main                            & goto :d
 if "%1"=="eval"      ( python -m agent.main --force-eval               & goto :done )
 if "%1"=="dashboard" ( python -m streamlit run dashboard/app.py        & goto :done )
 echo.
-echo   ^⚡  LLM Drift Tracker
+echo   ^⚡  VARION
 echo.
 echo   drift setup        run the setup wizard
 echo   drift run          start the autonomous polling agent

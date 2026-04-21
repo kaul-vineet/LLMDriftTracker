@@ -1,6 +1,5 @@
 requests
 msal
-schedule
 openai
 azure-identity
 streamlit

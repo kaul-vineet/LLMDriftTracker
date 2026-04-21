@@ -27,7 +27,7 @@ def print_logo():
         "",
         f"  {CY}{BD}╔══════════════════════════════════════════════════════════╗{RS}",
         f"  {CY}{BD}║                                                          ║{RS}",
-        f"  {CY}{BD}║   {MG}⚡{RS}  {CY}{BD}L L M   D R I F T   T R A C K E R  {MG}⚡{RS}{CY}{BD}          ║{RS}",
+        f"  {CY}{BD}║         {MG}⚡{RS}  {CY}{BD}V A R I O N  {MG}⚡{RS}{CY}{BD}                          ║{RS}",
         f"  {CY}{BD}║       {RS}{DM}copilot-eval-agent  ·  v1.0  ·  Setup Wizard{RS}{CY}{BD}       ║{RS}",
         f"  {CY}{BD}║                                                          ║{RS}",
         f"  {CY}{BD}╚══════════════════════════════════════════════════════════╝{RS}",
@@ -121,7 +121,7 @@ def _ping_pong_countdown(stop: threading.Event, code: str, expires_in: int):
         sys.stdout.flush()
         pos += direction
         if pos >= width or pos <= 0:
-            direction *= -1
+            direction *= -1  # bounce: reverse at both edges to keep ball inside the bar
         time.sleep(0.05)
     sys.stdout.write(f"\r{' ' * 72}\r"); sys.stdout.flush()
 
@@ -196,17 +196,17 @@ def authenticate(cfg: dict) -> str:
 # ── SMTP test ─────────────────────────────────────────────────────────────────
 def _send_test_email(host: str, port: int, user: str, password: str, recipient: str):
     msg           = MIMEMultipart("alternative")
-    msg["Subject"] = "✅ LLM Drift Tracker — You're all set!"
+    msg["Subject"] = "✅ VARION — You're all set!"
     msg["From"]    = user
     msg["To"]      = recipient
     ts             = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     body = f"""<html><body style="font-family:sans-serif;background:#0d1117;color:#c9d1d9;padding:32px">
   <div style="max-width:520px;margin:auto;border:1px solid #30363d;border-radius:8px;padding:28px">
-    <h2 style="color:#58a6ff;margin-top:0">⚡ LLM Drift Tracker</h2>
+    <h2 style="color:#58a6ff;margin-top:0">⚡ VARION</h2>
     <p style="color:#8b949e;font-size:13px;margin-top:-12px">copilot-eval-agent · v1.0</p>
     <hr style="border-color:#30363d">
     <p>Setup is complete. The agent will start monitoring your Copilot Studio bots and
-    email drift analysis reports here whenever a model version change is detected.</p>
+    email response variation reports whenever a model version change is detected.</p>
     <p style="color:#8b949e;font-size:12px;margin-top:24px">Configured {ts}</p>
   </div>
 </body></html>"""
@@ -299,7 +299,7 @@ def _pick_bots(env: dict, cfg: dict):
         for part in sel.split(","):
             part = part.strip()
             try:
-                chosen.append(bots[int(part) - 1]["schemaname"])
+                chosen.append(bots[int(part) - 1]["schemaname"])  # user enters 1-indexed
             except (ValueError, IndexError):
                 print(f"  {YL}  Skipping invalid: {part}{RS}")
         env["monitoredBots"] = chosen if chosen else []
@@ -350,6 +350,7 @@ def step_environments(cfg: dict) -> list:
         return _step_environments_manual()
 
     if not raw:
+        # BAPI call succeeded but returned no environments — distinct from a call failure above
         step_fail("No environments with a Dataverse org URL found in tenant.")
         return _step_environments_manual()
 
@@ -402,7 +403,7 @@ def step_credentials() -> dict:
 
 def step_agent_settings() -> dict:
     poll = ask_int("Poll interval (minutes)", 10)
-    print(f"\n  {DM}LLM for drift reasoning — leave blank to use Ollama defaults.{RS}\n")
+    print(f"\n  {DM}LLM for response variation analysis — leave blank to use Ollama defaults.{RS}\n")
     base_url = ask("LLM base URL", "http://localhost:11434/v1")
     api_key  = ask("LLM API key",  "ollama")
     model    = ask("LLM model",    "llama3")
@@ -414,7 +415,7 @@ def step_agent_settings() -> dict:
 
 
 def step_smtp() -> dict:
-    hint("Drift reports are emailed as HTML. Leave host blank to skip.\n")
+    hint("Impact assessment reports are emailed as HTML. Leave host blank to skip.\n")
     print(f"  {DM}{'─' * 52}{RS}")
     print(f"  {CY}{BD}📄 config.json{RS}  — written to your project root when this wizard finishes.")
     print(f"  {DM}   Stores environments + monitored bots, credentials, poll interval,{RS}")
@@ -599,7 +600,7 @@ def main():
         ("│   ├── auth.py",        "MSAL + self-healing device flow"),
         ("│   ├── dataverse.py",   "bot discovery + monitoredBots filter"),
         ("│   ├── eval_client.py", "Copilot Studio Eval API"),
-        ("│   ├── reasoning.py",   "LLM drift analysis"),
+        ("│   ├── reasoning.py",   "response variation analysis"),
         ("│   ├── store.py",       "run history (local JSON)"),
         ("│   ├── notifier.py",    "SMTP email"),
         ("│   └── report.py",      "HTML report generator"),
@@ -619,7 +620,7 @@ def main():
         print(f"  {DM}{path:<32}{RS}  {DM}{desc}{RS}")
     print()
     print(f"  {DM}Docker  →  docker compose up -d{RS}")
-    print(f"  {DM}           docker compose logs -f drift-agent{RS}")
+    print(f"  {DM}           docker compose logs -f varion-agent{RS}")
     print(f"  {DM}           open http://localhost:8501  # dashboard{RS}")
     print(f"  {DM}{'─' * 56}{RS}\n")
 

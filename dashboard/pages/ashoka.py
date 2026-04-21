@@ -227,7 +227,7 @@ def _classifications_for(ra, rb):
 def _bot_verdict(bot):
     runs = bot["runs"]
     if len(runs) < 2:
-        return "BASELINE"
+        return "BASELINE"  # need at least two runs to compare; first establishes baseline
     cls = _classifications_for(runs[-2], runs[-1])
     if any(c["verdict"] == "REGRESSED" for c in cls): return "REGRESSED"
     if any(c["verdict"] == "IMPROVED"  for c in cls): return "IMPROVED"
@@ -389,6 +389,7 @@ def _build_timeline_events(raw):
             continue
         dot, icon, badge, badge_c = _EVENT_META.get(et, ("info","·",et.upper(),"stb"))
         if et == "eval_complete":
+            # Override default eval_complete styling if the event carries an explicit verdict
             v = e.get("verdict","")
             if v == "REGRESSED":  dot,badge,badge_c = "bad","REGRESSED","reg"
             elif v == "IMPROVED": dot,badge,badge_c = "ok","IMPROVED","imp"
@@ -584,13 +585,22 @@ def page_bot_detail(bot):
             st.session_state.page = "overview"
             st.rerun()
     with col_eval:
-        trigger_path = os.path.join(STORE_DIR, f"force_eval_{bot['botId']}.trigger")
-        pending      = os.path.exists(trigger_path)
+        bot_id       = bot["botId"]
+        trigger_path = os.path.join(STORE_DIR, f"force_eval_{bot_id}.trigger")
+        lock_path    = os.path.join(STORE_DIR, f"eval_active_{bot_id}.lock")
+        queued       = os.path.exists(trigger_path)
+        running      = os.path.exists(lock_path)
         agent_up     = _agent_running()
-        if pending:
+        if queued:
             st.markdown(
                 f"<div style='color:{C_GOLD};font-size:0.7rem;font-family:{FONT};"
                 f"text-align:right;padding:6px 0'>⏳ Eval queued</div>",
+                unsafe_allow_html=True,
+            )
+        elif running:
+            st.markdown(
+                f"<div style='color:{C_GOLD};font-size:0.7rem;font-family:{FONT};"
+                f"text-align:right;padding:6px 0'>⚡ Eval running</div>",
                 unsafe_allow_html=True,
             )
         else:

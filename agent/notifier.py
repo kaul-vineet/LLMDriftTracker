@@ -20,7 +20,7 @@ def send_report(html: str, cfg: dict):
         return
 
     ts      = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    subject = f"Copilot Eval Drift Report — {ts}"
+    subject = f"Copilot Eval — Model Swap Impact Report — {ts}"
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject

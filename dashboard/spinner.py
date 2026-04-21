@@ -3,6 +3,7 @@ import random
 
 
 def _overlay(label: str, animation_html: str, keyframes_css: str) -> str:
+    # margin-left:500px shifts the content right to clear Streamlit's sidebar
     return f"""
     <style>{keyframes_css}</style>
     <div style="
@@ -31,6 +32,7 @@ def _hyperspace_html(label: str) -> str:
         f"transform-origin:0 50%;transform:rotate({i * 30}deg)'></div>"
         for i in range(12)
     )
+    # Magenta lines at +15° offset interleaved with cyan lines — creates alternating star pattern
     mag_lines = "".join(
         f"<div style='position:absolute;top:50%;left:50%;height:1px;width:24px;"
         f"background:linear-gradient(to right,rgba(255,0,170,0.45),transparent);"

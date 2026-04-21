@@ -15,7 +15,7 @@ def _any(*msgs):   return _R(msgs)
 def starting(interval: int):
     msg = _any(
         f"⚔  The Night's Watch takes its post. Polling every {interval} minute(s).",
-        f"🧙  You shall not drift. Watching every {interval} minute(s).",
+        f"🧙  You shall not falter. Watching every {interval} minute(s).",
         f"💍  The Eye opens. Polling every {interval} minute(s).",
         f"🐉  The dragon wakes. Polling every {interval} minute(s).",
     )
@@ -36,7 +36,7 @@ def cycle_start(ts: str):
 def cycle_idle():
     print(_any(
         "🏰  All is quiet on the Wall. The realm holds.",
-        "🌿  Even the Shire is undisturbed. No drift detected.",
+        "🌿  Even the Shire is undisturbed. No changes detected.",
         "❄   The Night is dark, but nothing stirs.",
         "🌟  The stars are right. No changes this watch.",
     ))
@@ -46,7 +46,7 @@ def cycle_complete(n: int):
     print(_any(
         f"⚔  The watch is complete. {n} matter(s) brought before the Small Council.",
         f"📜  {n} scroll(s) sealed and sent by raven.",
-        f"🧙  It is done. {n} drift report(s) dispatched.",
+        f"🧙  It is done. {n} impact assessment(s) dispatched.",
         f"🐉  Dracarys was not needed — {n} verdict(s) rendered.",
     ))
 
@@ -69,7 +69,7 @@ def bots_failed(env: str, err):
 # ── Model version ─────────────────────────────────────────────────────────────
 def no_change(name: str):
     print(_any(
-        f"🏰  {name}: holds its post. No drift.",
+        f"🏰  {name}: holds its post. No change.",
         f"🌿  {name}: steady as the Shire. No change.",
     ))
 
@@ -79,7 +79,7 @@ def model_changed(name: str, old: str, new: str):
         f"🐉  {name}: the dragon has shed its skin — {old} → {new}",
         f"⚔   {name}: a new sword is forged — {old} → {new}",
         f"💍  {name}: the ring changes hands — {old} → {new}",
-        f"🌑  {name}: darkness gathers — model drift detected: {old} → {new}",
+        f"🌑  {name}: darkness gathers — model change detected: {old} → {new}",
     ))
 
 

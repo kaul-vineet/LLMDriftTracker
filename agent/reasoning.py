@@ -1,5 +1,5 @@
 """
-agent/reasoning.py — metric extraction, drift classification, LLM analysis.
+agent/reasoning.py — metric extraction, response variation classification, LLM analysis.
 
 classify_run() returns verdicts sorted REGRESSED → IMPROVED → STABLE.
 _build_prompt() leads with regressions.
@@ -45,6 +45,7 @@ def _extract_metrics(run: dict) -> dict:
                     except ValueError:
                         counts.pop(key, None)
 
+    # Divide each accumulated total by its sample count to produce per-metric averages
     return {k: round(totals[k] / counts[k], 4) for k in totals if k in counts}
 
 
@@ -96,6 +97,7 @@ def classify_run(prev_metrics: dict, curr_metrics: dict) -> list[dict]:
         delta   = round(curr - prev, 4) if prev is not None and curr is not None else None
         results.append({"key": k, "verdict": verdict, "prev": prev, "curr": curr, "delta": delta})
 
+    # Sort by verdict severity first (REGRESSED→IMPROVED→STABLE), then by change magnitude
     return sorted(
         results,
         key=lambda x: (
@@ -164,10 +166,10 @@ def _build_prompt(bot_name: str, old_model: str, new_model: str,
 
     reasons = "\n".join(f"  - {r}" for r in ai_reasons[:20]) if ai_reasons else "  None available."
 
-    return f"""You are an AI quality analyst reviewing Copilot Studio agent evaluation results.
+    return f"""You are an AI quality analyst measuring response variation after a model swap in a Copilot Studio agent.
 
 Agent: {bot_name}
-Model change: {old_model}  →  {new_model}
+Model swap: {old_model}  →  {new_model}
 
 Metric comparison (previous → current):
 {table}
@@ -184,7 +186,7 @@ Focus your analysis on regressions first. Identify:
 Be concise. Use plain language. Lead with the most important finding. No bullet lists — short paragraphs."""
 
 
-def analyse_drift(bot_name: str, old_model: str, new_model: str,
+def analyse_variation(bot_name: str, old_model: str, new_model: str,
                   test_sets: dict,
                   prev_run: dict | None,
                   cfg: dict) -> str:

@@ -1,8 +1,8 @@
-# LLM Drift Tracker — two services, one image, shared volume
+# VARION — two services, one image, shared volume
 #
 # Local usage (run from repo root):
 #   docker compose -f docker/docker-compose.yml up --build -d
-#   docker compose -f docker/docker-compose.yml logs -f drift-agent
+#   docker compose -f docker/docker-compose.yml logs -f varion-agent
 #   open http://localhost:8501
 #
 # Azure Container Apps:
@@ -17,12 +17,12 @@
 
 services:
 
-  drift-agent:
+  varion-agent:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    image: llm-drift-tracker:latest
-    container_name: drift-agent
+    image: varion:latest
+    container_name: varion-agent
     restart: unless-stopped
     command: python -m agent.main
     volumes:
@@ -38,9 +38,9 @@ services:
       SMTP_PASSWORD:  ${SMTP_PASSWORD:-}
       SMTP_RECIPIENT: ${SMTP_RECIPIENT:-}
 
-  drift-dashboard:
-    image: llm-drift-tracker:latest
-    container_name: drift-dashboard
+  varion-dashboard:
+    image: varion:latest
+    container_name: varion-dashboard
     restart: unless-stopped
     command: >
       streamlit run dashboard/app.py
@@ -59,4 +59,4 @@ services:
       LLM_BASE_URL:   ${LLM_BASE_URL:-}
       LLM_MODEL:      ${LLM_MODEL:-}
     depends_on:
-      - drift-agent
+      - varion-agent

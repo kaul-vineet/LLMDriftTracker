@@ -68,7 +68,7 @@ def _email_device_code(cfg: dict, code: str, expires_in: int):
     ts   = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     body = f"""<html><body style="font-family:sans-serif;background:#0a0a0f;color:#e0e0e0;padding:32px">
   <div style="max-width:520px;margin:auto;border:1px solid #1a1a2e;border-radius:8px;padding:28px;background:#12121a">
-    <h2 style="color:#ff4444;margin-top:0;font-family:monospace">⚠ ACTION REQUIRED — Sign in to LLM Drift Tracker</h2>
+    <h2 style="color:#ff4444;margin-top:0;font-family:monospace">⚠ ACTION REQUIRED — Sign in to VARION</h2>
     <p>The agent needs re-authentication. Eval cycles are paused until you sign in.</p>
     <hr style="border-color:#1a1a2e">
     <p><strong>Step 1 —</strong> Open: <a href="https://microsoft.com/devicelogin" style="color:#00f0ff">https://microsoft.com/devicelogin</a></p>
@@ -82,7 +82,7 @@ def _email_device_code(cfg: dict, code: str, expires_in: int):
   </div>
 </body></html>"""
     msg            = MIMEMultipart("alternative")
-    msg["Subject"] = f"[LLM Drift Tracker] Sign-in required — code {code}"
+    msg["Subject"] = f"[VARION] Sign-in required — code {code}"
     msg["From"]    = user
     msg["To"]      = recipient
     msg.attach(MIMEText(body, "html"))

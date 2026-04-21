@@ -103,6 +103,7 @@ def _load_all_bots():
             tracking = json.loads(open(tracking_path).read())
         except Exception:
             continue
+        # Mirrors store.py layout: {bot_id}/tracking.json + {bot_id}/runs/{folder}/run.json
         runs_dir = os.path.join(bot_dir, "runs")
         runs = []
         if os.path.isdir(runs_dir):

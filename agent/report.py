@@ -1,5 +1,5 @@
 """
-agent/report.py — HTML drift report with Ouroboros dark theme.
+agent/report.py — HTML model-swap impact report with Ouroboros dark theme.
 
 Layout (regression-first):
   Header → Verdict hero → LLM Analysis → Metric type summary table →
@@ -85,7 +85,7 @@ def _metric_section(metric_type: str, verdict: str,
         pc = prev_by_id.get(cc["caseId"], {})
         if isinstance(pc.get("score"), float) and isinstance(cc.get("score"), float):
             return cc["score"] - pc["score"]
-        return 0
+        return 0  # missing score → neutral; sort-by-worst still works correctly
 
     sorted_curr = sorted(curr_cases, key=_delta)
 
@@ -298,7 +298,7 @@ def _bot_section(br: dict) -> str:
         <div style='margin-bottom:20px;padding:16px 20px;
                     background:{C_BG};border-left:3px solid {C_MAGENTA};border-radius:0 6px 6px 0'>
           <div style='font-size:0.68rem;font-weight:700;color:{C_MAGENTA};
-                      letter-spacing:2px;margin-bottom:8px;font-family:{FONT}'>⚡ LLM DRIFT ANALYSIS</div>
+                      letter-spacing:2px;margin-bottom:8px;font-family:{FONT}'>⚡ RESPONSE VARIATION ANALYSIS</div>
           <div style='font-size:0.875rem;line-height:1.75;color:{C_TEXT};white-space:pre-wrap'>{analysis}</div>
         </div>
 
@@ -408,7 +408,7 @@ def generate_report(bot_results: list[dict]) -> str:
 <html lang='en'>
 <head>
   <meta charset='UTF-8'>
-  <title>LLM Drift Tracker — {ts}</title>
+  <title>VARION — Response Variation Report — {ts}</title>
   <script src='https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js'></script>
   <style>
     * {{ box-sizing:border-box; margin:0; padding:0 }}
@@ -423,7 +423,7 @@ def generate_report(bot_results: list[dict]) -> str:
   </style>
 </head>
 <body>
-  <h1>⚡ LLM DRIFT TRACKER</h1>
+  <h1>⚡ VARION</h1>
   <div class='sub'>{ts} &nbsp;·&nbsp; {count} agent(s) evaluated &nbsp;·&nbsp;
     <span style='color:{hero_color};font-weight:700'>{total_reg} REGRESSED · {total_imp} IMPROVED</span>
   </div>

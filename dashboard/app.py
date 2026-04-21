@@ -1,5 +1,5 @@
 """
-dashboard/app.py — LLM Drift Tracker · entry point & router
+dashboard/app.py — VARION · entry point & router
 Runs on every page load: sets config, applies CSS, renders shared sidebar, then routes.
 """
 import json
@@ -23,7 +23,7 @@ PID_FILE  = os.path.join(STORE_DIR, "agent.pid")
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="LLM Drift Tracker",
+    page_title="VARION",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -181,6 +181,7 @@ def _read_pid():
 
 
 def _is_pid_alive(pid):
+    # Windows: query tasklist; Unix: signal 0 checks existence without sending a real signal
     import sys as _sys
     try:
         if _sys.platform == "win32":
@@ -247,6 +248,7 @@ def _get_readiness():
     if not cfg.get("eval_app_client_id") or not cfg.get("eval_app_tenant_id"):
         issues.append("App registration incomplete")
 
+    # Offline cache inspection only — no network call; stale tokens surface on the first agent run
     try:
         import msal as _msal
         cp = cfg.get("token_cache_file", "msal_token_cache.json")
@@ -347,7 +349,7 @@ with st.sidebar:
     st.markdown(
         f"<div style='padding:4px 0 14px'>"
         f"<div style='font-size:16px;font-weight:700;letter-spacing:3px;"
-        f"color:{C_CYAN};font-family:{FONT}'>⚡ DRIFT TRACKER</div>"
+        f"color:{C_CYAN};font-family:{FONT}'>⚡ VARION</div>"
         f"<div style='font-size:0.6rem;color:{C_DIM};margin-top:2px;letter-spacing:1px'>"
         f"copilot-eval-agent · v1.1</div></div>",
         unsafe_allow_html=True,
@@ -362,7 +364,7 @@ with st.sidebar:
 # ── Page routing ──────────────────────────────────────────────────────────────
 pg = st.navigation([
     st.Page("pages/ashoka.py", title="ASHOKA", icon="⚡", default=True),
-    st.Page("pages/1_Setup.py", title="Setup", icon="⚙"),
-    st.Page("pages/2_Data.py", title="Data", icon="🗄"),
+    st.Page("pages/setup.py",  title="Setup",  icon="⚙"),
+    st.Page("pages/data.py",   title="Data",   icon="🗄"),
 ])
 pg.run()

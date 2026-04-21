@@ -109,7 +109,7 @@ def _is_old_trigger_dir(path: str) -> bool:
 
 
 def _wrap_old_trigger(folder_path: str) -> dict | None:
-    """Wrap old {meta.json + type files} into new run shape for backward compat."""
+    """Wrap old format (meta.json + one JSON per metric type) into the current run shape."""
     meta = _load_json(os.path.join(folder_path, "meta.json"))
     if not meta:
         return None

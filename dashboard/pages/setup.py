@@ -53,6 +53,7 @@ st.markdown(f"""
 
 def _sec(title, ok: bool | None = None):
     """Render a section opening div with coloured border + ✓/✗ in the heading."""
+    # Maps ok state to CSS class (ok/err) and status symbol (✓/✗/·)
     if ok is True:
         border = "ok";  sym = f"<span style='color:{C_GREEN}'>✓</span>"
     elif ok is False:
@@ -223,7 +224,7 @@ def _sec_status():
     ))
     s3 = bool(st.session_state.s_sel_envs)
     s4 = True  # empty bot list = monitor all, always valid
-    s5 = bool(st.session_state.s_llm_url) and _llm_validated()
+    s5 = bool(st.session_state.s_llm_url) and _llm_validated()  # URL alone isn't enough; test must pass
     return s1, s2, s3, s4, s5
 
 ok1, ok2, ok3, ok4, ok5 = _sec_status()
@@ -468,7 +469,7 @@ st.markdown("</div>", unsafe_allow_html=True)
 # ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 5 — LLM
 # ═══════════════════════════════════════════════════════════════════════════════
-_sec("5 · LLM (Drift Analysis)", ok5)
+_sec("5 · LLM (Response Analysis)", ok5)
 st.caption("Any OpenAI-compatible endpoint. API key goes in .env as LLM_API_KEY.")
 
 c1, c2, c3 = st.columns([3, 2, 1])
