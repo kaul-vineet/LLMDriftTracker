@@ -197,7 +197,7 @@ _defs = {
     "s_account":       "",
     "s_flow":          None,
     "s_flow_started":  False,
-    "s_envs":          [],
+    "s_envs":          list(_envs_cfg),
     "s_sel_envs":      [e["name"] for e in _envs_cfg],
     "s_bots":          {},
     "s_bot_sel":       {e["name"]: e.get("monitoredBots", []) for e in _envs_cfg},
