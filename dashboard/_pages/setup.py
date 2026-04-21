@@ -397,18 +397,19 @@ else:
         )
         st.session_state.s_sel_envs = sel
     elif st.session_state.s_sel_envs:
-        # Saved from a previous session — show them as read-only until refreshed
+        chips = "".join(
+            f"<span style='display:inline-block;background:rgba(0,240,255,0.07);"
+            f"border:1px solid rgba(0,240,255,0.25);border-radius:4px;"
+            f"padding:4px 12px;margin:3px 4px 3px 0;color:{C_CYAN};"
+            f"font-family:{FONT};font-size:0.78rem;letter-spacing:1px'>{n}</span>"
+            for n in st.session_state.s_sel_envs
+        )
         st.markdown(
-            f"<div style='color:{C_DIM};font-size:0.78rem;font-family:{FONT};"
-            f"margin-bottom:6px'>From saved config — click Load Environments to refresh:</div>",
+            f"<div style='margin-bottom:6px'>{chips}</div>"
+            f"<div style='color:{C_DIM};font-size:0.7rem;font-family:{FONT};"
+            f"letter-spacing:1px'>Saved config · click Load Environments to refresh</div>",
             unsafe_allow_html=True,
         )
-        for env_name in st.session_state.s_sel_envs:
-            st.markdown(
-                f"<div style='color:{C_TEXT};font-size:0.8rem;font-family:monospace;"
-                f"padding:3px 0'>· {env_name}</div>",
-                unsafe_allow_html=True,
-            )
 
 st.markdown("</div>", unsafe_allow_html=True)
 
