@@ -164,7 +164,7 @@ ASHOKA runs two independent threads inside one process. Detection never waits fo
 | 🤖 | **Zero-touch eval** | Discovers all test sets, triggers the Eval API, polls to completion automatically |
 | 📊 | **Any-run comparison** | Compare any two historical runs — not just the latest pair |
 | 🧠 | **LLM narrative** | Any OpenAI-compatible endpoint explains the response variation in plain English |
-| 🔐 | **Unified MSAL auth** | Single token cache shared across Eval API, BAPI, and Dataverse |
+| 🔐 | **Unified MSAL auth** | Single token cache shared across Eval API, Power Platform Inventory, and environmentmanagement |
 | 📋 | **Event log** | Append-only `events.jsonl` — every agent action timestamped and queryable |
 | ⚡ | **Force eval** | Trigger an eval now — globally or per-bot — without restarting the agent |
 | 🧵 | **Non-blocking detection** | Watcher and evaluator run as separate threads — a model change is detected within 2 min even while a long eval cycle is running for other bots |
@@ -193,22 +193,24 @@ ASHOKA runs two independent threads inside one process. Detection never waits fo
 
 The agent uses **delegated auth** — it calls the Eval API as you, not as a service principal. This is a Microsoft requirement for the Eval API.
 
-1. [portal.azure.com](https://portal.azure.com) → **Azure Active Directory** → **App registrations** → **New registration**
+1. [portal.azure.com](https://portal.azure.com) → **Microsoft Entra ID** → **App registrations** → **New registration**
 2. Name: `copilot-eval-agent` · Account type: **Single tenant** → **Register**
 3. Note the **Application (client) ID** and **Directory (tenant) ID**
-4. **API permissions** → **Add a permission** → **APIs my organization uses** → search `Power Platform API`
-5. **Delegated permissions** → tick:
+4. **Authentication** → **Add a platform** → **Mobile and desktop applications** → tick `https://login.microsoftonline.com/common/oauth2/nativeclient` → **Configure**
+5. **API permissions** → **Add a permission** → **APIs my organization uses** → search `Power Platform API` (GUID `8578e004-a5c6-46e7-913e-12f58912df43`)
+6. **Delegated permissions** → tick:
 
 | Permission | Purpose |
 |---|---|
-| `CopilotStudio.MakerOperations.Read` | Trigger and retrieve evaluation results |
+| `CopilotStudio.MakerOperations.Read` | List test sets and retrieve evaluation run results |
+| `CopilotStudio.MakerOperations.ReadWrite` | Trigger a new evaluation run (`POST .../run`) |
 | `EnvironmentManagement.Environments.Read` | Auto-discover Power Platform environments |
 
-6. **Grant admin consent for [tenant]** → confirm
+7. **Grant admin consent for [tenant]** → confirm
 
-> Both permissions are on the same `Power Platform API` resource — a single sign-in covers everything.
+> All three permissions are on the same `Power Platform API` resource — a single sign-in covers everything.
 > Without `EnvironmentManagement.Environments.Read`, Load Environments will fail — manual environment entry still works.
-> Environment IDs can also be found manually in make.powerapps.com → Settings → Session details.
+> Without `ReadWrite`, ASHOKA can list test sets but cannot trigger evaluation runs.
 
 ### Step 3 — Create test sets
 
@@ -250,7 +252,7 @@ Open `http://localhost:8501` → **Setup** page in the sidebar. Each section sho
 | Authentication | MSAL device flow — one-time browser sign-in, token cached |
 | Environments | Auto-discovers environments via Power Platform environmentmanagement API — or add manually |
 | Agents | Lists Copilot Studio agents per environment via Power Platform Inventory API — no Dataverse or second sign-in needed; manual entry always available |
-| LLM Endpoint | Base URL + model — **Test** button validates live before saving |
+| LLM Endpoint | Base URL + model + optional API Version — **Test** button validates live before saving. Azure AI / Azure OpenAI endpoints require the API Version field (e.g. `2024-12-01-preview`) |
 | Notifications | SMTP config (optional) |
 
 Click **Save config.json** when all sections show ✓.
@@ -545,7 +547,7 @@ All API calls (Eval API, Power Platform environmentmanagement, Power Platform In
   ·  ✦   ·  ✸  ·   ✦   ★   ·  ✶   ✦  ·  ★  ·
 ```
 
-Python &nbsp;·&nbsp; MSAL &nbsp;·&nbsp; Copilot Studio Eval API &nbsp;·&nbsp; Dataverse &nbsp;·&nbsp; Streamlit
+Python &nbsp;·&nbsp; MSAL &nbsp;·&nbsp; Copilot Studio Eval API &nbsp;·&nbsp; Power Platform Inventory API &nbsp;·&nbsp; Dataverse &nbsp;·&nbsp; Streamlit
 
 *Configure it. Forget it. Know when things change.*
 
