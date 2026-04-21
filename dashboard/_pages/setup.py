@@ -300,7 +300,7 @@ else:
                     cache = _load_cache(st.session_state.s_cache_file)
                     app   = _msal_app(st.session_state.s_client_id,
                                       st.session_state.s_tenant_id, cache)
-                    flow  = app.initiate_device_flow(scopes=BAPI_SCOPES)
+                    flow  = app.initiate_device_flow(scopes=EVAL_SCOPES)
                     st.session_state.s_flow         = {"flow": flow, "app": app, "cache": cache}
                     st.session_state.s_flow_started = True
                     st.rerun()
@@ -338,7 +338,7 @@ else:
                 else:
                     # Silent fallback
                     tok, accs = _token_silent(
-                        BAPI_SCOPES, st.session_state.s_client_id,
+                        EVAL_SCOPES, st.session_state.s_client_id,
                         st.session_state.s_tenant_id, st.session_state.s_cache_file,
                     )
                     if tok:
@@ -367,10 +367,13 @@ else:
         if st.button("Load Environments", key="btn_load_envs"):
             _ph = st.empty()
             _spinner(_ph, "AUTHENTICATING")
-            tok, _ = _token_silent(
-                BAPI_SCOPES, st.session_state.s_client_id,
-                st.session_state.s_tenant_id, st.session_state.s_cache_file,
-            )
+            # Try BAPI scope first; fall back to EVAL scope (some app registrations
+            # only have api.powerplatform.com, not service.powerapps.com)
+            tok, _ = _token_silent(BAPI_SCOPES, st.session_state.s_client_id,
+                                   st.session_state.s_tenant_id, st.session_state.s_cache_file)
+            if not tok:
+                tok, _ = _token_silent(EVAL_SCOPES, st.session_state.s_client_id,
+                                       st.session_state.s_tenant_id, st.session_state.s_cache_file)
             if not tok:
                 _ph.empty()
                 st.error("Token acquisition failed — sign in first (Section 2).")
@@ -380,7 +383,7 @@ else:
                 envs, err = _fetch_envs(tok)
                 _ph.empty()
                 if err:
-                    st.error(f"BAPI error: {err}")
+                    st.warning(f"Auto-discovery failed ({err[:120]}). Add environments manually below.")
                 else:
                     st.session_state.s_envs = envs
                     st.rerun()
@@ -411,6 +414,31 @@ else:
             f"letter-spacing:1px'>Saved config · click Load Environments to refresh</div>",
             unsafe_allow_html=True,
         )
+
+    # Manual entry — always visible so users without BAPI permission can still configure
+    with st.expander("Add environment manually"):
+        m1, m2 = st.columns(2)
+        with m1:
+            m_name = st.text_input("Friendly name", key="m_env_name",
+                                   placeholder="Contoso (default)")
+            m_url  = st.text_input("Org URL", key="m_env_url",
+                                   placeholder="https://orgXXXXX.crm.dynamics.com")
+        with m2:
+            m_id   = st.text_input("Environment ID (GUID)", key="m_env_id",
+                                   placeholder="00000000-0000-0000-0000-000000000000")
+        if st.button("Add", key="btn_add_env"):
+            if m_name.strip() and m_url.strip():
+                new_env = {"name": m_name.strip(), "orgUrl": m_url.strip().rstrip("/"),
+                           "environmentId": m_id.strip()}
+                # Add to s_envs so it appears in the multiselect
+                existing_names = [e["name"] for e in st.session_state.s_envs]
+                if new_env["name"] not in existing_names:
+                    st.session_state.s_envs.append(new_env)
+                if new_env["name"] not in st.session_state.s_sel_envs:
+                    st.session_state.s_sel_envs.append(new_env["name"])
+                st.rerun()
+            else:
+                st.warning("Name and Org URL are required.")
 
 st.markdown("</div>", unsafe_allow_html=True)
 
