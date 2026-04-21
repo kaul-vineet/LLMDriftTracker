@@ -508,7 +508,7 @@ else:
                         bots, err = [], str(e)
                     _bph.empty()
                     if err:
-                        st.warning(f"Could not load bots: {err[:120]}")
+                        st.info("Dataverse token not available from the dashboard — the agent authenticates separately when it runs. Your saved bots are shown below.")
                     else:
                         st.session_state.s_bots[env_name] = bots
                         st.rerun()
