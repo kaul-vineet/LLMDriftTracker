@@ -803,3 +803,8 @@ else:
     page_overview(bots, raw_events)
 
 _load_ph.empty()
+
+# Auto-refresh every 30 s so the events timeline stays live
+import time as _time
+_time.sleep(30)
+st.rerun()
