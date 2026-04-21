@@ -110,18 +110,19 @@ def _fetch_envs(token):
     import requests
     try:
         r = requests.get(
-            "https://api.powerplatform.com/appmanagement/environments",
-            params={"api-version": "2022-03-01-preview"},
+            "https://api.bap.microsoft.com/providers/Microsoft.BusinessAppPlatform/environments",
+            params={"api-version": "2020-10-01"},
             headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
             timeout=15,
         )
         r.raise_for_status()
         envs = []
         for item in r.json().get("value", []):
-            url = item.get("instanceUrl", "")
+            props = item.get("properties", {})
+            url   = props.get("linkedEnvironmentMetadata", {}).get("instanceUrl", "")
             if url:
                 envs.append({
-                    "name":          item.get("displayName", item.get("name", "")),
+                    "name":          props.get("displayName", item.get("name", "")),
                     "orgUrl":        url.rstrip("/"),
                     "environmentId": item.get("name", ""),
                 })
@@ -299,7 +300,7 @@ else:
                     cache = _load_cache(st.session_state.s_cache_file)
                     app   = _msal_app(st.session_state.s_client_id,
                                       st.session_state.s_tenant_id, cache)
-                    flow  = app.initiate_device_flow(scopes=EVAL_SCOPES)
+                    flow  = app.initiate_device_flow(scopes=BAPI_SCOPES)
                     st.session_state.s_flow         = {"flow": flow, "app": app, "cache": cache}
                     st.session_state.s_flow_started = True
                     st.rerun()
@@ -337,7 +338,7 @@ else:
                 else:
                     # Silent fallback
                     tok, accs = _token_silent(
-                        EVAL_SCOPES, st.session_state.s_client_id,
+                        BAPI_SCOPES, st.session_state.s_client_id,
                         st.session_state.s_tenant_id, st.session_state.s_cache_file,
                     )
                     if tok:
@@ -367,7 +368,7 @@ else:
             _ph = st.empty()
             _spinner(_ph, "AUTHENTICATING")
             tok, _ = _token_silent(
-                EVAL_SCOPES, st.session_state.s_client_id,
+                BAPI_SCOPES, st.session_state.s_client_id,
                 st.session_state.s_tenant_id, st.session_state.s_cache_file,
             )
             if not tok:
