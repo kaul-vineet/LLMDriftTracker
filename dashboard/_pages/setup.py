@@ -367,13 +367,18 @@ else:
         if st.button("Load Environments", key="btn_load_envs"):
             _ph = st.empty()
             _spinner(_ph, "AUTHENTICATING")
-            # Try BAPI scope first; fall back to EVAL scope (some app registrations
-            # only have api.powerplatform.com, not service.powerapps.com)
-            tok, _ = _token_silent(BAPI_SCOPES, st.session_state.s_client_id,
-                                   st.session_state.s_tenant_id, st.session_state.s_cache_file)
-            if not tok:
-                tok, _ = _token_silent(EVAL_SCOPES, st.session_state.s_client_id,
+            tok = None
+            try:
+                tok, _ = _token_silent(BAPI_SCOPES, st.session_state.s_client_id,
                                        st.session_state.s_tenant_id, st.session_state.s_cache_file)
+            except Exception:
+                pass
+            if not tok:
+                try:
+                    tok, _ = _token_silent(EVAL_SCOPES, st.session_state.s_client_id,
+                                           st.session_state.s_tenant_id, st.session_state.s_cache_file)
+                except Exception:
+                    pass
             if not tok:
                 _ph.empty()
                 st.error("Token acquisition failed — sign in first (Section 2).")
@@ -383,8 +388,10 @@ else:
                 envs, err = _fetch_envs(tok)
                 _ph.empty()
                 if err:
-                    st.warning(f"Auto-discovery failed ({err[:120]}). Add environments manually below.")
+                    st.session_state["_env_load_failed"] = True
+                    st.rerun()
                 else:
+                    st.session_state["_env_load_failed"] = False
                     st.session_state.s_envs = envs
                     st.rerun()
     with col_e2:
@@ -415,8 +422,18 @@ else:
             unsafe_allow_html=True,
         )
 
-    # Manual entry — always visible so users without BAPI permission can still configure
-    with st.expander("Add environment manually"):
+    # Manual entry — shown inline when auto-discovery failed or no envs loaded yet
+    _load_failed = st.session_state.get("_env_load_failed", False)
+    _no_envs     = not st.session_state.s_envs
+
+    def _manual_entry_form():
+        if _load_failed:
+            st.markdown(
+                f"<div style='color:{C_GOLD};font-size:0.75rem;font-family:{FONT};"
+                f"margin-bottom:10px'>⚠ Auto-discovery unavailable — app registration "
+                f"needs <b>service.powerapps.com</b> permission. Add manually:</div>",
+                unsafe_allow_html=True,
+            )
         m1, m2 = st.columns(2)
         with m1:
             m_name = st.text_input("Friendly name", key="m_env_name",
@@ -426,19 +443,30 @@ else:
         with m2:
             m_id   = st.text_input("Environment ID (GUID)", key="m_env_id",
                                    placeholder="00000000-0000-0000-0000-000000000000")
-        if st.button("Add", key="btn_add_env"):
+            st.markdown(
+                f"<div style='color:{C_DIM};font-size:0.68rem;margin-top:4px'>"
+                f"Find in make.powerapps.com → Settings → Session details</div>",
+                unsafe_allow_html=True,
+            )
+        if st.button("Add environment", key="btn_add_env"):
             if m_name.strip() and m_url.strip():
                 new_env = {"name": m_name.strip(), "orgUrl": m_url.strip().rstrip("/"),
                            "environmentId": m_id.strip()}
-                # Add to s_envs so it appears in the multiselect
                 existing_names = [e["name"] for e in st.session_state.s_envs]
                 if new_env["name"] not in existing_names:
                     st.session_state.s_envs.append(new_env)
                 if new_env["name"] not in st.session_state.s_sel_envs:
                     st.session_state.s_sel_envs.append(new_env["name"])
+                st.session_state["_env_load_failed"] = False
                 st.rerun()
             else:
                 st.warning("Name and Org URL are required.")
+
+    if _load_failed or _no_envs:
+        _manual_entry_form()
+    else:
+        with st.expander("Add another environment manually"):
+            _manual_entry_form()
 
 st.markdown("</div>", unsafe_allow_html=True)
 
