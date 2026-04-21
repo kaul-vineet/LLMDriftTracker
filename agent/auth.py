@@ -33,13 +33,15 @@ def _load_cache(cfg: dict) -> msal.SerializableTokenCache:
     cache = msal.SerializableTokenCache()
     path = _cache_path(cfg)
     if os.path.exists(path):
-        cache.deserialize(open(path).read())
+        with open(path, encoding="utf-8") as f:
+            cache.deserialize(f.read())
     return cache
 
 
 def _save_cache(cache: msal.SerializableTokenCache, cfg: dict):
     if cache.has_state_changed:
-        open(_cache_path(cfg), "w").write(cache.serialize())
+        with open(_cache_path(cfg), "w", encoding="utf-8") as f:
+            f.write(cache.serialize())
 
 
 def _app(cfg: dict, cache: msal.SerializableTokenCache) -> msal.PublicClientApplication:
@@ -56,7 +58,8 @@ def _write_auth_state(cfg: dict, state: dict):
     os.makedirs(agent_dir, exist_ok=True)
     path = os.path.join(agent_dir, "auth_state.json")
     state["updatedAt"] = datetime.now(timezone.utc).isoformat()
-    open(path, "w").write(json.dumps(state, indent=2))
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(json.dumps(state, indent=2))
 
 
 def _email_device_code(cfg: dict, code: str, expires_in: int):
@@ -224,7 +227,8 @@ def get_auth_state(cfg: dict) -> dict:
     if not os.path.exists(path):
         return {"status": "UNKNOWN"}
     try:
-        return json.loads(open(path).read())
+        with open(path, encoding="utf-8") as f:
+            return json.loads(f.read())
     except Exception:
         return {"status": "UNKNOWN"}
 

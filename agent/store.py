@@ -15,11 +15,11 @@ import json
 import os
 import re
 import sys
-import tempfile
 from datetime import datetime, timezone
 from . import logger as logger_mod
 
-_UNSAFE_PATH_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+# Characters that are invalid in Windows filenames — also stripped on POSIX for portability.
+_UNSAFE_PATH_CHARS = re.compile(r'[\\/:*?"<>|\s\x00-\x1f]')
 
 
 def _bot_dir(store_dir: str, bot_id: str) -> str:
@@ -29,29 +29,42 @@ def _bot_dir(store_dir: str, bot_id: str) -> str:
 
 
 def _load_json(path: str) -> dict:
+    """Read a JSON file. Missing → {}. Corrupt → log to stderr and return {}."""
     if not os.path.exists(path):
         return {}
     try:
         with open(path, encoding="utf-8") as f:
             return json.loads(f.read())
-    except Exception as e:
-        print(f"[store] WARNING: corrupt JSON at {path}: {e}", file=sys.stderr)
+    except json.JSONDecodeError as e:
+        print(f"[store] Corrupt JSON at {path}: {e}", file=sys.stderr)
+        return {}
+    except OSError as e:
+        print(f"[store] Cannot read {path}: {e}", file=sys.stderr)
         return {}
 
 
 def _atomic_write_json(path: str, data: dict):
-    tmp = path + ".tmp"
+    """Write JSON atomically: write to .tmp then os.replace() so a partial/disk-full
+    write cannot corrupt the destination file. Callers expect existing contents to
+    remain intact if the write fails."""
+    tmp = f"{path}.tmp"
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(json.dumps(data, indent=2))
         f.flush()
-        os.fsync(f.fileno())
+        try:
+            os.fsync(f.fileno())
+        except OSError:
+            pass  # not all platforms / filesystems support fsync
     os.replace(tmp, path)
 
 
 def make_run_folder_name(model_version: str) -> str:
     ts         = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-    safe_model = _UNSAFE_PATH_CHARS.sub("_", model_version).strip("._")
-    safe_model = re.sub(r"_+", "_", safe_model) or "unknown"
+    safe_model = _UNSAFE_PATH_CHARS.sub("_", model_version or "unknown")
+    # Also collapse repeats and trim trailing dots/underscores (Windows treats trailing
+    # dots and spaces as invalid for folder names).
+    safe_model = re.sub(r"_+", "_", safe_model).strip("._") or "unknown"
     return f"{ts}_{safe_model}"
 
 
