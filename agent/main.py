@@ -56,18 +56,43 @@ def _check_file_trigger(store_dir: str) -> bool:
         return False
 
 
-def _check_bot_trigger(store_dir: str, bot_id: str) -> bool:
-    """Return True and delete a per-bot force_eval trigger if it exists.
-    Returns False if delete fails — see _check_file_trigger."""
+def _check_bot_trigger(store_dir: str, bot_id: str) -> dict | None:
+    """Consume a per-bot force_eval trigger.
+
+    Returns:
+      - None   — no trigger file exists
+      - dict   — trigger was consumed; payload may contain {"modelVersion",
+                 "detectedAt"}. Empty dict is valid (legacy plain-timestamp
+                 format, or a partial write). Callers must treat
+                 `is not None` as the "was forced" signal.
+
+    Trigger payload contract (written by _watch_loop):
+      {"modelVersion": str, "detectedAt": iso_ts}
+
+    Preserving the watcher's detected modelVersion in the trigger lets the
+    evaluator use that value directly instead of re-reading from Dataverse,
+    which eliminates a race where the evaluator's own lookup can transiently
+    fall back and corrupt tracking.json."""
     path = os.path.join(store_dir, f"force_eval_{bot_id}.trigger")
     if not os.path.exists(path):
-        return False
+        return None
+    payload: dict = {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+        try:
+            parsed = json.loads(content)
+            if isinstance(parsed, dict):
+                payload = parsed
+        except json.JSONDecodeError:
+            pass  # legacy plain-timestamp format — safe to ignore
+    except Exception:
+        pass
     try:
         os.remove(path)
-        return True
     except Exception as e:
         lore.eval_error("trigger", e)
-        return False
+    return payload
 
 
 def _has_pending_triggers(store_dir: str) -> bool:
@@ -153,7 +178,21 @@ def run_cycle(cfg: dict, force: bool = False):
         bot_id     = bot["botId"]
         bot_name   = bot["name"]
         curr_ver   = bot["modelVersion"]
-        bot_forced = _check_bot_trigger(store_dir, bot_id)
+
+        # _check_bot_trigger now returns the trigger payload (dict) or None.
+        # `bot_forced` stays a bool so the rest of the cycle's control flow is
+        # unchanged — absence of a trigger file still means "not per-bot forced".
+        trigger_payload = _check_bot_trigger(store_dir, bot_id)
+        bot_forced      = trigger_payload is not None
+
+        # If the watcher queued a trigger, prefer the model *it* detected over
+        # the evaluator's own (second) list_all_bots read. The evaluator's read
+        # can transiently fall back — same Dataverse API, but a few seconds
+        # later and under different thread/token conditions — and when it does,
+        # the fallback poisons tracking.json with the static schema name. Using
+        # the watcher's value breaks this dual-call race at the source.
+        if trigger_payload and trigger_payload.get("modelVersion"):
+            curr_ver = trigger_payload["modelVersion"]
 
         # Skip eval: not globally forced, not per-bot forced, and model version unchanged
         if not force and not bot_forced and not store.model_changed(store_dir, bot_id, curr_ver):
@@ -314,6 +353,20 @@ def _watch_loop(cfg: dict):
     while True:
         try:
             bots = dataverse.list_all_bots(cfg)
+            # Heartbeat: pure observability — lets external tools see each poll
+            # (what it read, when it ran) without waiting for a model_change event.
+            try:
+                with open(os.path.join(store_dir, "watcher_heartbeat.json"),
+                          "w", encoding="utf-8") as f:
+                    json.dump({
+                        "ts":   datetime.now(timezone.utc).isoformat(),
+                        "bots": [{"botId":        b["botId"],
+                                  "name":         b["name"],
+                                  "modelVersion": b["modelVersion"]}
+                                 for b in bots],
+                    }, f, indent=2)
+            except Exception:
+                pass
             for bot in bots:
                 bot_id   = bot["botId"]
                 bot_name = bot["name"]
@@ -328,8 +381,24 @@ def _watch_loop(cfg: dict):
                     old_ver  = tracking.get("modelVersion", "unknown")
                     lore.model_changed(bot_name, old_ver, curr_ver)
                     ev.model_change(store_dir, bot_name, bot_id, old_ver, curr_ver)
-                    with open(trigger_path, "w", encoding="utf-8") as f:
-                        f.write(datetime.now(timezone.utc).isoformat())
+                    # Write atomically so the evaluator never reads a half-file.
+                    # The payload preserves the model the watcher just saw — the
+                    # evaluator uses this instead of a second list_all_bots call,
+                    # breaking the dual-call race that was corrupting tracking.json.
+                    trigger_tmp = f"{trigger_path}.tmp"
+                    try:
+                        with open(trigger_tmp, "w", encoding="utf-8") as f:
+                            json.dump({
+                                "modelVersion": curr_ver,
+                                "detectedAt":   datetime.now(timezone.utc).isoformat(),
+                            }, f)
+                        os.replace(trigger_tmp, trigger_path)
+                    except Exception as e:
+                        lore.eval_error("trigger write", e)
+                        try:
+                            os.remove(trigger_tmp)
+                        except Exception:
+                            pass
         except Exception as e:
             lore.eval_error("watcher", e)
         time.sleep(interval_s)

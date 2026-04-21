@@ -3,6 +3,7 @@ agent/dataverse.py — Dataverse + BAPI bot/environment discovery.
 
 All auth is now via MSAL (auth.py). No az CLI, no service principal.
 """
+import re
 import requests
 from .auth import get_dataverse_token, get_bapi_token
 from . import lore
@@ -11,6 +12,16 @@ DV_API     = "/api/data/v9.2"
 BOT_SELECT = "botid,name,schemaname,publishedon,statecode"
 BAPI_ENVS  = ("https://api.bap.microsoft.com/providers/"
               "Microsoft.BusinessAppPlatform/environments")
+
+# The LLM the user picked in the Copilot Studio UI is stored on a *child* entity
+# (botcomponents, keyed by gPTSettings.defaultSchemaName on the bot record) inside
+# a YAML-valued column, at path aISettings.model.modelNameHint. This regex pulls
+# it out without adding a PyYAML dependency. Case-insensitive to tolerate minor
+# CPS schema drift. Using re.MULTILINE so ^ matches after indentation on each line.
+_MODEL_HINT_RX = re.compile(
+    r"^\s*modelNameHint\s*:\s*(\S+?)\s*$",
+    re.MULTILINE | re.IGNORECASE,
+)
 
 
 def _dv_headers(token: str) -> dict:
@@ -25,14 +36,94 @@ def _bapi_headers(token: str) -> dict:
     return {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
 
-def extract_model_version(configuration: str) -> str:
+def _extract_default_schema_name(configuration: str) -> str:
+    """gPTSettings.defaultSchemaName on the bot record is a pointer to the bot's
+    default GPT child component (format: '{bot.schemaname}.gpt.default'). It is
+    static — does NOT change on LLM swap — so it cannot be used as a model
+    identifier on its own, only as the key to look up the child record."""
     import json
     try:
         cfg = json.loads(configuration or "{}")
-        # Copilot Studio stores the LLM model under bot.configuration → gPTSettings → defaultSchemaName
-        return cfg.get("gPTSettings", {}).get("defaultSchemaName", "unknown")
+        return cfg.get("gPTSettings", {}).get("defaultSchemaName", "")
     except Exception:
+        return ""
+
+
+def _fetch_bot_component(org_url: str, token: str, schema_name: str) -> dict:
+    """Fetch the botcomponents record for a given schemaname. Returns {} on any
+    failure so callers can fall back without raising.
+
+    Retries once after a short backoff — in practice most child-lookup misses
+    right after a publish are transient (Dataverse eventual consistency / token
+    refresh mid-request). One retry clears the vast majority without turning
+    the poll loop into a retry storm."""
+    if not schema_name:
+        return {}
+    import time
+    for attempt in range(2):
+        try:
+            r = requests.get(
+                f"{org_url}{DV_API}/botcomponents",
+                params={
+                    "$filter": f"schemaname eq '{schema_name}'",
+                    "$select": "data,content",
+                },
+                headers=_dv_headers(token),
+                timeout=20,
+            )
+            if r.ok:
+                items = r.json().get("value", [])
+                return items[0] if items else {}
+        except Exception:
+            pass
+        if attempt == 0:
+            time.sleep(0.5)
+    return {}
+
+
+def extract_model_version(configuration: str,
+                          org_url: str = "", token: str = "",
+                          store_dir: str = "", bot_id: str = "") -> str:
+    """Return the currently-selected LLM identifier for a bot (e.g. 'GPT5Chat').
+
+    The bot record itself does not store the LLM — it stores only a pointer at
+    gPTSettings.defaultSchemaName to a child 'botcomponents' record. The actual
+    model lives in that child's YAML-valued `data` column at
+    aISettings.model.modelNameHint.
+
+    Fallback chain if the child lookup fails or returns no hint:
+      1. Last known good value from tracking.json (if store_dir+bot_id passed)
+      2. Schema name (first-run bootstrap only)
+
+    Returning the last known good value on a transient lookup failure is
+    critical: returning the static schema name would corrupt tracking.json
+    and force a false-positive model_change event on the next poll, which is
+    exactly the bug the main fix is supposed to solve.
+
+    Legacy callers that pass only `configuration` (no org_url/token) get the
+    schema name directly — preserved for backward compat with any callers
+    that don't have auth context.
+    """
+    schema = _extract_default_schema_name(configuration)
+    if not schema:
         return "unknown"
+    if not (org_url and token):
+        return schema  # legacy path — no way to follow the pointer
+
+    rec = _fetch_bot_component(org_url, token, schema)
+    yaml_text = rec.get("data") or rec.get("content") or ""
+    m = _MODEL_HINT_RX.search(yaml_text) if yaml_text else None
+    if m:
+        return m.group(1)
+
+    # Lookup failed or YAML missing the field — prefer last known good over the
+    # schema name so a transient blip doesn't corrupt state.
+    if store_dir and bot_id:
+        from . import store as _store
+        prior = _store.load_tracking(store_dir, bot_id).get("modelVersion")
+        if prior and prior != schema:
+            return prior
+    return schema
 
 
 # ── Environment discovery ─────────────────────────────────────────────────────
@@ -110,6 +201,7 @@ def list_bots(org_url: str, monitored: list, cfg: dict) -> list[dict]:
     monitored: list of schemanames to filter; empty = return all active.
     """
     import os
+    store_dir = cfg.get("store_dir", "data")
     token = get_dataverse_token(org_url, cfg)
     url   = f"{org_url}{DV_API}/bots?$select={BOT_SELECT}&$filter=statecode eq 0"
     r     = requests.get(url, headers=_dv_headers(token), timeout=20)
@@ -133,7 +225,9 @@ def list_bots(org_url: str, monitored: list, cfg: dict) -> list[dict]:
             "botId":        bot_id,
             "name":         b.get("name", ""),
             "schemaName":   b.get("schemaname", ""),
-            "modelVersion": extract_model_version(details.get("configuration")),
+            "modelVersion": extract_model_version(
+                details.get("configuration"), org_url, token,
+                store_dir, bot_id),
             "publishedOn":  b.get("publishedon"),
             "orgUrl":       org_url,
         })
