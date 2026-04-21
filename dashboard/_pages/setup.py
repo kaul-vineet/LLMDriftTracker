@@ -110,19 +110,18 @@ def _fetch_envs(token):
     import requests
     try:
         r = requests.get(
-            "https://api.bap.microsoft.com/providers/Microsoft.BusinessAppPlatform/environments",
-            params={"api-version": "2020-10-01"},
+            "https://api.powerplatform.com/appmanagement/environments",
+            params={"api-version": "2022-03-01-preview"},
             headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
             timeout=15,
         )
         r.raise_for_status()
         envs = []
         for item in r.json().get("value", []):
-            props = item.get("properties", {})
-            url   = props.get("linkedEnvironmentMetadata", {}).get("instanceUrl", "")
+            url = item.get("instanceUrl", "")
             if url:
                 envs.append({
-                    "name":          props.get("displayName", item.get("name", "")),
+                    "name":          item.get("displayName", item.get("name", "")),
                     "orgUrl":        url.rstrip("/"),
                     "environmentId": item.get("name", ""),
                 })
@@ -368,15 +367,9 @@ else:
             _ph = st.empty()
             _spinner(_ph, "AUTHENTICATING")
             tok, _ = _token_silent(
-                BAPI_SCOPES, st.session_state.s_client_id,
+                EVAL_SCOPES, st.session_state.s_client_id,
                 st.session_state.s_tenant_id, st.session_state.s_cache_file,
             )
-            # BAP API also accepts the Power Platform scope used during device flow
-            if not tok:
-                tok, _ = _token_silent(
-                    EVAL_SCOPES, st.session_state.s_client_id,
-                    st.session_state.s_tenant_id, st.session_state.s_cache_file,
-                )
             if not tok:
                 _ph.empty()
                 st.error("Token acquisition failed — sign in first (Section 2).")
