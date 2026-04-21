@@ -15,10 +15,9 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from theme import C_BG, C_CARD, C_BORDER, C_CYAN, C_MAGENTA, C_GOLD, C_RED, C_GREEN, C_DIM, C_TEXT, FONT
-from spinner import spinner as _spinner
 
 EVAL_SCOPES = ["https://api.powerplatform.com/.default"]
-BAPI_SCOPES = ["https://service.powerapps.com/.default"]
+ENV_SCOPES  = ["https://api.powerplatform.com/EnvironmentManagement.Environments.Read"]
 STORE_DIR   = os.environ.get("STORE_DIR", "data")
 CONFIG_PATH = "config.json"
 DEFAULT_CLIENT_ID = "774142ce-9070-446b-83ac-e2053c716879"
@@ -106,29 +105,69 @@ def _token_silent(scopes, client_id, tenant_id, cache_file):
             return r["access_token"], app.get_accounts()
     return None, []
 
+
+
+
+
+
+def _fetch_bots_inventory(env_id, token):
+    """List Copilot Studio agents via Power Platform Inventory API.
+    Same EVAL token as environment discovery — no Dataverse needed.
+    env_id must be lowercased; inventory API filter is case-sensitive."""
+    import requests
+    try:
+        r = requests.post(
+            "https://api.powerplatform.com/resourcequery/resources/query",
+            params={"api-version": "2024-10-01"},
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json",
+                     "Accept": "application/json"},
+            json={"TableName": "PowerPlatformResources",
+                  "Clauses": [
+                      {"$type": "where", "FieldName": "type",
+                       "Operator": "==", "Values": ["'microsoft.copilotstudio/agents'"]},
+                      {"$type": "where", "FieldName": "properties.environmentId",
+                       "Operator": "==", "Values": [f"'{env_id.lower()}'"]}
+                  ]},
+            timeout=15,
+        )
+        if r.status_code != 200:
+            return [], f"HTTP {r.status_code}: {r.text[:300]}"
+        bots = []
+        for item in r.json().get("data", []):
+            p = item.get("properties", {})
+            bots.append({
+                "botId":      item.get("name", ""),
+                "name":       p.get("displayName", ""),
+                "schemaname": p.get("schemaName", ""),
+                "statecode":  0,
+            })
+        return bots, None
+    except Exception as e:
+        return [], str(e)
+
+
 def _fetch_envs(token):
     import requests
     try:
         r = requests.get(
-            "https://api.bap.microsoft.com/providers/Microsoft.BusinessAppPlatform/environments",
-            params={"api-version": "2020-10-01"},
+            "https://api.powerplatform.com/environmentmanagement/environments",
+            params={"api-version": "2022-03-01-preview"},
             headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
             timeout=15,
         )
-        r.raise_for_status()
+        if r.status_code != 200:
+            return [], f"HTTP {r.status_code}: {r.text[:300]}"
         envs = []
         for item in r.json().get("value", []):
-            props = item.get("properties", {})
-            url   = props.get("linkedEnvironmentMetadata", {}).get("instanceUrl", "")
-            if url:
-                envs.append({
-                    "name":          props.get("displayName", item.get("name", "")),
-                    "orgUrl":        url.rstrip("/"),
-                    "environmentId": item.get("name", ""),
-                })
+            org_url = item.get("url", "")
+            name    = item.get("displayName") or item.get("name") or ""
+            env_id  = item.get("id", "")
+            if org_url and name:
+                envs.append({"name": name, "orgUrl": org_url.rstrip("/"), "environmentId": env_id})
         return envs, None
     except Exception as e:
         return [], str(e)
+
 
 def _test_llm(base_url, model, api_key):
     import requests
@@ -157,24 +196,6 @@ def _llm_validated():
         return False
 
 
-def _fetch_bots(org_url, client_id, tenant_id, cache_file):
-    import requests
-    scopes = [org_url.rstrip("/") + "/.default"]
-    token, _ = _token_silent(scopes, client_id, tenant_id, cache_file)
-    if not token:
-        return [], "Could not acquire Dataverse token — try re-authenticating."
-    try:
-        r = requests.get(
-            f"{org_url}/api/data/v9.2/bots",
-            params={"$select": "botid,name,schemaname,statecode", "$filter": "statecode eq 0"},
-            headers={"Authorization": f"Bearer {token}", "OData-MaxVersion": "4.0",
-                     "Accept": "application/json"},
-            timeout=15,
-        )
-        r.raise_for_status()
-        return r.json().get("value", []), None
-    except Exception as e:
-        return [], str(e)
 
 
 # ── Load existing config ──────────────────────────────────────────────────────
@@ -244,16 +265,21 @@ st.markdown(
 # SECTION 1 — App Registration
 # ═══════════════════════════════════════════════════════════════════════════════
 _sec("1 · App Registration", ok1)
-st.caption("Azure AD app with CopilotStudio.MakerOperations delegated permission.")
+st.caption("The Entra ID (Azure AD) app registration used to authenticate with Power Platform.")
 
 c1, c2 = st.columns(2)
 with c1:
     client_id = st.text_input("Client (App) ID *", value=st.session_state.s_client_id,
-                               key="in_client_id")
+                               key="in_client_id",
+                               help="The Application (client) ID of your Entra app registration. "
+                                    "Must have CopilotStudio.MakerOperations.Read and "
+                                    "EnvironmentManagement.Environments.Read delegated permissions.")
 with c2:
     tenant_id = st.text_input("Tenant ID *", value=st.session_state.s_tenant_id,
                                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-                               key="in_tenant_id")
+                               key="in_tenant_id",
+                               help="Your Microsoft Entra tenant ID. "
+                                    "Found in Entra ID → Overview → Directory (tenant) ID.")
 st.markdown("</div>", unsafe_allow_html=True)
 
 # Persist immediately
@@ -362,41 +388,41 @@ if not _can_auth:
     st.markdown("<div class='status-dim'>Enter Client ID and Tenant ID above first.</div>",
                 unsafe_allow_html=True)
 else:
+    _loading_envs = st.session_state.get("_op_loading_envs", False)
     col_e1, col_e2 = st.columns([1, 4])
     with col_e1:
-        if st.button("Load Environments", key="btn_load_envs"):
-            _ph = st.empty()
-            _spinner(_ph, "AUTHENTICATING")
-            tok = None
-            try:
-                tok, _ = _token_silent(BAPI_SCOPES, st.session_state.s_client_id,
-                                       st.session_state.s_tenant_id, st.session_state.s_cache_file)
-            except Exception:
-                pass
-            if not tok:
-                try:
-                    tok, _ = _token_silent(EVAL_SCOPES, st.session_state.s_client_id,
-                                           st.session_state.s_tenant_id, st.session_state.s_cache_file)
-                except Exception:
-                    pass
-            if not tok:
-                _ph.empty()
-                st.error("Token acquisition failed — sign in first (Section 2).")
-            else:
-                st.session_state.s_token = tok
-                _spinner(_ph, "SCANNING BAPI")
-                envs, err = _fetch_envs(tok)
-                _ph.empty()
-                if err:
-                    st.session_state["_env_load_failed"] = True
-                    st.rerun()
-                else:
-                    st.session_state["_env_load_failed"] = False
-                    st.session_state.s_envs = envs
-                    st.rerun()
+        if st.button("Load Environments", key="btn_load_envs", disabled=_loading_envs):
+            st.session_state["_op_loading_envs"] = True
+            st.rerun()
     with col_e2:
         if st.session_state.s_envs:
-            st.caption(f"{len(st.session_state.s_envs)} environment(s) found")
+            st.markdown(
+                f"<div style='color:{C_CYAN};font-family:{FONT};font-size:0.78rem;"
+                f"font-weight:700;letter-spacing:1px;margin-top:8px'>"
+                f"✓ {len(st.session_state.s_envs)} environment(s) found</div>",
+                unsafe_allow_html=True,
+            )
+
+    if _loading_envs:
+        with st.spinner("Scanning environments…"):
+            # Use explicit ENV_SCOPES so MSAL picks the token that contains
+            # EnvironmentManagement.Environments.Read, not the older CopilotStudio-only token.
+            tok, tok_err = _token_silent(ENV_SCOPES, st.session_state.s_client_id,
+                                         st.session_state.s_tenant_id, st.session_state.s_cache_file)
+            if not tok:
+                st.session_state["_env_load_err"] = tok_err or "Token acquisition failed — sign in first (Section 2)."
+            else:
+                envs, err = _fetch_envs(tok)
+                if err:
+                    st.session_state["_env_load_err"] = err
+                else:
+                    st.session_state["_env_load_err"] = None
+                    st.session_state.s_envs = envs
+        st.session_state["_op_loading_envs"] = False
+        st.rerun()
+
+    if st.session_state.get("_env_load_err"):
+        st.error(st.session_state["_env_load_err"])
 
     if st.session_state.s_envs:
         sel = st.multiselect(
@@ -405,6 +431,8 @@ else:
             default=[n for n in st.session_state.s_sel_envs
                      if n in [e["name"] for e in st.session_state.s_envs]],
             key="ms_envs",
+            help="Power Platform environments the agent will watch. Only agents inside these "
+                 "environments are evaluated and reported. Deselect to exclude an environment."
         )
         st.session_state.s_sel_envs = sel
     elif st.session_state.s_sel_envs:
@@ -422,30 +450,24 @@ else:
             unsafe_allow_html=True,
         )
 
-    # Manual entry — shown inline when auto-discovery failed or no envs loaded yet
-    _load_failed = st.session_state.get("_env_load_failed", False)
-    _no_envs     = not st.session_state.s_envs
-
-    def _manual_entry_form():
-        if _load_failed:
-            st.markdown(
-                f"<div style='color:{C_GOLD};font-size:0.75rem;font-family:{FONT};"
-                f"margin-bottom:10px'>⚠ Auto-discovery unavailable — app registration "
-                f"needs <b>service.powerapps.com</b> permission. Add manually:</div>",
-                unsafe_allow_html=True,
-            )
+    def _env_form():
         m1, m2 = st.columns(2)
         with m1:
-            m_name = st.text_input("Friendly name", key="m_env_name",
-                                   placeholder="Contoso (default)")
-            m_url  = st.text_input("Org URL", key="m_env_url",
-                                   placeholder="https://orgXXXXX.crm.dynamics.com")
+            m_name = st.text_input("Friendly name *", key="m_env_name",
+                                   placeholder="Contoso (default)",
+                                   help="Display label used throughout the dashboard.")
+            m_url  = st.text_input("Org URL *", key="m_env_url",
+                                   placeholder="https://orgXXXXX.crm.dynamics.com",
+                                   help="Dataverse instance URL. Found in make.powerapps.com → "
+                                        "Settings → Session details → Instance url.")
         with m2:
-            m_id   = st.text_input("Environment ID (GUID)", key="m_env_id",
-                                   placeholder="00000000-0000-0000-0000-000000000000")
+            m_id   = st.text_input("Environment ID *", key="m_env_id",
+                                   placeholder="00000000-0000-0000-0000-000000000000",
+                                   help="Required for agent discovery. Found in make.powerapps.com → "
+                                        "Settings → Session details → Environment ID.")
             st.markdown(
                 f"<div style='color:{C_DIM};font-size:0.68rem;margin-top:4px'>"
-                f"Find in make.powerapps.com → Settings → Session details</div>",
+                f"make.powerapps.com → Settings → Session details</div>",
                 unsafe_allow_html=True,
             )
         if st.button("Add environment", key="btn_add_env"):
@@ -457,16 +479,16 @@ else:
                     st.session_state.s_envs.append(new_env)
                 if new_env["name"] not in st.session_state.s_sel_envs:
                     st.session_state.s_sel_envs.append(new_env["name"])
-                st.session_state["_env_load_failed"] = False
                 st.rerun()
             else:
-                st.warning("Name and Org URL are required.")
+                st.warning("Friendly name and Org URL are required.")
 
-    if _load_failed or _no_envs:
-        _manual_entry_form()
-    else:
-        with st.expander("Add another environment manually"):
-            _manual_entry_form()
+    st.markdown(
+        f"<div style='color:{C_DIM};font-size:0.72rem;font-family:{FONT};"
+        f"letter-spacing:1px;margin:14px 0 8px'>ADD ENVIRONMENT MANUALLY</div>",
+        unsafe_allow_html=True,
+    )
+    _env_form()
 
 st.markdown("</div>", unsafe_allow_html=True)
 
@@ -474,7 +496,8 @@ st.markdown("</div>", unsafe_allow_html=True)
 # ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 4 — Bots
 # ═══════════════════════════════════════════════════════════════════════════════
-_sec("4 · Bots to Monitor", ok4)
+_sec("4 · Agents to Monitor", ok4)
+st.caption("Agents discovered via the Power Platform Inventory API — same sign-in as above, no extra permissions needed.")
 
 if not st.session_state.s_sel_envs:
     st.markdown("<div class='status-dim'>Select at least one environment above.</div>",
@@ -493,94 +516,49 @@ else:
         if env:
             bots_raw    = st.session_state.s_bots.get(env_name, [])
             saved_bots  = bot_sel.get(env_name, [])
-            dv_scopes   = [env["orgUrl"].rstrip("/") + "/.default"]
-            flow_key    = f"s_dv_flow_{env_name}"
-            started_key = f"s_dv_started_{env_name}"
+            loading_key = f"_op_loading_bots_{env_name}"
+            _loading_bots = st.session_state.get(loading_key, False)
 
-            # Try silent Dataverse token first
-            dv_tok = None
-            try:
-                dv_tok, _ = _token_silent(dv_scopes, st.session_state.s_client_id,
-                                          st.session_state.s_tenant_id,
-                                          st.session_state.s_cache_file)
-            except Exception:
-                pass
+            col_b1, col_b2 = st.columns([1, 4])
+            with col_b1:
+                if st.button("Load Bots", key=f"btn_bots_{env_name}", disabled=_loading_bots):
+                    st.session_state[loading_key] = True
+                    st.rerun()
+            with col_b2:
+                if bots_raw:
+                    st.markdown(
+                        f"<div style='color:{C_CYAN};font-family:{FONT};font-size:0.78rem;"
+                        f"font-weight:700;letter-spacing:1px;margin-top:8px'>"
+                        f"✓ {len(bots_raw)} agent(s) found</div>",
+                        unsafe_allow_html=True,
+                    )
 
-            if not st.session_state.get(started_key):
-                col_b1, col_b2 = st.columns([1, 4])
-                with col_b1:
-                    if st.button("Load Bots", key=f"btn_bots_{env_name}"):
-                        if dv_tok:
-                            _bph = st.empty()
-                            _spinner(_bph, "SCANNING DATAVERSE")
-                            try:
-                                bots, err = _fetch_bots(
-                                    env["orgUrl"], st.session_state.s_client_id,
-                                    st.session_state.s_tenant_id, st.session_state.s_cache_file,
-                                )
-                            except Exception as e:
-                                bots, err = [], str(e)
-                            _bph.empty()
-                            if not err:
+            env_id = env.get("environmentId", "")
+
+            if _loading_bots:
+                with st.spinner("Scanning agents…"):
+                    if not env_id:
+                        st.session_state[f"_bots_err_{env_name}"] = (
+                            "Environment ID is missing — edit this environment in Section 3 to add it."
+                        )
+                    else:
+                        tok, _ = _token_silent(EVAL_SCOPES, st.session_state.s_client_id,
+                                               st.session_state.s_tenant_id,
+                                               st.session_state.s_cache_file)
+                        if tok:
+                            bots, err = _fetch_bots_inventory(env_id, tok)
+                            if err:
+                                st.session_state[f"_bots_err_{env_name}"] = err
+                            else:
                                 st.session_state.s_bots[env_name] = bots
-                                st.rerun()
+                                st.session_state.pop(f"_bots_err_{env_name}", None)
                         else:
-                            # Dataverse token not cached — start device flow
-                            try:
-                                cache = _load_cache(st.session_state.s_cache_file)
-                                app   = _msal_app(st.session_state.s_client_id,
-                                                  st.session_state.s_tenant_id, cache)
-                                flow  = app.initiate_device_flow(scopes=dv_scopes)
-                                st.session_state[flow_key]    = {"flow": flow, "app": app, "cache": cache}
-                                st.session_state[started_key] = True
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Could not start sign-in: {e}")
-                with col_b2:
-                    if bots_raw:
-                        st.caption(f"{len(bots_raw)} bot(s) found")
-            else:
-                # Device flow in progress for this Dataverse org
-                flow_data = st.session_state[flow_key]
-                code      = flow_data["flow"].get("user_code", "")
-                st.markdown(
-                    f"<div style='font-size:0.78rem;color:{C_DIM};margin-bottom:6px'>"
-                    f"One-time sign-in required for Dataverse — token is cached after this.</div>",
-                    unsafe_allow_html=True,
-                )
-                st.markdown(
-                    f"Open <a href='https://microsoft.com/devicelogin' target='_blank' "
-                    f"style='color:{C_CYAN}'>microsoft.com/devicelogin</a> and enter:",
-                    unsafe_allow_html=True,
-                )
-                st.markdown(f"<div class='device-code'>{code}</div>", unsafe_allow_html=True)
+                            st.session_state[f"_bots_err_{env_name}"] = "Token acquisition failed — sign in first (Section 2)."
+                st.session_state[loading_key] = False
+                st.rerun()
 
-                col_v1, col_v2 = st.columns([1, 3])
-                with col_v1:
-                    if st.button("✓ Verify & load bots", key=f"btn_dv_verify_{env_name}", type="primary"):
-                        app   = flow_data["app"]
-                        cache = flow_data["cache"]
-                        try:
-                            result = app.acquire_token_by_device_flow(
-                                flow_data["flow"], exit_condition=lambda _: True
-                            )
-                        except Exception:
-                            result = None
-                        if result and "access_token" in result:
-                            _save_cache(cache, st.session_state.s_cache_file)
-                            st.session_state[started_key] = False
-                            bots, err = _fetch_bots(env["orgUrl"], st.session_state.s_client_id,
-                                                    st.session_state.s_tenant_id,
-                                                    st.session_state.s_cache_file)
-                            if not err:
-                                st.session_state.s_bots[env_name] = bots
-                            st.rerun()
-                        else:
-                            st.warning("Not signed in yet — complete sign-in in your browser first.")
-                with col_v2:
-                    if st.button("Cancel", key=f"btn_dv_cancel_{env_name}"):
-                        st.session_state[started_key] = False
-                        st.rerun()
+            if st.session_state.get(f"_bots_err_{env_name}"):
+                st.error(st.session_state[f"_bots_err_{env_name}"])
 
             # Bot list display
             if bots_raw:
@@ -589,9 +567,11 @@ else:
                 cur_schemas = bot_sel.get(env_name, [])
                 cur_names   = [b["name"] for b in bots_raw if b["schemaname"] in cur_schemas]
                 sel_names   = st.multiselect(
-                    f"Bots ({env_name}) — leave empty to monitor all",
+                    f"Agents ({env_name}) — leave empty to monitor all",
                     options=names, default=cur_names or names,
                     key=f"ms_bots_{env_name}",
+                    help="Select which agents in this environment to monitor. "
+                         "Leave empty to monitor all agents.",
                 )
                 bot_sel[env_name] = [schemas[n] for n in sel_names]
             elif saved_bots:
@@ -608,9 +588,46 @@ else:
                     f"letter-spacing:1px'>Saved config · click Load Bots to refresh</div>",
                     unsafe_allow_html=True,
                 )
+
+            # Manual agent entry
+            st.markdown(
+                f"<div style='color:{C_DIM};font-size:0.72rem;font-family:{FONT};"
+                f"letter-spacing:1px;margin:14px 0 6px'>ADD AGENT MANUALLY</div>",
+                unsafe_allow_html=True,
+            )
+            ma1, ma2 = st.columns(2)
+            with ma1:
+                m_bot_name = st.text_input(
+                    "Display name *", key=f"m_bot_name_{env_name}",
+                    placeholder="My Copilot Agent",
+                    help="Friendly label shown in the dashboard.",
+                )
+            with ma2:
+                m_bot_schema = st.text_input(
+                    "Schema name *", key=f"m_bot_schema_{env_name}",
+                    placeholder="myorg_MyCopilotAgent",
+                    help="Unique logical name of the agent. Found in Copilot Studio → "
+                         "Settings → Advanced → Schema name.",
+                )
+            if st.button("Add agent", key=f"btn_add_bot_{env_name}"):
+                if m_bot_name.strip() and m_bot_schema.strip():
+                    new_bot = {
+                        "botId": "", "name": m_bot_name.strip(),
+                        "schemaname": m_bot_schema.strip(), "statecode": 0,
+                    }
+                    existing = st.session_state.s_bots.get(env_name, [])
+                    if new_bot["schemaname"] not in [b["schemaname"] for b in existing]:
+                        st.session_state.s_bots.setdefault(env_name, []).append(new_bot)
+                    if new_bot["schemaname"] not in bot_sel.get(env_name, []):
+                        bot_sel.setdefault(env_name, []).append(new_bot["schemaname"])
+                    st.session_state.s_bot_sel = bot_sel
+                    st.rerun()
+                else:
+                    st.warning("Both display name and schema name are required.")
+
         else:
             cur = bot_sel.get(env_name, [])
-            st.caption(f"Existing config: {len(cur)} bot(s) selected. Load bots to change.")
+            st.caption(f"Existing config: {len(cur)} agent(s) selected. Load bots to change.")
 
     st.session_state.s_bot_sel = bot_sel
 
@@ -639,16 +656,12 @@ st.session_state.s_poll      = int(poll)
 
 # LLM validation
 _api_key = os.environ.get("LLM_API_KEY", "")
+_loading_llm = st.session_state.get("_op_loading_llm", False)
 col_t1, col_t2 = st.columns([1, 4])
 with col_t1:
-    if st.button("Test LLM", key="btn_test_llm", disabled=not llm_url.strip()):
-        _lph = st.empty()
-        _spinner(_lph, "PINGING LLM")
-        ok, err = _test_llm(llm_url.strip(), llm_model.strip(), _api_key)
-        _lph.empty()
-        os.makedirs(STORE_DIR, exist_ok=True)
-        import json as _json
-        open(_llm_status_path(), "w").write(_json.dumps({"ok": ok, "error": err or ""}))
+    if st.button("Test LLM", key="btn_test_llm",
+                 disabled=_loading_llm or not llm_url.strip()):
+        st.session_state["_op_loading_llm"] = True
         st.rerun()
 with col_t2:
     if _llm_validated():
@@ -662,6 +675,15 @@ with col_t2:
             pass
     elif llm_url.strip():
         st.markdown(f"<div class='status-dim'>· Not tested yet</div>", unsafe_allow_html=True)
+
+if _loading_llm:
+    with st.spinner("Pinging LLM…"):
+        ok, err = _test_llm(llm_url.strip(), llm_model.strip(), _api_key)
+        os.makedirs(STORE_DIR, exist_ok=True)
+        import json as _json
+        open(_llm_status_path(), "w").write(_json.dumps({"ok": ok, "error": err or ""}))
+    st.session_state["_op_loading_llm"] = False
+    st.rerun()
 
 st.markdown("</div>", unsafe_allow_html=True)
 

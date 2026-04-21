@@ -197,18 +197,18 @@ The agent uses **delegated auth** — it calls the Eval API as you, not as a ser
 2. Name: `copilot-eval-agent` · Account type: **Single tenant** → **Register**
 3. Note the **Application (client) ID** and **Directory (tenant) ID**
 4. **API permissions** → **Add a permission** → **APIs my organization uses** → search `Power Platform API`
-5. **Delegated permissions** → tick `CopilotStudio.MakerOperations.Read` + `ReadWrite`
-6. Repeat for two more resources (required for single sign-on across all features):
+5. **Delegated permissions** → tick:
 
-| Resource | Permission | Purpose |
-|---|---|---|
-| `Power Apps Service` (`475226c6-020e-4fb2-8a90-7a972cbfc1d4`) | `user_impersonation` | Environment auto-discovery |
-| `Dynamics CRM` (`00000007-0000-0000-c000-000000000000`) | `user_impersonation` | Bot discovery (Dataverse) |
+| Permission | Purpose |
+|---|---|
+| `CopilotStudio.MakerOperations.Read` | Trigger and retrieve evaluation results |
+| `EnvironmentManagement.Environments.Read` | Auto-discover Power Platform environments |
 
-7. **Grant admin consent for [tenant]** → confirm all three
+6. **Grant admin consent for [tenant]** → confirm
 
-> Without `Power Apps Service`, Load Environments will fail (AADSTS650057) — manual entry still works.
-> Without `Dynamics CRM`, Load Bots requires a second sign-in. With it, one login covers everything.
+> Both permissions are on the same `Power Platform API` resource — a single sign-in covers everything.
+> Without `EnvironmentManagement.Environments.Read`, Load Environments will fail — manual environment entry still works.
+> Environment IDs can also be found manually in make.powerapps.com → Settings → Session details.
 
 ### Step 3 — Create test sets
 
@@ -248,8 +248,8 @@ Open `http://localhost:8501` → **Setup** page in the sidebar. Each section sho
 |---|---|
 | App Registration | Client ID + Tenant ID |
 | Authentication | MSAL device flow — one-time browser sign-in, token cached |
-| Environments | Discovers all Power Platform environments via BAPI |
-| Bots | Lists active bots per environment — choose which to monitor |
+| Environments | Auto-discovers environments via Power Platform environmentmanagement API — or add manually |
+| Agents | Lists Copilot Studio agents per environment via Power Platform Inventory API — no Dataverse or second sign-in needed; manual entry always available |
 | LLM Endpoint | Base URL + model — **Test** button validates live before saving |
 | Notifications | SMTP config (optional) |
 
@@ -354,10 +354,6 @@ Click any bot tile to open the **detail view**:
 - **Per-metric breakdown** — delta bar, status grid, case-by-case results
 - **Trend chart** — metric trajectory across all runs
 - **▶ Force Eval** — queue an immediate eval for this bot only
-
-### ⚙️ Setup — Browser configuration
-
-Full configuration without touching the terminal. Writes `config.json`. The sidebar shows ● READY / ○ SETUP NOT COMPLETE with a bullet list of what's missing. The Start Agent button is gated on ● READY.
 
 ### ⚙️ Setup — Browser configuration
 
@@ -502,7 +498,7 @@ LLMDriftTracker/
 
 ## 🔐 Auth
 
-All API calls (Eval API, BAPI, Dataverse) share one MSAL `PublicClientApplication` and one `SerializableTokenCache` file. Device flow runs once; all subsequent calls acquire silently via the cached refresh token.
+All API calls (Eval API, Power Platform environmentmanagement, Power Platform Inventory) share one MSAL `PublicClientApplication` and one `SerializableTokenCache` file. Device flow runs once; all subsequent calls acquire silently via the cached refresh token.
 
 | Scenario | Behaviour |
 |---|---|
@@ -531,7 +527,7 @@ All API calls (Eval API, BAPI, Dataverse) share one MSAL `PublicClientApplicatio
 | Nothing in dashboard | Use **▶ Force Eval** on the bot detail page, or run `.\drift.bat eval` |
 | LLM 401 error | Check `LLM_API_KEY` in `.env` — key must match the endpoint |
 | `MSAL auth failed` | Re-authenticate via Setup → Authentication → Sign In |
-| BAPI 401 on Load Environments | App registration needs admin consent for `service.powerapps.com` delegated scope |
+| 403 on Load Environments | App registration needs `EnvironmentManagement.Environments.Read` with admin consent — sign out and back in after granting |
 | SMTP failed | Office 365: `smtp.office365.com:587` — password in `.env` as `SMTP_PASSWORD` |
 | Container exits immediately | `docker compose logs varion-agent` — likely missing volume or env var |
 | Timeline empty | Run a force eval — it will write the first events to `data/events.jsonl` |
