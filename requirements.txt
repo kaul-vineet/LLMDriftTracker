@@ -1,6 +1,7 @@
 requests
 msal
 openai
+psutil
 azure-identity
 streamlit
 plotly

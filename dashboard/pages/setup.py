@@ -217,12 +217,13 @@ for k, v in _defs.items():
 # ── Section completion status (computed once before any rendering) ─────────────
 def _sec_status():
     s1 = bool(st.session_state.s_client_id and st.session_state.s_tenant_id)
+    # Auth is valid only if cache has accounts AND user hasn't clicked Re-authenticate
     s2 = bool(_cache_accounts(
         st.session_state.s_client_id,
         st.session_state.s_tenant_id,
         st.session_state.s_cache_file,
-    ))
-    s3 = bool(st.session_state.s_sel_envs)
+    )) and not st.session_state.get("s_force_reauth")
+    s3 = s2 and bool(st.session_state.s_sel_envs)  # environments only meaningful when auth is valid
     s4 = True  # empty bot list = monitor all, always valid
     s5 = bool(st.session_state.s_llm_url) and _llm_validated()  # URL alone isn't enough; test must pass
     return s1, s2, s3, s4, s5

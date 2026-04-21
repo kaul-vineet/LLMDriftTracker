@@ -1,11 +1,15 @@
-"""dashboard/spinner.py — Full-screen blocking overlay spinner for all pages."""
+"""dashboard/spinner.py — Full-screen blocking overlay spinner.
+
+Keyframes (sp-warp, sp-pulse, sp-orb, sp-corb, sp-pglow) live in app.py's
+global CSS block. Injecting @keyframes inside st.markdown() breaks Streamlit's
+HTML parser, causing the overlay to render as raw text instead of HTML.
+"""
 import random
 
 
-def _overlay(label: str, animation_html: str, keyframes_css: str) -> str:
-    # margin-left:500px shifts the content right to clear Streamlit's sidebar
+def _overlay(label: str, animation_html: str) -> str:
+    # margin-left:500px shifts content right to clear Streamlit's sidebar
     return f"""
-    <style>{keyframes_css}</style>
     <div style="
       position:fixed; top:0; left:0; width:100vw; height:100vh;
       background:rgba(0,4,12,0.90);
@@ -32,7 +36,7 @@ def _hyperspace_html(label: str) -> str:
         f"transform-origin:0 50%;transform:rotate({i * 30}deg)'></div>"
         for i in range(12)
     )
-    # Magenta lines at +15° offset interleaved with cyan lines — creates alternating star pattern
+    # Magenta lines at +15° offset interleaved with cyan lines — alternating star pattern
     mag_lines = "".join(
         f"<div style='position:absolute;top:50%;left:50%;height:1px;width:24px;"
         f"background:linear-gradient(to right,rgba(255,0,170,0.45),transparent);"
@@ -53,14 +57,7 @@ def _hyperspace_html(label: str) -> str:
                   animation:sp-pulse 1.3s ease-in-out infinite">🚀</div>
     </div>
     """
-    css = """
-      @keyframes sp-warp  { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
-      @keyframes sp-pulse {
-        0%,100%{transform:translate(-50%,-50%) scale(1);   opacity:0.85;}
-        50%     {transform:translate(-50%,-50%) scale(1.2); opacity:1;}
-      }
-    """
-    return _overlay(label, anim, css)
+    return _overlay(label, anim)
 
 
 def _orbit_html(label: str) -> str:
@@ -91,15 +88,7 @@ def _orbit_html(label: str) -> str:
       </div>
     </div>
     """
-    css = """
-      @keyframes sp-orb   { from{transform:rotate(0deg)}   to{transform:rotate(360deg)}  }
-      @keyframes sp-corb  { from{transform:rotate(0deg)}   to{transform:rotate(-360deg)} }
-      @keyframes sp-pglow {
-        0%,100%{box-shadow:0 0 8px  rgba(0,240,255,0.5);}
-        50%    {box-shadow:0 0 22px rgba(0,240,255,0.95);}
-      }
-    """
-    return _overlay(label, anim, css)
+    return _overlay(label, anim)
 
 
 def spinner(placeholder, label: str = "PROCESSING"):

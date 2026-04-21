@@ -62,34 +62,44 @@ This is deliberate. Automated rollbacks of AI systems carry their own risks. VAR
 
 ASHOKA runs two independent threads inside one process. Detection never waits for evaluation to finish.
 
-```mermaid
-flowchart TD
-    subgraph W ["🔍 Watcher thread  (every 2 min)"]
-        A([⏱ Poll Dataverse\nevery 2 min]) --> B{Model version\nchanged?}
-        B -- No --> C([⏭ Log STABLE · sleep])
-        B -- Yes --> D[⚡ Log MODEL_CHANGE\nWrite trigger file]
-    end
-
-    subgraph E ["⚙️ Evaluator thread  (checks every 30 s)"]
-        D --> F[Pick up trigger file]
-        F --> G[Trigger Eval API\nfor all pending bots]
-        G --> H[⏳ Poll until\ncomplete]
-        H --> I[📊 Compare metrics\nvs previous run]
-        I --> J[🧠 LLM response\nvariation analysis]
-        J --> K[📄 HTML report\ngenerated]
-        K --> L[📧 Email to admin]
-        K --> M[💾 Saved to data/\nwith full raw results]
-    end
-
-    style D fill:#238636,color:#fff,stroke:none
-    style J fill:#8957e5,color:#fff,stroke:none
-    style L fill:#da3633,color:#fff,stroke:none
-    style C fill:#30363d,color:#8b949e,stroke:none
 ```
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  THREAD 1 · WATCHER  (every 2 min)                                  │
+  │                                                                     │
+  │   Poll Dataverse ──► model version changed?                         │
+  │                              │                                      │
+  │               ┌──── No ──────┴───── Yes ────┐                      │
+  │               ▼                             ▼                       │
+  │         log STABLE                 log MODEL_CHANGE                 │
+  │           · sleep                  write trigger file  ──────────┐  │
+  └──────────────────────────────────────────────────────────────────┼──┘
+                                                                     │
+                                              trigger file on disk   │
+                                                                     │
+  ┌──────────────────────────────────────────────────────────────────┼──┐
+  │  THREAD 2 · EVALUATOR  (checks every 30 s)                       │  │
+  │                                                                  ▼  │
+  │   any trigger files? ──► pick up all pending bots                   │
+  │          │                                                          │
+  │          ▼                                                          │
+  │   trigger Eval API  (all bots fired at once)                        │
+  │          │                                                          │
+  │          ▼                                                          │
+  │   poll until complete  (round-robin, single thread)                 │
+  │          │                                                          │
+  │          ▼                                                          │
+  │   compare metrics vs previous run                                   │
+  │          │                                                          │
+  │          ▼                                                          │
+  │   LLM response variation analysis                                   │
+  │          │                                                          │
+  │          ├──► HTML report saved to  data/                           │
+  │          └──► email to admin                                        │
+  └─────────────────────────────────────────────────────────────────────┘
 
-> The watcher detects a model change within 2 minutes regardless of whether the evaluator
-> is busy running evals for other bots. A model change for bot 4 is never blocked behind
-> a 20-minute eval cycle running for bots 1, 2, 3.
+  Bot 4 model change detected in < 2 min even while bots 1, 2, 3
+  are mid-eval — the watcher never waits for the evaluator.
+```
 
 ---
 
@@ -123,12 +133,14 @@ flowchart TD
   │                                                             │
   │   auth.py        unified MSAL — one cache, three APIs      │──► Microsoft Identity
   │   events.py      append-only JSONL event log               │
+  │   logger.py      rotating JSON file logger (data/agent.log)│
   └──────────────────────────┬──────────────────────────────────┘
                              │
                     data/{botId}/runs/
                     {timestamp}_{modelVersion}/
                          run.json  ← full raw Eval API results
                     events.jsonl   ← every agent action
+                    agent.log      ← rotating operational log (5 MB × 3)
                     report_*.html  ← archived reports
                              │
   ┌──────────────────────────▼──────────────────────────────────┐
@@ -137,6 +149,7 @@ flowchart TD
   │   ASHOKA    fleet view · bot detail · run comparison       │
   │   Setup     browser-based config — no terminal needed      │
   │   Data      browse · delete runs, events, reports          │
+  │   Logs      live log viewer · level filter · auto-refresh  │
   └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -155,6 +168,8 @@ flowchart TD
 | 📋 | **Event log** | Append-only `events.jsonl` — every agent action timestamped and queryable |
 | ⚡ | **Force eval** | Trigger an eval now — globally or per-bot — without restarting the agent |
 | 🧵 | **Non-blocking detection** | Watcher and evaluator run as separate threads — a model change is detected within 2 min even while a long eval cycle is running for other bots |
+| 📋 | **Operational log** | Rotating JSON log (`data/agent.log`, 5 MB × 3 files) — errors, model changes, eval timing, memory snapshots |
+| 🩺 | **Memory monitoring** | Agent tracks its own RSS every ~20 min via psutil and warns in the log if growth exceeds 50% of baseline |
 | ⚙️ | **Browser setup** | Full configuration in the dashboard — no terminal, no YAML editing |
 | 📧 | **HTML reports** | Self-contained, email-ready, archived locally with full raw data |
 | 🗄️ | **Data management** | Browse, inspect, and delete runs, events, and reports from the dashboard |
@@ -334,6 +349,10 @@ Click any bot tile to open the **detail view**:
 
 Full configuration without touching the terminal. Writes `config.json`. The sidebar shows ● READY / ○ SETUP NOT COMPLETE with a bullet list of what's missing. The Start Agent button is gated on ● READY.
 
+### ⚙️ Setup — Browser configuration
+
+Full configuration without touching the terminal. Writes `config.json`. The sidebar shows ● READY / ○ SETUP NOT COMPLETE with a bullet list of what's missing. The Start Agent button is gated on ● READY.
+
 ### 🗄️ Data — Storage management
 
 Browse and clean up stored data. Two-click safety on all deletes.
@@ -342,6 +361,25 @@ Browse and clean up stored data. Two-click safety on all deletes.
 - Clear the event log
 - Delete individual or all HTML reports
 - Storage size summary at a glance
+
+### 📋 Logs — Live log viewer
+
+Real-time view into `data/agent.log` — the agent's operational log.
+
+- **Level filter** — ALL / ERROR / WARNING / INFO / DEBUG
+- **Free-text search** — filter by message or thread name (`watcher` / `evaluator`)
+- **Auto-refresh** — polls every 5 s when toggled on
+- **Newest first** — last 500 lines, colour-coded by severity
+
+```
+10:14:02  INFO   watcher    model change detected — Safe Travels: gpt-4o → gpt-4o-mini
+10:14:03  INFO   evaluator  eval cycle starting (force=False)
+10:34:11  INFO   evaluator  eval cycle complete
+10:34:11  INFO   watcher    memory rss=52.3MB delta=+4.1MB
+10:52:00  ERROR  watcher    watcher sweep failed: ConnectionError(...)
+```
+
+From the terminal: `tail -f data/agent.log` or `grep '"level":"ERROR"' data/agent.log`
 
 ---
 
@@ -376,7 +414,9 @@ Every agent action is appended to `data/events.jsonl`:
 
 ```
 data/
-├── events.jsonl                       ← append-only agent event log
+├── events.jsonl                       ← append-only business event log
+├── agent.log                          ← rotating operational log (JSON lines, 5 MB × 3 files)
+├── agent.log.1 / .2 / .3             ← rotated backups
 ├── agent.pid                          ← agent process ID (deleted on stop)
 ├── llm_status.json                    ← result of last LLM validation (Setup → Test)
 ├── force_eval.trigger                 ← drop to trigger all-bot eval immediately
@@ -406,6 +446,7 @@ LLMDriftTracker/
 │   ├── eval_client.py        Copilot Studio Eval API — trigger + poll
 │   ├── reasoning.py          metric extraction · classify · response variation analysis
 │   ├── events.py             append-only JSONL event logger
+│   ├── logger.py             rotating JSON file logger → data/agent.log
 │   ├── store.py              run storage — {timestamp}_{modelVersion}/run.json
 │   ├── report.py             self-contained HTML report generator
 │   ├── notifier.py           SMTP email sender
@@ -419,7 +460,8 @@ LLMDriftTracker/
 │   └── pages/
 │       ├── ashoka.py         fleet · bot detail · run comparison · timeline
 │       ├── setup.py          browser-based configuration form
-│       └── data.py           storage browser and cleanup
+│       ├── data.py           storage browser and cleanup
+│       └── logs.py           live log viewer — level filter · search · auto-refresh
 │
 ├── scripts/                  dev utilities (not part of the app)
 │   ├── gen_dummy_data.py     generate sample run data for testing
@@ -463,7 +505,14 @@ All API calls (Eval API, BAPI, Dataverse) share one MSAL `PublicClientApplicatio
 
 ## 🩺 Troubleshooting
 
-The watcher interval defaults to 120 seconds. To tune it, add `"watch_interval_seconds": 60` to `config.json`.
+**Tuning via `config.json`:**
+
+| Key | Default | What it controls |
+|---|---|---|
+| `watch_interval_seconds` | `120` | How often the watcher polls Dataverse for model changes |
+| `eval_poll_timeout_seconds` | `1200` | Max time to wait for Power Platform to finish running evals |
+| `eval_poll_interval_seconds` | `20` | How often to ping the Eval API during polling |
+| `log_level` | `"INFO"` | Log verbosity — `"DEBUG"` for full detail, `"ERROR"` for quiet |
 
 | Symptom | Fix |
 |---|---|
@@ -476,6 +525,9 @@ The watcher interval defaults to 120 seconds. To tune it, add `"watch_interval_s
 | SMTP failed | Office 365: `smtp.office365.com:587` — password in `.env` as `SMTP_PASSWORD` |
 | Container exits immediately | `docker compose logs varion-agent` — likely missing volume or env var |
 | Timeline empty | Run a force eval — it will write the first events to `data/events.jsonl` |
+| Logs tab empty | Start the agent — `data/agent.log` is created on first run |
+| Memory warning in log | Agent RSS grew >50% from baseline — check for large Dataverse or eval API responses being held in memory across cycles |
+| Log file missing after restart | File rotates at 5 MB; check `agent.log.1` for previous session |
 
 ---
 

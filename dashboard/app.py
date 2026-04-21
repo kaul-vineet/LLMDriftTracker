@@ -159,6 +159,17 @@ st.markdown(f"""
     90%  {{ opacity: 0.4; }}
     100% {{ transform: translateY(100vh); opacity: 0; }}
   }}
+  @keyframes sp-warp  {{ from{{transform:rotate(0deg)}} to{{transform:rotate(360deg)}} }}
+  @keyframes sp-pulse {{
+    0%,100%{{transform:translate(-50%,-50%) scale(1);   opacity:0.85;}}
+    50%    {{transform:translate(-50%,-50%) scale(1.2); opacity:1;}}
+  }}
+  @keyframes sp-orb   {{ from{{transform:rotate(0deg)}}   to{{transform:rotate(360deg)}}  }}
+  @keyframes sp-corb  {{ from{{transform:rotate(0deg)}}   to{{transform:rotate(-360deg)}} }}
+  @keyframes sp-pglow {{
+    0%,100%{{box-shadow:0 0 8px  rgba(0,240,255,0.5);}}
+    50%    {{box-shadow:0 0 22px rgba(0,240,255,0.95);}}
+  }}
   .scan-line {{
     position: fixed; left: 0; width: 100%; height: 1px;
     background: linear-gradient(90deg, transparent, rgba(0,240,255,0.15), transparent);
@@ -366,5 +377,6 @@ pg = st.navigation([
     st.Page("pages/ashoka.py", title="ASHOKA", icon="⚡", default=True),
     st.Page("pages/setup.py",  title="Setup",  icon="⚙"),
     st.Page("pages/data.py",   title="Data",   icon="🗄"),
+    st.Page("pages/logs.py",   title="Logs",   icon="📋"),
 ])
 pg.run()

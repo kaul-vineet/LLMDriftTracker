@@ -16,9 +16,12 @@ from dotenv import load_dotenv
 load_dotenv()
 from datetime import datetime, timezone
 
+import psutil
+
 from . import dataverse
 from . import eval_client
 from . import events as ev
+from . import logger as logger_mod
 from . import lore
 from . import notifier
 from . import reasoning
@@ -295,6 +298,11 @@ def _watch_loop(cfg: dict):
     trigger file the moment a model version change is detected. Never runs evals."""
     store_dir  = cfg.get("store_dir", "data")
     interval_s = cfg.get("watch_interval_seconds", 120)
+    log        = logger_mod.get()
+    proc       = psutil.Process()
+    mem_base   = proc.memory_info().rss / 1024 / 1024
+    sweep      = 0
+
     while True:
         try:
             bots = dataverse.list_all_bots(cfg)
@@ -313,21 +321,37 @@ def _watch_loop(cfg: dict):
                     lore.model_changed(bot_name, old_ver, curr_ver)
                     ev.model_change(store_dir, bot_name, bot_id, old_ver, curr_ver)
                     open(trigger_path, "w").write(datetime.now(timezone.utc).isoformat())
+                    log.info(f"model change detected — {bot_name}: {old_ver} → {curr_ver}")
+
+            # Memory snapshot every 10 sweeps (~20 min at default interval)
+            sweep += 1
+            if sweep % 10 == 0:
+                rss   = proc.memory_info().rss / 1024 / 1024
+                delta = rss - mem_base
+                log.info(f"memory rss={rss:.1f}MB delta={delta:+.1f}MB")
+                if delta > mem_base * 0.5:
+                    log.warning(f"memory growth >50% from baseline={mem_base:.1f}MB — possible leak")
+
         except Exception as e:
             lore.eval_error("watcher", e)
+            log.error(f"watcher sweep failed: {e}")
         time.sleep(interval_s)
 
 
 def _eval_loop(cfg: dict):
     """Evaluator thread — wakes every 30 s and runs a cycle if any trigger is waiting."""
     store_dir = cfg.get("store_dir", "data")
+    log       = logger_mod.get()
     while True:
         try:
             force = _check_file_trigger(store_dir)
             if force or _has_pending_triggers(store_dir):
+                log.info(f"eval cycle starting (force={force})")
                 run_cycle(cfg, force=force)
+                log.info("eval cycle complete")
         except Exception as e:
             lore.eval_error("evaluator", e)
+            log.error(f"eval cycle failed: {e}")
         time.sleep(30)
 
 
@@ -349,6 +373,9 @@ def main():
 
     _write_pid(store_dir)
     _clear_stale_triggers(store_dir)
+
+    log = logger_mod.setup(store_dir, level=cfg.get("log_level", "INFO"))
+    log.info(f"VARION agent starting — watch_interval={cfg.get('watch_interval_seconds', 120)}s")
 
     try:
         lore.starting(cfg.get("watch_interval_seconds", 120) // 60)
