@@ -254,14 +254,11 @@ with c2:
     tenant_id = st.text_input("Tenant ID *", value=st.session_state.s_tenant_id,
                                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
                                key="in_tenant_id")
-cache_file = st.text_input("Token cache path", value=st.session_state.s_cache_file,
-                            key="in_cache_file")
 st.markdown("</div>", unsafe_allow_html=True)
 
 # Persist immediately
 st.session_state.s_client_id  = client_id.strip()
 st.session_state.s_tenant_id  = tenant_id.strip()
-st.session_state.s_cache_file = cache_file.strip() or st.session_state.s_cache_file
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
