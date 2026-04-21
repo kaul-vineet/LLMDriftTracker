@@ -374,6 +374,12 @@ else:
                 BAPI_SCOPES, st.session_state.s_client_id,
                 st.session_state.s_tenant_id, st.session_state.s_cache_file,
             )
+            # BAP API also accepts the Power Platform scope used during device flow
+            if not tok:
+                tok, _ = _token_silent(
+                    EVAL_SCOPES, st.session_state.s_client_id,
+                    st.session_state.s_tenant_id, st.session_state.s_cache_file,
+                )
             if not tok:
                 _ph.empty()
                 st.error("Token acquisition failed — sign in first (Section 2).")
