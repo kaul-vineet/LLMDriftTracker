@@ -394,9 +394,9 @@ with st.sidebar:
 
 # ── Page routing ──────────────────────────────────────────────────────────────
 pg = st.navigation([
-    st.Page("pages/ashoka.py", title="ASHOKA", icon="⚡", default=True),
-    st.Page("pages/setup.py",  title="Setup",  icon="⚙"),
-    st.Page("pages/data.py",   title="Data",   icon="🗄"),
-    st.Page("pages/logs.py",   title="Logs",   icon="📋"),
+    st.Page("_pages/ashoka.py", title="ASHOKA", icon="⚡", default=True),
+    st.Page("_pages/setup.py",  title="Setup",  icon="⚙"),
+    st.Page("_pages/data.py",   title="Data",   icon="🗄"),
+    st.Page("_pages/logs.py",   title="Logs",   icon="📋"),
 ])
 pg.run()
