@@ -223,8 +223,8 @@ Add 10–20 utterances covering your bot's main topics. ASHOKA discovers and run
 ### Step 4 — Install
 
 ```bash
-git clone https://github.com/kaul-vineet/LLMDriftTracker.git
-cd LLMDriftTracker
+git clone https://github.com/kaul-vineet/ModelSwapTracker.git
+cd ModelSwapTracker
 pip install -r requirements.txt
 ```
 
@@ -443,7 +443,7 @@ All comparisons, classifications, and LLM analysis are computed fresh on demand.
 ## 📁 Project structure
 
 ```
-LLMDriftTracker/
+ModelSwapTracker/
 │
 ├── agent/                    autonomous monitoring agent
 │   ├── main.py               watcher thread · evaluator thread · PID management
@@ -549,6 +549,6 @@ Python &nbsp;·&nbsp; MSAL &nbsp;·&nbsp; Copilot Studio Eval API &nbsp;·&nbsp;
 
 *Configure it. Forget it. Know when things change.*
 
-**[github.com/kaul-vineet/LLMDriftTracker](https://github.com/kaul-vineet/LLMDriftTracker)**
+**[github.com/kaul-vineet/ModelSwapTracker](https://github.com/kaul-vineet/ModelSwapTracker)**
 
 </div>
