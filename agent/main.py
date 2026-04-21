@@ -10,11 +10,18 @@ The poll loop checks for this file each cycle, deletes it, and runs immediately.
 """
 import json
 import os
+import sys
 import threading
 import time
 from dotenv import load_dotenv
 load_dotenv()
 from datetime import datetime, timezone
+
+# Force UTF-8 stdout/stderr so emoji in lore.py don't crash on Windows CP1252 terminals
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 import psutil
 
