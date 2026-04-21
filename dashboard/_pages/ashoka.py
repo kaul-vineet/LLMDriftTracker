@@ -603,17 +603,11 @@ def page_bot_detail(bot):
         running      = os.path.exists(lock_path)
         agent_up     = _agent_running()
         if queued:
-            st.markdown(
-                f"<div style='color:{C_GOLD};font-size:0.7rem;font-family:{FONT};"
-                f"text-align:right;padding:6px 0'>⏳ Eval queued</div>",
-                unsafe_allow_html=True,
-            )
+            st.button("⏳ Eval queued", key="btn_queued",
+                      use_container_width=True, type="secondary", disabled=True)
         elif running:
-            st.markdown(
-                f"<div style='color:{C_GOLD};font-size:0.7rem;font-family:{FONT};"
-                f"text-align:right;padding:6px 0'>⚡ Eval running</div>",
-                unsafe_allow_html=True,
-            )
+            st.button("⚡ Eval running", key="btn_running",
+                      use_container_width=True, type="secondary", disabled=True)
         else:
             if st.button("▶ Force Eval", key="force_eval_btn",
                          use_container_width=True, type="secondary",
