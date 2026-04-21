@@ -200,6 +200,15 @@ The agent uses **delegated auth** — it calls the Eval API as you, not as a ser
 5. **Delegated permissions** → tick `CopilotStudio.MakerOperations.Read` + `ReadWrite`
 6. **Grant admin consent for [tenant]** → confirm
 
+> **Environment auto-discovery (Load Environments button)**
+> Requires an additional permission on the same app registration:
+> - **Add a permission** → **APIs my organization uses** → search `Power Apps Service`
+>   (resource ID `475226c6-020e-4fb2-8a90-7a972cbfc1d4`)
+> - **Delegated** → `user_impersonation` → **Grant admin consent**
+>
+> Without this, Load Environments returns a 401 / AADSTS650057 error. You can still
+> configure environments manually in the Setup page — the agent works fine either way.
+
 ### Step 3 — Create test sets
 
 > Without test sets, ASHOKA has nothing to evaluate and will skip the bot.
