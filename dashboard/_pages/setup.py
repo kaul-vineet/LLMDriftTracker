@@ -491,27 +491,31 @@ else:
             unsafe_allow_html=True,
         )
         if env:
+            bots_raw    = st.session_state.s_bots.get(env_name, [])
+            saved_bots  = bot_sel.get(env_name, [])  # schema names from config
+
             col_b1, col_b2 = st.columns([1, 4])
             with col_b1:
                 if st.button("Load Bots", key=f"btn_bots_{env_name}"):
                     _bph = st.empty()
                     _spinner(_bph, "SCANNING DATAVERSE")
-                    bots, err = _fetch_bots(
-                        env["orgUrl"], st.session_state.s_client_id,
-                        st.session_state.s_tenant_id, st.session_state.s_cache_file,
-                    )
+                    try:
+                        bots, err = _fetch_bots(
+                            env["orgUrl"], st.session_state.s_client_id,
+                            st.session_state.s_tenant_id, st.session_state.s_cache_file,
+                        )
+                    except Exception as e:
+                        bots, err = [], str(e)
                     _bph.empty()
                     if err:
-                        st.error(f"{err}")
+                        st.warning(f"Could not load bots: {err[:120]}")
                     else:
                         st.session_state.s_bots[env_name] = bots
                         st.rerun()
             with col_b2:
-                nb = len(st.session_state.s_bots.get(env_name, []))
-                if nb:
-                    st.caption(f"{nb} bot(s) found")
+                if bots_raw:
+                    st.caption(f"{len(bots_raw)} bot(s) found")
 
-            bots_raw = st.session_state.s_bots.get(env_name, [])
             if bots_raw:
                 names   = [b["name"] for b in bots_raw]
                 schemas = {b["name"]: b["schemaname"] for b in bots_raw}
@@ -524,8 +528,22 @@ else:
                     key=f"ms_bots_{env_name}",
                 )
                 bot_sel[env_name] = [schemas[n] for n in sel_names]
+            elif saved_bots:
+                # Show saved schema names from config as chips until Load Bots is clicked
+                chips = "".join(
+                    f"<span style='display:inline-block;background:rgba(255,0,170,0.07);"
+                    f"border:1px solid rgba(255,0,170,0.25);border-radius:4px;"
+                    f"padding:3px 10px;margin:3px 4px 3px 0;color:{C_MAGENTA};"
+                    f"font-family:monospace;font-size:0.72rem'>{s}</span>"
+                    for s in saved_bots
+                )
+                st.markdown(
+                    f"<div style='margin:4px 0'>{chips}</div>"
+                    f"<div style='color:{C_DIM};font-size:0.7rem;font-family:{FONT};"
+                    f"letter-spacing:1px'>Saved config · click Load Bots to refresh</div>",
+                    unsafe_allow_html=True,
+                )
         else:
-            # env came from existing config, not freshly loaded
             cur = bot_sel.get(env_name, [])
             st.caption(f"Existing config: {len(cur)} bot(s) selected. Load bots to change.")
 
