@@ -531,13 +531,13 @@ def page_overview(bots, raw_events):
     st.markdown("<div class='sec-label'>MISSION TIMELINE</div>", unsafe_allow_html=True)
 
     origin = [
-        {"ts":"2026-02-16T20:01:00+00:00","dot":"origin","icon":"🎂",
+        {"ts":"2026-04-01T20:01:00+00:00","dot":"origin","icon":"🎂",
          "head":"Born","badge":"ORIGIN","badge_c":"birth",
          "body":"First boot. Received a config.json and a mandate."},
-        {"ts":"2026-02-17T00:01:00+00:00","dot":"info","icon":"🌙",
+        {"ts":"2026-04-02T00:01:00+00:00","dot":"info","icon":"🌙",
          "head":"Creator Goes to Sleep","badge":"AUTONOMOUS","badge_c":"new",
          "body":"Began autonomous polling. 20 evolution cycles by morning."},
-        {"ts":"2026-02-17T08:33:00+00:00","dot":"info","icon":"☀️",
+        {"ts":"2026-04-02T08:33:00+00:00","dot":"info","icon":"☀️",
          "head":"Creator Returns","badge":"MILESTONE","badge_c":"new",
          "body":'"I built this in a cave with a box of scraps." Identity confirmed.'},
     ]
