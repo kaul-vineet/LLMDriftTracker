@@ -198,16 +198,17 @@ The agent uses **delegated auth** — it calls the Eval API as you, not as a ser
 3. Note the **Application (client) ID** and **Directory (tenant) ID**
 4. **API permissions** → **Add a permission** → **APIs my organization uses** → search `Power Platform API`
 5. **Delegated permissions** → tick `CopilotStudio.MakerOperations.Read` + `ReadWrite`
-6. **Grant admin consent for [tenant]** → confirm
+6. Repeat for two more resources (required for single sign-on across all features):
 
-> **Environment auto-discovery (Load Environments button)**
-> Requires an additional permission on the same app registration:
-> - **Add a permission** → **APIs my organization uses** → search `Power Apps Service`
->   (resource ID `475226c6-020e-4fb2-8a90-7a972cbfc1d4`)
-> - **Delegated** → `user_impersonation` → **Grant admin consent**
->
-> Without this, Load Environments returns a 401 / AADSTS650057 error. You can still
-> configure environments manually in the Setup page — the agent works fine either way.
+| Resource | Permission | Purpose |
+|---|---|---|
+| `Power Apps Service` (`475226c6-020e-4fb2-8a90-7a972cbfc1d4`) | `user_impersonation` | Environment auto-discovery |
+| `Dynamics CRM` (`00000007-0000-0000-c000-000000000000`) | `user_impersonation` | Bot discovery (Dataverse) |
+
+7. **Grant admin consent for [tenant]** → confirm all three
+
+> Without `Power Apps Service`, Load Environments will fail (AADSTS650057) — manual entry still works.
+> Without `Dynamics CRM`, Load Bots requires a second sign-in. With it, one login covers everything.
 
 ### Step 3 — Create test sets
 
