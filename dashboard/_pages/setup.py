@@ -169,11 +169,13 @@ def _fetch_envs(token):
         return [], str(e)
 
 
-def _test_llm(base_url, model, api_key):
+def _test_llm(base_url, model, api_key, api_version=""):
     import requests
     try:
+        params = {"api-version": api_version} if api_version.strip() else {}
         r = requests.post(
             base_url.rstrip("/") + "/chat/completions",
+            params=params,
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json={"model": model, "messages": [{"role": "user", "content": "ping"}], "max_tokens": 5},
             timeout=10,
@@ -224,8 +226,9 @@ _defs = {
     "s_bot_sel":       {e["name"]: e.get("monitoredBots", []) for e in _envs_cfg},
     "s_env_verified":  {},
     "s_bot_verified":  {},
-    "s_llm_url":       _llm.get("base_url", ""),
-    "s_llm_model":     _llm.get("model", "gpt-4o"),
+    "s_llm_url":        _llm.get("base_url", ""),
+    "s_llm_model":      _llm.get("model", "gpt-4o"),
+    "s_llm_api_ver":    _llm.get("api_version", ""),
     "s_poll":          _cfg.get("poll_interval_minutes", 20),
     "s_smtp_host":     _smtp.get("host", ""),
     "s_smtp_port":     _smtp.get("port", 587),
@@ -704,17 +707,38 @@ st.caption("Any OpenAI-compatible endpoint. API key goes in .env as LLM_API_KEY.
 
 c1, c2, c3 = st.columns([3, 2, 1])
 with c1:
-    llm_url   = st.text_input("Base URL", value=st.session_state.s_llm_url, key="in_llm_url",
-                               placeholder="https://api.openai.com/v1")
+    llm_url   = st.text_input(
+        "Base URL", value=st.session_state.s_llm_url, key="in_llm_url",
+        placeholder="https://api.openai.com/v1",
+        help="OpenAI: https://api.openai.com/v1\n\n"
+             "Azure AI Foundry project endpoint: "
+             "https://{resource}.services.ai.azure.com/api/projects/{project}"
+             "/openai/deployments/{deployment-name}\n\n"
+             "/chat/completions is appended automatically.",
+    )
 with c2:
-    llm_model = st.text_input("Model", value=st.session_state.s_llm_model, key="in_llm_model")
+    llm_model = st.text_input(
+        "Model / Deployment", value=st.session_state.s_llm_model, key="in_llm_model",
+        help="OpenAI model name (e.g. gpt-4o) or Azure deployment name. "
+             "For Azure AI Foundry, this must match the deployment name in the Base URL.",
+    )
 with c3:
     poll      = st.number_input("Poll (min)", min_value=1, max_value=1440,
                                  value=int(st.session_state.s_poll), key="in_poll")
 
-st.session_state.s_llm_url   = llm_url.strip()
-st.session_state.s_llm_model = llm_model.strip()
-st.session_state.s_poll      = int(poll)
+c4, _ = st.columns([2, 3])
+with c4:
+    llm_api_ver = st.text_input(
+        "API Version (Azure only)", value=st.session_state.s_llm_api_ver, key="in_llm_api_ver",
+        placeholder="2024-12-01-preview",
+        help="Required for Azure AI Foundry / Azure OpenAI endpoints. "
+             "Leave blank for OpenAI. Common value: 2024-12-01-preview.",
+    )
+
+st.session_state.s_llm_url     = llm_url.strip()
+st.session_state.s_llm_model   = llm_model.strip()
+st.session_state.s_llm_api_ver = llm_api_ver.strip()
+st.session_state.s_poll        = int(poll)
 
 # LLM validation
 _api_key = os.environ.get("LLM_API_KEY", "")
@@ -740,7 +764,7 @@ with col_t2:
 
 if _loading_llm:
     with st.spinner("Pinging LLM…"):
-        ok, err = _test_llm(llm_url.strip(), llm_model.strip(), _api_key)
+        ok, err = _test_llm(llm_url.strip(), llm_model.strip(), _api_key, llm_api_ver.strip())
         os.makedirs(STORE_DIR, exist_ok=True)
         import json as _json
         open(_llm_status_path(), "w").write(_json.dumps({"ok": ok, "error": err or ""}))
@@ -809,9 +833,10 @@ cfg_out = {
     "eval_poll_timeout_seconds":  1200,
     "eval_poll_interval_seconds": 20,
     "llm": {
-        "base_url": st.session_state.s_llm_url,
-        "api_key":  "",
-        "model":    st.session_state.s_llm_model,
+        "base_url":    st.session_state.s_llm_url,
+        "api_key":     "",
+        "model":       st.session_state.s_llm_model,
+        "api_version": st.session_state.s_llm_api_ver,
     },
     "smtp": {
         "host":      st.session_state.s_smtp_host,

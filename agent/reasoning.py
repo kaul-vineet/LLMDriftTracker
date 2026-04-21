@@ -128,10 +128,14 @@ def verdict_summary(classifications: list[dict]) -> str:
 
 def _build_client(cfg: dict) -> OpenAI:
     llm = cfg["llm"]
-    return OpenAI(
-        base_url=os.environ.get("LLM_BASE_URL") or llm["base_url"],
-        api_key=os.environ.get("LLM_API_KEY")  or llm["api_key"],
-    )
+    api_version = os.environ.get("LLM_API_VERSION") or llm.get("api_version", "")
+    kwargs: dict = {
+        "base_url": os.environ.get("LLM_BASE_URL") or llm["base_url"],
+        "api_key":  os.environ.get("LLM_API_KEY")  or llm["api_key"],
+    }
+    if api_version:
+        kwargs["default_query"] = {"api-version": api_version}
+    return OpenAI(**kwargs)
 
 
 def _model(cfg: dict) -> str:
