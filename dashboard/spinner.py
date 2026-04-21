@@ -1,97 +1,24 @@
-"""dashboard/spinner.py — Full-screen blocking overlay spinner.
+"""dashboard/spinner.py — Inline branded loading indicator.
 
-Keyframes (sp-warp, sp-pulse, sp-orb, sp-corb, sp-pglow) live in app.py's
-global CSS block. Injecting @keyframes inside st.markdown() breaks Streamlit's
-HTML parser, causing the overlay to render as raw text instead of HTML.
+The original position:fixed full-screen overlay was stripped by Streamlit 1.56's
+HTML sanitizer, causing the label div to appear as raw text. Replaced with a simple
+single-div indicator that renders reliably via st.markdown(unsafe_allow_html=True).
+Keyframes remain in app.py global CSS (unused now but harmless).
 """
-import random
-
-
-def _overlay(label: str, animation_html: str) -> str:
-    # margin-left:500px shifts content right to clear Streamlit's sidebar
-    return f"""
-    <div style="
-      position:fixed; top:0; left:0; width:100vw; height:100vh;
-      background:rgba(0,4,12,0.90);
-      z-index:99999;
-      display:flex; flex-direction:column; align-items:center; justify-content:center;
-      cursor:wait;
-    ">
-      <div style="display:flex;flex-direction:column;align-items:center;margin-left:500px">
-        {animation_html}
-        <div style="color:#00f0ff;font-size:0.75rem;letter-spacing:5px;
-                    margin-top:22px;font-family:monospace;font-weight:700;
-                    text-shadow:0 0 12px rgba(0,240,255,0.6)">
-          {label}
-        </div>
-      </div>
-    </div>
-    """
-
-
-def _hyperspace_html(label: str) -> str:
-    lines = "".join(
-        f"<div style='position:absolute;top:50%;left:50%;height:1px;width:42px;"
-        f"background:linear-gradient(to right,rgba(0,240,255,0.7),transparent);"
-        f"transform-origin:0 50%;transform:rotate({i * 30}deg)'></div>"
-        for i in range(12)
-    )
-    # Magenta lines at +15° offset interleaved with cyan lines — alternating star pattern
-    mag_lines = "".join(
-        f"<div style='position:absolute;top:50%;left:50%;height:1px;width:24px;"
-        f"background:linear-gradient(to right,rgba(255,0,170,0.45),transparent);"
-        f"transform-origin:0 50%;transform:rotate({i * 30 + 15}deg)'></div>"
-        for i in range(12)
-    )
-    anim = f"""
-    <div style="position:relative;width:100px;height:100px">
-      {lines}{mag_lines}
-      <div style="position:absolute;top:0;left:0;width:100px;height:100px;
-                  border-radius:50%;
-                  background:conic-gradient(
-                    rgba(0,240,255,0) 0deg, rgba(0,240,255,0) 220deg,
-                    rgba(0,240,255,0.08) 270deg, rgba(0,240,255,0.55) 345deg,
-                    rgba(0,240,255,0.85) 358deg, rgba(0,240,255,0) 360deg);
-                  animation:sp-warp 1.3s linear infinite"></div>
-      <div style="position:absolute;top:50%;left:50%;font-size:24px;line-height:1;
-                  animation:sp-pulse 1.3s ease-in-out infinite">🚀</div>
-    </div>
-    """
-    return _overlay(label, anim)
-
-
-def _orbit_html(label: str) -> str:
-    anim = """
-    <div style="position:relative;width:100px;height:100px">
-      <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-                  width:88px;height:88px;border-radius:50%;
-                  border:1px solid rgba(0,240,255,0.22)"></div>
-      <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-                  width:58px;height:58px;border-radius:50%;
-                  border:1px dashed rgba(255,0,170,0.15)"></div>
-      <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-                  width:18px;height:18px;border-radius:50%;
-                  background:radial-gradient(circle at 35% 35%,#55aaff,#0040a0);
-                  animation:sp-pglow 2s ease-in-out infinite"></div>
-      <div style="position:absolute;top:50%;left:50%;width:0;height:0;
-                  animation:sp-orb 2.2s linear infinite">
-        <div style="position:absolute;top:-44px;left:-11px;
-                    font-size:20px;line-height:1;
-                    filter:drop-shadow(0 0 6px rgba(0,240,255,0.9))">🛸</div>
-      </div>
-      <div style="position:absolute;top:50%;left:50%;width:0;height:0;
-                  animation:sp-corb 1.5s linear infinite">
-        <div style="position:absolute;top:-29px;left:-3px;
-                    width:6px;height:6px;border-radius:50%;
-                    background:rgba(255,0,170,0.85);
-                    box-shadow:0 0 6px rgba(255,0,170,0.7)"></div>
-      </div>
-    </div>
-    """
-    return _overlay(label, anim)
 
 
 def spinner(placeholder, label: str = "PROCESSING"):
-    """Full-screen blocking overlay — clears when placeholder.empty() is called."""
-    html = _hyperspace_html(label) if random.choice([True, False]) else _orbit_html(label)
-    placeholder.markdown(html, unsafe_allow_html=True)
+    """Inline branded loading indicator. Clears when placeholder.empty() is called."""
+    placeholder.markdown(
+        f"<div style='"
+        f"display:inline-flex;align-items:center;gap:10px;"
+        f"color:#00f0ff;font-size:0.8rem;letter-spacing:3px;"
+        f"font-family:monospace;font-weight:700;"
+        f"padding:12px 20px;border-radius:6px;"
+        f"border:1px solid rgba(0,240,255,0.3);"
+        f"background:rgba(0,4,12,0.6);"
+        f"text-shadow:0 0 10px rgba(0,240,255,0.5)'>"
+        f"⚡ {label}"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
