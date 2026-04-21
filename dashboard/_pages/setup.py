@@ -491,31 +491,94 @@ else:
             unsafe_allow_html=True,
         )
         if env:
-            bots_raw    = st.session_state.s_bots.get(env_name, [])
-            saved_bots  = bot_sel.get(env_name, [])  # schema names from config
+            bots_raw   = st.session_state.s_bots.get(env_name, [])
+            saved_bots = bot_sel.get(env_name, [])
+            dv_scopes  = [env["orgUrl"].rstrip("/") + "/.default"]
+            flow_key   = f"s_dv_flow_{env_name}"
+            started_key = f"s_dv_started_{env_name}"
 
-            col_b1, col_b2 = st.columns([1, 4])
-            with col_b1:
-                if st.button("Load Bots", key=f"btn_bots_{env_name}"):
-                    _bph = st.empty()
-                    _spinner(_bph, "SCANNING DATAVERSE")
-                    try:
-                        bots, err = _fetch_bots(
-                            env["orgUrl"], st.session_state.s_client_id,
-                            st.session_state.s_tenant_id, st.session_state.s_cache_file,
-                        )
-                    except Exception as e:
-                        bots, err = [], str(e)
-                    _bph.empty()
-                    if err:
-                        st.info("Dataverse token not available from the dashboard — the agent authenticates separately when it runs. Your saved bots are shown below.")
-                    else:
-                        st.session_state.s_bots[env_name] = bots
+            # ── Try silent Dataverse token first ──────────────────────────────
+            dv_tok = None
+            try:
+                dv_tok, _ = _token_silent(dv_scopes, st.session_state.s_client_id,
+                                          st.session_state.s_tenant_id,
+                                          st.session_state.s_cache_file)
+            except Exception:
+                pass
+
+            if not st.session_state.get(started_key):
+                col_b1, col_b2 = st.columns([1, 4])
+                with col_b1:
+                    if st.button("Load Bots", key=f"btn_bots_{env_name}"):
+                        if dv_tok:
+                            _bph = st.empty()
+                            _spinner(_bph, "SCANNING DATAVERSE")
+                            try:
+                                bots, err = _fetch_bots(
+                                    env["orgUrl"], st.session_state.s_client_id,
+                                    st.session_state.s_tenant_id, st.session_state.s_cache_file,
+                                )
+                            except Exception as e:
+                                bots, err = [], str(e)
+                            _bph.empty()
+                            if not err:
+                                st.session_state.s_bots[env_name] = bots
+                                st.rerun()
+                        else:
+                            # Silent failed — start device flow for this Dataverse org
+                            try:
+                                cache = _load_cache(st.session_state.s_cache_file)
+                                app   = _msal_app(st.session_state.s_client_id,
+                                                  st.session_state.s_tenant_id, cache)
+                                flow  = app.initiate_device_flow(scopes=dv_scopes)
+                                st.session_state[flow_key]    = {"flow": flow, "app": app, "cache": cache}
+                                st.session_state[started_key] = True
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Could not start sign-in: {e}")
+                with col_b2:
+                    if bots_raw:
+                        st.caption(f"{len(bots_raw)} bot(s) found")
+            else:
+                # ── Device flow in progress for this Dataverse org ────────────
+                flow_data = st.session_state[flow_key]
+                code      = flow_data["flow"].get("user_code", "")
+                st.markdown(
+                    f"Open <a href='https://microsoft.com/devicelogin' target='_blank' "
+                    f"style='color:{C_CYAN}'>microsoft.com/devicelogin</a> and enter:",
+                    unsafe_allow_html=True,
+                )
+                st.markdown(f"<div class='device-code'>{code}</div>", unsafe_allow_html=True)
+                st.caption(f"Signing in to Dataverse: {env['orgUrl']}")
+
+                col_v1, col_v2 = st.columns([1, 3])
+                with col_v1:
+                    if st.button("✓ Verify & load bots", key=f"btn_dv_verify_{env_name}", type="primary"):
+                        app   = flow_data["app"]
+                        cache = flow_data["cache"]
+                        try:
+                            result = app.acquire_token_by_device_flow(
+                                flow_data["flow"], exit_condition=lambda _: True
+                            )
+                        except Exception:
+                            result = None
+                        if result and "access_token" in result:
+                            _save_cache(cache, st.session_state.s_cache_file)
+                            st.session_state[started_key] = False
+                            bots, err = _fetch_bots(env["orgUrl"], st.session_state.s_client_id,
+                                                    st.session_state.s_tenant_id,
+                                                    st.session_state.s_cache_file)
+                            if not err:
+                                st.session_state.s_bots[env_name] = bots
+                            st.rerun()
+                        else:
+                            st.warning("Not signed in yet — complete sign-in in your browser first.")
+                with col_v2:
+                    if st.button("Cancel", key=f"btn_dv_cancel_{env_name}"):
+                        st.session_state[started_key] = False
                         st.rerun()
-            with col_b2:
-                if bots_raw:
-                    st.caption(f"{len(bots_raw)} bot(s) found")
 
+            # ── Bot list / saved chips ────────────────────────────────────────
             if bots_raw:
                 names   = [b["name"] for b in bots_raw]
                 schemas = {b["name"]: b["schemaname"] for b in bots_raw}
@@ -529,7 +592,6 @@ else:
                 )
                 bot_sel[env_name] = [schemas[n] for n in sel_names]
             elif saved_bots:
-                # Show saved schema names from config as chips until Load Bots is clicked
                 chips = "".join(
                     f"<span style='display:inline-block;background:rgba(255,0,170,0.07);"
                     f"border:1px solid rgba(255,0,170,0.25);border-radius:4px;"
