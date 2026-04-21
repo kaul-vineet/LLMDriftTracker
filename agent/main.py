@@ -27,7 +27,8 @@ from . import store
 
 
 def load_cfg(path: str = "config.json") -> dict:
-    cfg = json.loads(open(path).read())
+    with open(path, encoding="utf-8") as f:
+        cfg = json.loads(f.read())
     cfg.setdefault("llm", {})
     cfg.setdefault("smtp", {})
     cfg["llm"]["api_key"]    = os.environ.get("LLM_API_KEY",    cfg["llm"].get("api_key", ""))
@@ -41,27 +42,32 @@ def load_cfg(path: str = "config.json") -> dict:
 
 
 def _check_file_trigger(store_dir: str) -> bool:
-    """Return True and delete the global force_eval.trigger if it exists."""
+    """Return True and delete the global force_eval.trigger if it exists.
+    Returns False if delete fails — otherwise the next eval loop iteration would
+    see the file again and re-trigger in an infinite loop."""
     path = os.path.join(store_dir, "force_eval.trigger")
-    if os.path.exists(path):
-        try:
-            os.remove(path)
-        except Exception:
-            pass
+    if not os.path.exists(path):
+        return False
+    try:
+        os.remove(path)
         return True
-    return False
+    except Exception as e:
+        lore.eval_error("trigger", e)
+        return False
 
 
 def _check_bot_trigger(store_dir: str, bot_id: str) -> bool:
-    """Return True and delete a per-bot force_eval trigger if it exists."""
+    """Return True and delete a per-bot force_eval trigger if it exists.
+    Returns False if delete fails — see _check_file_trigger."""
     path = os.path.join(store_dir, f"force_eval_{bot_id}.trigger")
-    if os.path.exists(path):
-        try:
-            os.remove(path)
-        except Exception:
-            pass
+    if not os.path.exists(path):
+        return False
+    try:
+        os.remove(path)
         return True
-    return False
+    except Exception as e:
+        lore.eval_error("trigger", e)
+        return False
 
 
 def _has_pending_triggers(store_dir: str) -> bool:
@@ -123,7 +129,8 @@ def _save_and_notify(bot_results, store_dir, cfg):
         f"report_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}.html"
     )
     os.makedirs(store_dir, exist_ok=True)
-    open(report_path, "w", encoding="utf-8").write(html)
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write(html)
     lore.report_saved(report_path)
     notifier.send_report(html, cfg)
     lore.cycle_complete(len(bot_results))
@@ -185,7 +192,8 @@ def run_cycle(cfg: dict, force: bool = False):
     for bot in bots_to_eval:
         lock_path = os.path.join(store_dir, f"eval_active_{bot['botId']}.lock")
         try:
-            open(lock_path, "w").write(datetime.now(timezone.utc).isoformat())
+            with open(lock_path, "w", encoding="utf-8") as f:
+                f.write(datetime.now(timezone.utc).isoformat())
         except Exception:
             pass
 
@@ -251,8 +259,14 @@ def run_cycle(cfg: dict, force: bool = False):
             reg_metrics = [c["key"] for c in cls if c["verdict"] == "REGRESSED"]
             imp_metrics = [c["key"] for c in cls if c["verdict"] == "IMPROVED"]
             curr_m      = br.get("currMetrics", {})
-            pass_rate   = curr_m.get("CompareMeaning.passRate", 0.0)
-            avg_score   = curr_m.get("CompareMeaning.score", 0.0)
+            # Derive pass rate / avg score from whichever metric types the bot emits,
+            # instead of assuming CompareMeaning. Average across all *.passRate and
+            # *.score keys so other evaluators (ResponseRelevance, GroundedResponse,
+            # etc.) surface real numbers in the event log.
+            pass_rates = [v for k, v in curr_m.items() if k.endswith(".passRate") and isinstance(v, (int, float))]
+            scores     = [v for k, v in curr_m.items() if k.endswith(".score")    and isinstance(v, (int, float))]
+            pass_rate  = (sum(pass_rates) / len(pass_rates)) if pass_rates else 0.0
+            avg_score  = (sum(scores)     / len(scores))     if scores     else 0.0
             verdict     = br.get("verdictSummary", "STABLE")
             duration_s  = int((datetime.now(timezone.utc) - eval_start_ts).total_seconds())
 
@@ -294,7 +308,9 @@ def _watch_loop(cfg: dict):
     """Watcher thread — polls Dataverse every watch_interval_seconds and writes a
     trigger file the moment a model version change is detected. Never runs evals."""
     store_dir  = cfg.get("store_dir", "data")
-    interval_s = cfg.get("watch_interval_seconds", 120)
+    # Clamp to a safe minimum — a 0/negative value would spin the watcher thread
+    # at 100% CPU and hammer the Dataverse API.
+    interval_s = max(30, int(cfg.get("watch_interval_seconds", 120) or 120))
     while True:
         try:
             bots = dataverse.list_all_bots(cfg)
@@ -312,15 +328,19 @@ def _watch_loop(cfg: dict):
                     old_ver  = tracking.get("modelVersion", "unknown")
                     lore.model_changed(bot_name, old_ver, curr_ver)
                     ev.model_change(store_dir, bot_name, bot_id, old_ver, curr_ver)
-                    open(trigger_path, "w").write(datetime.now(timezone.utc).isoformat())
+                    with open(trigger_path, "w", encoding="utf-8") as f:
+                        f.write(datetime.now(timezone.utc).isoformat())
         except Exception as e:
             lore.eval_error("watcher", e)
         time.sleep(interval_s)
 
 
 def _eval_loop(cfg: dict):
-    """Evaluator thread — wakes every 30 s and runs a cycle if any trigger is waiting."""
-    store_dir = cfg.get("store_dir", "data")
+    """Evaluator thread — wakes every eval_loop_interval_seconds and runs a cycle
+    if any trigger is waiting."""
+    store_dir  = cfg.get("store_dir", "data")
+    # Clamp to a safe minimum — otherwise a 0 value spins at 100% CPU.
+    interval_s = max(5, int(cfg.get("eval_loop_interval_seconds", 30) or 30))
     while True:
         try:
             force = _check_file_trigger(store_dir)
@@ -328,12 +348,13 @@ def _eval_loop(cfg: dict):
                 run_cycle(cfg, force=force)
         except Exception as e:
             lore.eval_error("evaluator", e)
-        time.sleep(30)
+        time.sleep(interval_s)
 
 
 def _write_pid(store_dir: str):
     os.makedirs(store_dir, exist_ok=True)
-    open(os.path.join(store_dir, "agent.pid"), "w").write(str(os.getpid()))
+    with open(os.path.join(store_dir, "agent.pid"), "w", encoding="utf-8") as f:
+        f.write(str(os.getpid()))
 
 
 def _remove_pid(store_dir: str):

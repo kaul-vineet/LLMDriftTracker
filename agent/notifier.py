@@ -7,13 +7,13 @@ from . import lore
 
 
 def send_report(html: str, cfg: dict):
-    smtp_cfg = cfg["smtp"]
+    smtp_cfg = cfg.get("smtp", {}) or {}
 
-    host      = os.environ.get("SMTP_HOST")      or smtp_cfg["host"]
-    port      = int(os.environ.get("SMTP_PORT")  or smtp_cfg["port"])
-    user      = os.environ.get("SMTP_USER")      or smtp_cfg["user"]
-    password  = os.environ.get("SMTP_PASSWORD")  or smtp_cfg["password"]
-    recipient = os.environ.get("SMTP_RECIPIENT") or smtp_cfg["recipient"]
+    host      = os.environ.get("SMTP_HOST")      or smtp_cfg.get("host", "")
+    port      = int(os.environ.get("SMTP_PORT")  or smtp_cfg.get("port") or 587)
+    user      = os.environ.get("SMTP_USER")      or smtp_cfg.get("user", "")
+    password  = os.environ.get("SMTP_PASSWORD")  or smtp_cfg.get("password", "")
+    recipient = os.environ.get("SMTP_RECIPIENT") or smtp_cfg.get("recipient", "")
 
     if not all([host, user, password, recipient]):
         lore.report_skipped()
@@ -28,10 +28,16 @@ def send_report(html: str, cfg: dict):
     msg["To"]      = recipient
     msg.attach(MIMEText(html, "html"))
 
-    with smtplib.SMTP(host, port) as s:
-        s.ehlo()
-        s.starttls()
-        s.login(user, password)
-        s.send_message(msg)
+    # Catch SMTP failures locally so a bad host / auth / network doesn't blow
+    # up the whole eval cycle — the eval itself has already been persisted.
+    try:
+        with smtplib.SMTP(host, port) as s:
+            s.ehlo()
+            s.starttls()
+            s.login(user, password)
+            s.send_message(msg)
+    except Exception as e:
+        lore.eval_error("notifier", e)
+        return
 
     lore.report_sent(recipient)

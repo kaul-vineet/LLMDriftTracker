@@ -34,16 +34,20 @@ def _extract_metrics(run: dict) -> dict:
 
             for field, val in data.items():
                 key = f"{mtype}.{field}"
-                counts[key] = counts.get(key, 0) + 1
+                # Only increment counts when we also have a numeric total to add,
+                # otherwise a single bad value erases every prior valid sample.
                 if isinstance(val, bool):
                     totals[key] = totals.get(key, 0) + (1 if val else 0)
+                    counts[key] = counts.get(key, 0) + 1
                 elif isinstance(val, (int, float)):
                     totals[key] = totals.get(key, 0) + val
+                    counts[key] = counts.get(key, 0) + 1
                 elif isinstance(val, str):
                     try:
                         totals[key] = totals.get(key, 0) + float(val)
+                        counts[key] = counts.get(key, 0) + 1
                     except ValueError:
-                        counts.pop(key, None)
+                        pass
 
     # Divide each accumulated total by its sample count to produce per-metric averages
     return {k: round(totals[k] / counts[k], 4) for k in totals if k in counts}

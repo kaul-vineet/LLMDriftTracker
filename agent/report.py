@@ -5,7 +5,9 @@ Layout (regression-first):
   Header → Verdict hero → LLM Analysis → Metric type summary table →
   Per-metric-type sections (REGRESSED expanded) → Radar chart
 """
+import html
 import json
+import math
 import uuid
 from datetime import datetime, timezone
 
@@ -23,26 +25,49 @@ C_TEXT    = "#e0e0e0"
 FONT      = "'SF Mono','Cascadia Code','Fira Code',monospace"
 
 
+def _esc(s) -> str:
+    """HTML-escape any value before inserting into report markup."""
+    if s is None:
+        return ""
+    return html.escape(str(s), quote=True)
+
+
+def _finite(v) -> bool:
+    """True iff v is a real, finite number (not None, NaN, or +/-inf)."""
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def _fmt_metric(v, spec: str = ".4f") -> str:
+    """Render a metric value or 'N/A' for None/NaN/Inf/non-numeric."""
+    if not _finite(v):
+        return "N/A"
+    return format(float(v), spec)
+
+
+def _radar_value(v, is_rate: bool) -> float:
+    """Coerce a metric value to a finite radar datum (0 when missing/non-finite)."""
+    if not _finite(v):
+        return 0
+    return round(float(v) * 100, 1) if is_rate else round(float(v), 1)
+
+
 def _badge(status: str) -> str:
     color = C_GREEN if status == "Pass" else C_RED
     return (f"<span style='background:{color};color:#000;border-radius:3px;"
-            f"padding:1px 8px;font-size:0.72rem;font-weight:700;font-family:{FONT}'>{status}</span>")
+            f"padding:1px 8px;font-size:0.72rem;font-weight:700;font-family:{FONT}'>{_esc(status)}</span>")
 
 
 def _verdict_badge(verdict: str) -> str:
     colors = {"REGRESSED": C_RED, "IMPROVED": C_GREEN, "STABLE": C_DIM, "NEW": C_GOLD}
     c = colors.get(verdict, C_DIM)
     return (f"<span style='color:{c};font-weight:700;font-family:{FONT};"
-            f"letter-spacing:1px;font-size:0.75rem'>{verdict}</span>")
+            f"letter-spacing:1px;font-size:0.75rem'>{_esc(verdict)}</span>")
 
 
 def _fmt_score(v) -> str:
-    if v is None:
+    if not _finite(v):
         return "—"
-    try:
-        return f"{float(v):.0f}"
-    except (ValueError, TypeError):
-        return str(v)
+    return f"{float(v):.0f}"
 
 
 def _extract_cases_by_type(test_sets: dict) -> dict[str, list[dict]]:
@@ -118,7 +143,7 @@ def _metric_section(metric_type: str, verdict: str,
             f"<td style='padding:6px 8px'>{_badge(cs) if cs != '—' else '—'}</td>"
             f"<td style='text-align:right;font-family:{FONT};padding:6px 8px'>{_fmt_score(csc)}</td>"
             f"{dcell}"
-            f"<td style='color:{C_DIM};font-size:0.78rem;padding:6px 8px;max-width:300px;word-wrap:break-word'>{short}</td>"
+            f"<td style='color:{C_DIM};font-size:0.78rem;padding:6px 8px;max-width:300px;word-wrap:break-word'>{_esc(short)}</td>"
             f"</tr>"
         )
 
@@ -129,7 +154,7 @@ def _metric_section(metric_type: str, verdict: str,
             f"border-left:3px solid {C_RED};border-radius:0 4px 4px 0'>"
             f"<div style='font-weight:700;color:{C_TEXT};font-family:{FONT};margin-bottom:4px'>"
             f"Case {f['num']} — Score {_fmt_score(f['score'])}</div>"
-            f"<div style='color:{C_DIM};font-size:0.85rem;line-height:1.6'>{f['reason']}</div>"
+            f"<div style='color:{C_DIM};font-size:0.85rem;line-height:1.6'>{_esc(f['reason'])}</div>"
             f"</div>"
             for f in failures
         )
@@ -171,7 +196,7 @@ def _metric_section(metric_type: str, verdict: str,
       <div style='padding:12px 16px;border-bottom:1px solid {C_BORDER};
                   display:flex;justify-content:space-between;align-items:center'>
         <span style='font-weight:700;color:{C_TEXT};font-family:{FONT};
-                     letter-spacing:1px'>{metric_type}</span>
+                     letter-spacing:1px'>{_esc(metric_type)}</span>
         {_verdict_badge(verdict)}
       </div>
       <div style='padding:12px 16px'>
@@ -207,14 +232,14 @@ def _bot_section(br: dict) -> str:
     _order = {"REGRESSED": 0, "IMPROVED": 1, "STABLE": 2, "NEW": 3}
     sorted_cls = sorted(classifications, key=lambda c: _order.get(c["verdict"], 9))
     def _fmt_row(c):
-        prev_s  = "N/A" if c["prev"]  is None else f"{c['prev']:.4f}"
-        curr_s  = "N/A" if c["curr"]  is None else f"{c['curr']:.4f}"
-        delta_s = "N/A" if c["delta"] is None else f"{c['delta']:+.4f}"
-        d = c["delta"] or 0
+        prev_s  = _fmt_metric(c["prev"])
+        curr_s  = _fmt_metric(c["curr"])
+        delta_s = _fmt_metric(c["delta"], spec="+.4f")
+        d = c["delta"] if _finite(c["delta"]) else 0
         dcolor = C_GREEN if d > 0 else (C_RED if d < 0 else C_DIM)
         return (
             f"<tr style='border-bottom:1px solid {C_BORDER}'>"
-            f"<td style='padding:5px 10px;font-family:{FONT};font-size:0.78rem;color:{C_TEXT}'>{c['key']}</td>"
+            f"<td style='padding:5px 10px;font-family:{FONT};font-size:0.78rem;color:{C_TEXT}'>{_esc(c['key'])}</td>"
             f"<td style='padding:5px 10px;text-align:right;font-family:{FONT};color:{C_DIM}'>{prev_s}</td>"
             f"<td style='padding:5px 10px;text-align:right;font-family:{FONT};color:{C_TEXT}'>{curr_s}</td>"
             f"<td style='padding:5px 10px;text-align:right'>{_verdict_badge(c['verdict'])}</td>"
@@ -258,20 +283,16 @@ def _bot_section(br: dict) -> str:
     sid          = uuid.uuid4().hex[:8]
     metric_keys  = [c["key"] for c in classifications]
     radar_labels = json.dumps([k.split(".")[-1][:16] for k in metric_keys])
-    radar_prev   = json.dumps([round(c["prev"] * 100, 1) if c["prev"] is not None and "passRate" in c["key"]
-                               else (round(c["prev"], 1) if c["prev"] is not None else 0)
-                               for c in classifications])
-    radar_curr   = json.dumps([round(c["curr"] * 100, 1) if c["curr"] is not None and "passRate" in c["key"]
-                               else (round(c["curr"], 1) if c["curr"] is not None else 0)
-                               for c in classifications])
+    radar_prev   = json.dumps([_radar_value(c["prev"], "passRate" in c["key"]) for c in classifications])
+    radar_curr   = json.dumps([_radar_value(c["curr"], "passRate" in c["key"]) for c in classifications])
 
     force_eval  = old_model == new_model
     model_line  = (
-        f"<span style='color:{C_DIM}'>Force evaluation — model unchanged: {new_model}</span>"
+        f"<span style='color:{C_DIM}'>Force evaluation — model unchanged: {_esc(new_model)}</span>"
         if force_eval else
-        f"<span style='color:{C_DIM};font-family:{FONT}'>{old_model}</span>"
+        f"<span style='color:{C_DIM};font-family:{FONT}'>{_esc(old_model)}</span>"
         f" <span style='color:{C_MAGENTA}'>→</span> "
-        f"<span style='color:{C_CYAN};font-family:{FONT};font-weight:700'>{new_model}</span>"
+        f"<span style='color:{C_CYAN};font-family:{FONT};font-weight:700'>{_esc(new_model)}</span>"
     )
 
     return f"""
@@ -284,14 +305,14 @@ def _bot_section(br: dict) -> str:
                   display:flex;justify-content:space-between;align-items:flex-start'>
         <div>
           <div style='font-size:1.1rem;font-weight:700;color:{C_TEXT};
-                      font-family:{FONT};letter-spacing:1px'>{bot_name}</div>
+                      font-family:{FONT};letter-spacing:1px'>{_esc(bot_name)}</div>
           <div style='font-size:0.85rem;margin-top:4px'>{model_line}</div>
           <div style='font-size:0.65rem;color:{C_DIM};margin-top:4px;
-                      font-family:{FONT}'>run: {run_folder}</div>
+                      font-family:{FONT}'>run: {_esc(run_folder)}</div>
         </div>
         <div style='text-align:right'>
           <div style='color:{v_color};font-weight:700;font-family:{FONT};
-                      letter-spacing:2px;font-size:0.85rem'>{verdict_line}</div>
+                      letter-spacing:2px;font-size:0.85rem'>{_esc(verdict_line)}</div>
         </div>
       </div>
 
@@ -302,7 +323,7 @@ def _bot_section(br: dict) -> str:
                     background:{C_BG};border-left:3px solid {C_MAGENTA};border-radius:0 6px 6px 0'>
           <div style='font-size:0.68rem;font-weight:700;color:{C_MAGENTA};
                       letter-spacing:2px;margin-bottom:8px;font-family:{FONT}'>⚡ RESPONSE VARIATION ANALYSIS</div>
-          <div style='font-size:0.875rem;line-height:1.75;color:{C_TEXT};white-space:pre-wrap'>{analysis}</div>
+          <div style='font-size:0.875rem;line-height:1.75;color:{C_TEXT};white-space:pre-wrap'>{_esc(analysis)}</div>
         </div>
 
         <!-- Metric Summary Table -->

@@ -13,6 +13,8 @@ are detected and wrapped into the new run shape.
 """
 import json
 import os
+import re
+import sys
 from datetime import datetime, timezone
 
 
@@ -23,15 +25,46 @@ def _bot_dir(store_dir: str, bot_id: str) -> str:
 
 
 def _load_json(path: str) -> dict:
+    """Read a JSON file. Missing → {}. Corrupt → log to stderr and return {}."""
+    if not os.path.exists(path):
+        return {}
     try:
-        return json.loads(open(path).read())
-    except Exception:
+        with open(path, encoding="utf-8") as f:
+            return json.loads(f.read())
+    except json.JSONDecodeError as e:
+        print(f"[store] Corrupt JSON at {path}: {e}", file=sys.stderr)
+        return {}
+    except OSError as e:
+        print(f"[store] Cannot read {path}: {e}", file=sys.stderr)
         return {}
 
 
+def _atomic_write_json(path: str, data: dict):
+    """Write JSON atomically: write to .tmp then os.replace() so a partial/disk-full
+    write cannot corrupt the destination file. Callers expect existing contents to
+    remain intact if the write fails."""
+    tmp = f"{path}.tmp"
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(json.dumps(data, indent=2))
+        f.flush()
+        try:
+            os.fsync(f.fileno())
+        except OSError:
+            pass  # not all platforms / filesystems support fsync
+    os.replace(tmp, path)
+
+
+# Characters that are invalid in Windows filenames — also stripped on POSIX for portability.
+_UNSAFE_PATH_CHARS = re.compile(r'[\\/:*?"<>|\s\x00-\x1f]')
+
+
 def make_run_folder_name(model_version: str) -> str:
-    ts          = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-    safe_model  = model_version.replace("/", "_").replace("\\", "_").replace(" ", "_")
+    ts         = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    safe_model = _UNSAFE_PATH_CHARS.sub("_", model_version or "unknown")
+    # Also collapse repeats and trim trailing dots/underscores (Windows treats trailing
+    # dots and spaces as invalid for folder names).
+    safe_model = re.sub(r"_+", "_", safe_model).strip("._") or "unknown"
     return f"{ts}_{safe_model}"
 
 
@@ -61,7 +94,7 @@ def save_tracking(store_dir: str, bot_id: str, model_version: str,
         "lastRunFolder":  last_run_folder,
         "updatedAt":      datetime.now(timezone.utc).isoformat(),
     }
-    open(path, "w").write(json.dumps(data, indent=2))
+    _atomic_write_json(path, data)
 
 
 def model_changed(store_dir: str, bot_id: str, current_model: str) -> bool:
@@ -94,7 +127,7 @@ def save_run(store_dir: str, bot_id: str, model_version: str,
         "forced":       forced,
         "testSets":     test_sets,
     }
-    open(os.path.join(run_dir, "run.json"), "w").write(json.dumps(run, indent=2))
+    _atomic_write_json(os.path.join(run_dir, "run.json"), run)
     return folder
 
 
