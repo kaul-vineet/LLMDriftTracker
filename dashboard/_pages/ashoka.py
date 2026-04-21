@@ -409,7 +409,7 @@ def _build_timeline_events(raw, model_lookup: dict | None = None):
 
 
 # ── Header ────────────────────────────────────────────────────────────────────
-def render_header(bots, raw_events):
+def render_header(bots, raw_events, page="overview"):
     last_scan   = max((b["updatedAt"] for b in bots), default="")
     ts_str      = _fmt_ts(last_scan) if last_scan else "no data yet"
     n_reg       = sum(1 for b in bots if _bot_verdict(b) == "REGRESSED")
@@ -477,10 +477,7 @@ def render_header(bots, raw_events):
         <div class='stat-value' style='color:{C_RED if n_reg_ev else C_DIM}'>{n_reg_ev}</div>
         <div class='stat-label'>Regressions</div>
       </div>
-      <div class='stat-cell'>
-        <div class='stat-value' style='color:{C_RED if n_reg else C_DIM}'>{n_reg}</div>
-        <div class='stat-label'>Alert Now</div>
-      </div>
+      {"" if page != "overview" else f"<div class='stat-cell'><div class='stat-value' style='color:{C_RED if n_reg else C_DIM}'>{n_reg}</div><div class='stat-label'>Alert Now</div></div>"}
     </div>
     """, unsafe_allow_html=True)
 
@@ -790,7 +787,7 @@ raw_events = load_events(STORE_DIR)
 page       = st.session_state.get("page", "overview")
 selected   = st.session_state.get("selected_bot")
 
-render_header(bots, raw_events)
+render_header(bots, raw_events, page=page)
 
 if page == "detail":
     bot = next((b for b in bots if b["botId"] == selected), None)
