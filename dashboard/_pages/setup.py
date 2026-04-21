@@ -290,7 +290,7 @@ else:
             f"<div class='status-ok'>● TOKEN VALID — {_cached_user}</div>",
             unsafe_allow_html=True,
         )
-        if st.button("Re-authenticate", key="btn_reauth", type="secondary"):
+        if st.button("Switch Account", key="btn_reauth", type="secondary"):
             st.session_state.s_force_reauth = True
             st.session_state.s_flow = None
             st.session_state.s_flow_started = False
