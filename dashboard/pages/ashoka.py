@@ -381,7 +381,8 @@ _EVENT_META = {
     "error":         ("bad", "✗","ERROR",       "reg"),
 }
 
-def _build_timeline_events(raw):
+def _build_timeline_events(raw, model_lookup: dict | None = None):
+    """model_lookup: {botId: modelVersion} for showing model alongside agent name."""
     out = []
     for e in raw:
         et = e.get("event","")
@@ -389,13 +390,20 @@ def _build_timeline_events(raw):
             continue
         dot, icon, badge, badge_c = _EVENT_META.get(et, ("info","·",et.upper(),"stb"))
         if et == "eval_complete":
-            # Override default eval_complete styling if the event carries an explicit verdict
             v = e.get("verdict","")
             if v == "REGRESSED":  dot,badge,badge_c = "bad","REGRESSED","reg"
             elif v == "IMPROVED": dot,badge,badge_c = "ok","IMPROVED","imp"
             else:                 dot,badge,badge_c = "info","STABLE","stb"
+
+        bot_name = e.get("botName") or "Agent"
+        # For model_change use the new model; otherwise look up current model from bots
+        if et == "model_change":
+            model = e.get("newModel") or e.get("oldModel") or ""
+        else:
+            model = (model_lookup or {}).get(e.get("botId",""), "")
+
         out.append({"ts":e.get("ts",""), "dot":dot, "icon":icon,
-                    "head":e.get("botName") or "Agent",
+                    "head":bot_name, "model":model,
                     "badge":badge, "badge_c":badge_c, "body":e.get("detail","")})
     return list(reversed(out))
 
@@ -488,7 +496,7 @@ def page_overview(bots, raw_events):
         f"line-height:1.85;color:{C_TEXT}'>"
         f"I am <b style='color:{C_CYAN}'>ASHOKA</b> — born April 1, 2026. "
         f"I watch the models powering your Copilot Studio bots. "
-        f"The moment a model shifts, I trigger the Eval API, score every test case, "
+        f"The moment a model swaps, I trigger the Eval API, score every test case, "
         f"and send you a verdict before your users file a ticket."
         f"</div>",
         unsafe_allow_html=True,
@@ -534,16 +542,23 @@ def page_overview(bots, raw_events):
          "body":'"I built this in a cave with a box of scraps." Identity confirmed.'},
     ]
 
-    live       = _build_timeline_events(raw_events)
+    model_lookup = {b["botId"]: b.get("modelVersion","") for b in bots}
+    live       = _build_timeline_events(raw_events, model_lookup)
     all_events = sorted(origin + live, key=lambda e: e.get("ts",""))
 
     parts = []
     for ev in all_events:
+        model = ev.get("model","")
+        model_html = (
+            f'<span style="color:{C_DIM};font-size:0.68rem;letter-spacing:1px;'
+            f'font-family:monospace;margin-left:6px">· {model[:32]}</span>'
+            if model else ""
+        )
         parts.append(
             f'<div class="etl-event">'
             f'<div class="etl-dot {ev["dot"]}"></div>'
             f'<div class="etl-ts">{_fmt_ts_long(ev["ts"])}</div>'
-            f'<div class="etl-head">{ev["icon"]}&nbsp; {ev["head"]}'
+            f'<div class="etl-head">{ev["icon"]}&nbsp; {ev["head"]}{model_html}'
             f'<span class="etl-badge {ev["badge_c"]}">{ev["badge"]}</span></div>'
             f'<div class="etl-body">{ev["body"]}</div>'
             f'</div>'
