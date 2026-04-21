@@ -95,7 +95,7 @@ def _metric_section(metric_type: str, verdict: str,
         cs      = cc.get("status", "—")
         psc     = pc.get("score")
         csc     = cc.get("score")
-        reason  = cc.get("reason", "")
+        reason  = cc.get("reason") or ""
 
         if isinstance(psc, float) and isinstance(csc, float):
             d     = csc - psc
@@ -206,20 +206,23 @@ def _bot_section(br: dict) -> str:
     # Metric summary table rows (sorted by verdict)
     _order = {"REGRESSED": 0, "IMPROVED": 1, "STABLE": 2, "NEW": 3}
     sorted_cls = sorted(classifications, key=lambda c: _order.get(c["verdict"], 9))
-    metric_rows = "".join(
-        f"<tr style='border-bottom:1px solid {C_BORDER}'>"
-        f"<td style='padding:5px 10px;font-family:{FONT};font-size:0.78rem;color:{C_TEXT}'>{c['key']}</td>"
-        f"<td style='padding:5px 10px;text-align:right;font-family:{FONT};color:{C_DIM}'>"
-        f"{'N/A' if c['prev'] is None else f'{c[\"prev\"]:.4f}'}</td>"
-        f"<td style='padding:5px 10px;text-align:right;font-family:{FONT};color:{C_TEXT}'>"
-        f"{'N/A' if c['curr'] is None else f'{c[\"curr\"]:.4f}'}</td>"
-        f"<td style='padding:5px 10px;text-align:right'>{_verdict_badge(c['verdict'])}</td>"
-        f"<td style='padding:5px 10px;text-align:right;font-family:{FONT};"
-        f"color:{''+C_GREEN if (c[\"delta\"] or 0) > 0 else C_RED if (c[\"delta\"] or 0) < 0 else C_DIM};font-weight:700'>"
-        f"{'N/A' if c['delta'] is None else f'{c[\"delta\"]:+.4f}'}</td>"
-        f"</tr>"
-        for c in sorted_cls
-    )
+    def _fmt_row(c):
+        prev_s  = "N/A" if c["prev"]  is None else f"{c['prev']:.4f}"
+        curr_s  = "N/A" if c["curr"]  is None else f"{c['curr']:.4f}"
+        delta_s = "N/A" if c["delta"] is None else f"{c['delta']:+.4f}"
+        d = c["delta"] or 0
+        dcolor = C_GREEN if d > 0 else (C_RED if d < 0 else C_DIM)
+        return (
+            f"<tr style='border-bottom:1px solid {C_BORDER}'>"
+            f"<td style='padding:5px 10px;font-family:{FONT};font-size:0.78rem;color:{C_TEXT}'>{c['key']}</td>"
+            f"<td style='padding:5px 10px;text-align:right;font-family:{FONT};color:{C_DIM}'>{prev_s}</td>"
+            f"<td style='padding:5px 10px;text-align:right;font-family:{FONT};color:{C_TEXT}'>{curr_s}</td>"
+            f"<td style='padding:5px 10px;text-align:right'>{_verdict_badge(c['verdict'])}</td>"
+            f"<td style='padding:5px 10px;text-align:right;font-family:{FONT};"
+            f"color:{dcolor};font-weight:700'>{delta_s}</td>"
+            f"</tr>"
+        )
+    metric_rows = "".join(_fmt_row(c) for c in sorted_cls)
 
     # Per-metric-type sections sorted REGRESSED first
     verdict_by_type: dict[str, str] = {}
