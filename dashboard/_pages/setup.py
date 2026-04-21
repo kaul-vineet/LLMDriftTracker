@@ -222,6 +222,8 @@ _defs = {
     "s_sel_envs":      [e["name"] for e in _envs_cfg],
     "s_bots":          {},
     "s_bot_sel":       {e["name"]: e.get("monitoredBots", []) for e in _envs_cfg},
+    "s_env_verified":  {},
+    "s_bot_verified":  {},
     "s_llm_url":       _llm.get("base_url", ""),
     "s_llm_model":     _llm.get("model", "gpt-4o"),
     "s_poll":          _cfg.get("poll_interval_minutes", 20),
@@ -417,7 +419,20 @@ else:
                     st.session_state["_env_load_err"] = err
                 else:
                     st.session_state["_env_load_err"] = None
-                    st.session_state.s_envs = envs
+                    # Preserve manually-added envs and cross-check their IDs
+                    manual_envs = [e for e in st.session_state.s_envs if e.get("manual")]
+                    discovered_ids   = {e["environmentId"] for e in envs}
+                    discovered_names = {e["name"] for e in envs}
+                    ev = dict(st.session_state.s_env_verified)
+                    for me in manual_envs:
+                        ev[me["name"]] = bool(me.get("environmentId")) and me["environmentId"] in discovered_ids
+                    st.session_state.s_env_verified = ev
+                    # Merge: auto-discovered + manual envs not already in the list
+                    merged = list(envs)
+                    for me in manual_envs:
+                        if me["name"] not in discovered_names:
+                            merged.append(me)
+                    st.session_state.s_envs = merged
         st.session_state["_op_loading_envs"] = False
         st.rerun()
 
@@ -435,6 +450,23 @@ else:
                  "environments are evaluated and reported. Deselect to exclude an environment."
         )
         st.session_state.s_sel_envs = sel
+        # Lazy-validation badges for manually-added environments
+        for _e in st.session_state.s_envs:
+            if not _e.get("manual") or _e["name"] not in st.session_state.s_sel_envs:
+                continue
+            _vs = st.session_state.s_env_verified.get(_e["name"])
+            if _vs is True:
+                st.markdown(
+                    f"<div class='status-ok' style='font-size:0.72rem;margin-top:2px'>"
+                    f"✓ {_e['name']} — environment ID verified against tenant</div>",
+                    unsafe_allow_html=True,
+                )
+            elif _vs is False:
+                st.markdown(
+                    f"<div class='status-err' style='font-size:0.72rem;margin-top:2px'>"
+                    f"⚠ {_e['name']} — environment ID not found in tenant · verify the ID</div>",
+                    unsafe_allow_html=True,
+                )
     elif st.session_state.s_sel_envs:
         chips = "".join(
             f"<span style='display:inline-block;background:rgba(0,240,255,0.07);"
@@ -473,7 +505,7 @@ else:
         if st.button("Add environment", key="btn_add_env"):
             if m_name.strip() and m_url.strip():
                 new_env = {"name": m_name.strip(), "orgUrl": m_url.strip().rstrip("/"),
-                           "environmentId": m_id.strip()}
+                           "environmentId": m_id.strip(), "manual": True}
                 existing_names = [e["name"] for e in st.session_state.s_envs]
                 if new_env["name"] not in existing_names:
                     st.session_state.s_envs.append(new_env)
@@ -550,8 +582,21 @@ else:
                             if err:
                                 st.session_state[f"_bots_err_{env_name}"] = err
                             else:
-                                st.session_state.s_bots[env_name] = bots
                                 st.session_state.pop(f"_bots_err_{env_name}", None)
+                                # Preserve manually-added agents; cross-check their schema names
+                                manual_bots     = [b for b in st.session_state.s_bots.get(env_name, [])
+                                                   if not b.get("botId")]
+                                fetched_schemas = {b["schemaname"] for b in bots}
+                                bv = dict(st.session_state.s_bot_verified)
+                                bv[env_name] = {mb["schemaname"]: mb["schemaname"] in fetched_schemas
+                                                for mb in manual_bots}
+                                st.session_state.s_bot_verified = bv
+                                # Merge: fetched + manual agents not found in inventory
+                                merged_bots = list(bots)
+                                for mb in manual_bots:
+                                    if mb["schemaname"] not in fetched_schemas:
+                                        merged_bots.append(mb)
+                                st.session_state.s_bots[env_name] = merged_bots
                         else:
                             st.session_state[f"_bots_err_{env_name}"] = "Token acquisition failed — sign in first (Section 2)."
                 st.session_state[loading_key] = False
@@ -588,6 +633,23 @@ else:
                     f"letter-spacing:1px'>Saved config · click Load Bots to refresh</div>",
                     unsafe_allow_html=True,
                 )
+
+            # Lazy-validation badges for manually-added agents
+            _abv = st.session_state.s_bot_verified.get(env_name, {})
+            for _schema, _ok in _abv.items():
+                _label = next((b["name"] for b in bots_raw if b["schemaname"] == _schema), _schema)
+                if _ok:
+                    st.markdown(
+                        f"<div class='status-ok' style='font-size:0.72rem;margin-top:2px'>"
+                        f"✓ {_label} ({_schema}) — found in inventory</div>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(
+                        f"<div class='status-err' style='font-size:0.72rem;margin-top:2px'>"
+                        f"⚠ {_label} ({_schema}) — schema name not found in inventory · verify spelling</div>",
+                        unsafe_allow_html=True,
+                    )
 
             # Manual agent entry
             st.markdown(
