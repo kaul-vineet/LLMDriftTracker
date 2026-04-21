@@ -206,17 +206,25 @@ def _bot_section(br: dict) -> str:
     # Metric summary table rows (sorted by verdict)
     _order = {"REGRESSED": 0, "IMPROVED": 1, "STABLE": 2, "NEW": 3}
     sorted_cls = sorted(classifications, key=lambda c: _order.get(c["verdict"], 9))
+
+    def _fv(v, spec=".4f"):
+        return "N/A" if v is None else format(v, spec)
+
+    def _delta_col(delta):
+        d = delta or 0
+        return C_GREEN if d > 0 else (C_RED if d < 0 else C_DIM)
+
     metric_rows = "".join(
         f"<tr style='border-bottom:1px solid {C_BORDER}'>"
         f"<td style='padding:5px 10px;font-family:{FONT};font-size:0.78rem;color:{C_TEXT}'>{c['key']}</td>"
         f"<td style='padding:5px 10px;text-align:right;font-family:{FONT};color:{C_DIM}'>"
-        f"{'N/A' if c['prev'] is None else f'{c[\"prev\"]:.4f}'}</td>"
+        f"{_fv(c['prev'])}</td>"
         f"<td style='padding:5px 10px;text-align:right;font-family:{FONT};color:{C_TEXT}'>"
-        f"{'N/A' if c['curr'] is None else f'{c[\"curr\"]:.4f}'}</td>"
+        f"{_fv(c['curr'])}</td>"
         f"<td style='padding:5px 10px;text-align:right'>{_verdict_badge(c['verdict'])}</td>"
         f"<td style='padding:5px 10px;text-align:right;font-family:{FONT};"
-        f"color:{''+C_GREEN if (c[\"delta\"] or 0) > 0 else C_RED if (c[\"delta\"] or 0) < 0 else C_DIM};font-weight:700'>"
-        f"{'N/A' if c['delta'] is None else f'{c[\"delta\"]:+.4f}'}</td>"
+        f"color:{_delta_col(c['delta'])};font-weight:700'>"
+        f"{_fv(c['delta'], '+.4f')}</td>"
         f"</tr>"
         for c in sorted_cls
     )
