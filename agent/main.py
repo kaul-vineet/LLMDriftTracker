@@ -375,17 +375,36 @@ def main():
     _clear_stale_triggers(store_dir)
 
     log = logger_mod.setup(store_dir, level=cfg.get("log_level", "INFO"))
-    log.info(f"VARION agent starting — watch_interval={cfg.get('watch_interval_seconds', 120)}s")
+
+    # ── Startup banner ────────────────────────────────────────────────────────
+    watch_s = cfg.get("watch_interval_seconds", 120)
+    poll_s  = cfg.get("eval_poll_interval_seconds", 20)
+    log.info(f"VARION agent starting — watch_interval={watch_s}s  eval_poll_interval={poll_s}s")
+
+    envs = cfg.get("environments", [])
+    for e in envs:
+        monitored = e.get("monitoredBots", [])
+        label     = f"{len(monitored)} agent(s)" if monitored else "all agents"
+        log.info(f"environment: {e['name']} ({e.get('environmentId', 'no-id')}) — monitoring {label}")
+
+    if not envs:
+        log.warning("no environments configured — nothing to watch (run Setup to configure)")
 
     try:
-        lore.starting(cfg.get("watch_interval_seconds", 120) // 60)
+        lore.starting(watch_s // 60)
 
         watcher   = threading.Thread(target=_watch_loop, args=(cfg,),
                                      daemon=True, name="watcher")
         evaluator = threading.Thread(target=_eval_loop,  args=(cfg,),
                                      daemon=True, name="evaluator")
         watcher.start()
+        log.info("watcher thread started")
         evaluator.start()
+        log.info("evaluator thread started")
+
+        total_bots = sum(len(e.get("monitoredBots", [])) for e in envs)
+        bot_label  = f"{total_bots} agent(s)" if total_bots else "all agents"
+        log.info(f"ASHOKA READY — {len(envs)} environment(s) · {bot_label} · watching every {watch_s}s")
 
         watcher.join()   # keeps main thread alive; both are daemon so Ctrl-C exits cleanly
         evaluator.join()
