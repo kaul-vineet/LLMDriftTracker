@@ -33,7 +33,7 @@ st.set_page_config(
 # ── Global CSS ────────────────────────────────────────────────────────────────
 st.markdown(f"""
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600;700&display=swap');
+  /* system monospace stack — avoids external HTTP round-trip on every load */
   html, body, [data-testid="stAppViewContainer"] {{
     background: {C_BG} !important; color: {C_TEXT}; font-family: {FONT};
   }}
@@ -298,8 +298,26 @@ def _get_readiness():
     return len(issues) == 0, issues
 
 
+def _get_readiness_cached():
+    """_get_readiness with 10-second session-state cache to avoid MSAL init on every rerun."""
+    now = time.time()
+    if now - st.session_state.get("_ready_ts", 0) > 10:
+        st.session_state["_ready_cache"] = _get_readiness()
+        st.session_state["_ready_ts"] = now
+    return st.session_state["_ready_cache"]
+
+
+def _agent_running_cached():
+    """_agent_running with 5-second cache to avoid tasklist subprocess on every rerun."""
+    now = time.time()
+    if now - st.session_state.get("_agent_ts", 0) > 5:
+        st.session_state["_agent_cache"] = _agent_running()
+        st.session_state["_agent_ts"] = now
+    return st.session_state["_agent_cache"]
+
+
 def render_readiness():
-    ready, issues = _get_readiness()
+    ready, issues = _get_readiness_cached()
     if ready:
         st.markdown(
             f"<div style='background:rgba(40,200,64,.08);border:1px solid rgba(40,200,64,.35);"
@@ -325,7 +343,7 @@ def render_readiness():
 
 
 def render_agent_controls():
-    running = _agent_running()
+    running = _agent_running_cached()
     if running:
         pid = _read_pid()
         st.markdown(
@@ -337,6 +355,7 @@ def render_agent_controls():
         )
         if st.button("■ Stop Agent", use_container_width=True, type="secondary"):
             _stop_agent()
+            st.session_state["_agent_ts"] = 0
             st.rerun()
     else:
         st.markdown(
@@ -346,12 +365,13 @@ def render_agent_controls():
             f"font-family:{FONT}'>○ AGENT STOPPED</div></div>",
             unsafe_allow_html=True,
         )
-        _ready, _ = _get_readiness()
+        _ready, _ = _get_readiness_cached()
         if st.button("▶ Start Agent", use_container_width=True, type="primary",
                      disabled=not _ready,
                      help=None if _ready else "Complete setup before starting the agent"):
             _start_agent()
             time.sleep(1)
+            st.session_state["_agent_ts"] = 0
             st.rerun()
 
 
