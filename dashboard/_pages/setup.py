@@ -400,6 +400,19 @@ else:
             key="ms_envs",
         )
         st.session_state.s_sel_envs = sel
+    elif st.session_state.s_sel_envs:
+        # Saved from a previous session — show them as read-only until refreshed
+        st.markdown(
+            f"<div style='color:{C_DIM};font-size:0.78rem;font-family:{FONT};"
+            f"margin-bottom:6px'>From saved config — click Load Environments to refresh:</div>",
+            unsafe_allow_html=True,
+        )
+        for env_name in st.session_state.s_sel_envs:
+            st.markdown(
+                f"<div style='color:{C_TEXT};font-size:0.8rem;font-family:monospace;"
+                f"padding:3px 0'>· {env_name}</div>",
+                unsafe_allow_html=True,
+            )
 
 st.markdown("</div>", unsafe_allow_html=True)
 
