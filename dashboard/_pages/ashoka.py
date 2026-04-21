@@ -28,7 +28,7 @@ from agent.events import load_events
 from spinner import spinner as _spinner
 
 STORE_DIR = os.environ.get("STORE_DIR", "data")
-PID_FILE  = os.path.join(STORE_DIR, "agent.pid")
+PID_FILE  = os.path.join(STORE_DIR, "agent", "agent.pid")
 
 
 def _agent_running():
@@ -37,14 +37,9 @@ def _agent_running():
     except Exception:
         return False
     try:
-        if sys.platform == "win32":
-            import subprocess as _sp
-            r = _sp.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"],
-                        capture_output=True, text=True, timeout=3)
-            return str(pid) in r.stdout
-        else:
-            os.kill(pid, 0)
-            return True
+        import psutil as _ps
+        p = _ps.Process(pid)
+        return p.is_running() and p.status() != _ps.STATUS_ZOMBIE
     except Exception:
         return False
 
@@ -425,61 +420,60 @@ def render_header(bots, raw_events, page="overview"):
     n_bots      = len(bots)
     n_plural    = "s" if n_bots != 1 else ""
 
-    st.markdown(f"""
-    <style>
-      .sys-dot-hdr {{
-        width:9px;height:9px;border-radius:50%;background:{sys_color};
-        box-shadow:0 0 8px {sys_color};display:inline-block;margin-right:8px;
-        animation:{blink_anim};vertical-align:middle;
-      }}
-    </style>
-    <div style='text-align:center;max-width:780px;margin:0 auto 8px'>
-
-      <div style='display:flex;justify-content:center;margin-bottom:20px'>
-        <div class='radar-wrap'>
-          <div class='ring r1'></div><div class='ring r2'></div>
-          <div class='ring r3'></div><div class='ring r4'></div>
-          <div class='radar-h'></div><div class='radar-v'></div>
-          <div class='sweep'></div><div class='center-dot'></div>
+    if page == "overview":
+        st.markdown(f"""
+        <style>
+          .sys-dot-hdr {{
+            width:8px;height:8px;border-radius:50%;background:{sys_color};
+            box-shadow:0 0 6px {sys_color};display:inline-block;margin-right:6px;
+            animation:{blink_anim};vertical-align:middle;
+          }}
+          .radar-wrap {{ width:100px;height:100px; }}
+          .r1 {{ width:100px;height:100px; }} .r2 {{ width:72px;height:72px; }}
+          .r3 {{ width:45px;height:45px; }}  .r4 {{ width:19px;height:19px; }}
+          .radar-h {{ width:100px; }} .radar-v {{ height:100px; }}
+        </style>
+        <div style='display:flex;align-items:center;gap:20px;max-width:860px;margin:0 auto 12px'>
+          <div class='radar-wrap' style='flex-shrink:0'>
+            <div class='ring r1'></div><div class='ring r2'></div>
+            <div class='ring r3'></div><div class='ring r4'></div>
+            <div class='radar-h'></div><div class='radar-v'></div>
+            <div class='sweep'></div><div class='center-dot'></div>
+          </div>
+          <div>
+            <div style='font-size:2rem;font-weight:700;letter-spacing:8px;color:{C_CYAN};
+                        font-family:{FONT};line-height:1;
+                        text-shadow:0 0 20px rgba(0,240,255,.4)'>ASHOKA</div>
+            <div style='font-size:0.72rem;color:{C_MAGENTA};letter-spacing:3px;
+                        font-weight:700;margin-top:4px'>THE INCORRUPTIBLE JUDGE</div>
+            <div style='font-size:0.72rem;color:{C_DIM};letter-spacing:1px;margin-top:4px'>
+              <span class="sys-dot-hdr"></span>{sys_label} &nbsp;·&nbsp; {dot_label}
+              &nbsp;·&nbsp; {n_bots} agent{n_plural} &nbsp;·&nbsp; {ts_str}</div>
+          </div>
         </div>
-      </div>
-
-      <div style='font-size:1.05rem;letter-spacing:4px;color:{sys_color};
-                  font-weight:700;font-family:{FONT};margin-bottom:10px'>
-        <span class="sys-dot-hdr"></span>{sys_label} &nbsp;·&nbsp; {dot_label}
-      </div>
-
-      <div style='font-size:3.64rem;font-weight:700;letter-spacing:12px;color:{C_CYAN};
-                  font-family:{FONT};line-height:1;
-                  text-shadow:0 0 30px rgba(0,240,255,.4),0 0 60px rgba(0,240,255,.15)'>
-        ASHOKA</div>
-      <div style='font-size:1.2rem;color:{C_MAGENTA};letter-spacing:3px;
-                  font-weight:700;margin-top:6px'>THE INCORRUPTIBLE JUDGE</div>
-      <div style='font-size:1.0rem;color:{C_DIM};letter-spacing:1px;margin-top:4px'>
-        copilot-eval-agent &nbsp;·&nbsp; {n_bots} agent{n_plural} monitored
-        &nbsp;·&nbsp; {ts_str} last activity</div>
-
-    </div>
-    <div class='stat-bar' style='margin-top:24px'>
-      <div class='stat-cell'>
-        <div class='stat-value' style='color:{C_CYAN}'>{n_bots}</div>
-        <div class='stat-label'>Monitored</div>
-      </div>
-      <div class='stat-cell'>
-        <div class='stat-value' style='color:{C_TEXT}'>{total_evals}</div>
-        <div class='stat-label'>Eval Runs</div>
-      </div>
-      <div class='stat-cell'>
-        <div class='stat-value' style='color:{C_GREEN if n_imp else C_DIM}'>{n_imp}</div>
-        <div class='stat-label'>Improved</div>
-      </div>
-      <div class='stat-cell'>
-        <div class='stat-value' style='color:{C_RED if n_reg_ev else C_DIM}'>{n_reg_ev}</div>
-        <div class='stat-label'>Regressions</div>
-      </div>
-      {"" if page != "overview" else f"<div class='stat-cell'><div class='stat-value' style='color:{C_RED if n_reg else C_DIM}'>{n_reg}</div><div class='stat-label'>Alert Now</div></div>"}
-    </div>
-    """, unsafe_allow_html=True)
+        <div class='stat-bar'>
+          <div class='stat-cell'>
+            <div class='stat-value' style='color:{C_CYAN}'>{n_bots}</div>
+            <div class='stat-label'>Monitored</div>
+          </div>
+          <div class='stat-cell'>
+            <div class='stat-value' style='color:{C_TEXT}'>{total_evals}</div>
+            <div class='stat-label'>Eval Runs</div>
+          </div>
+          <div class='stat-cell'>
+            <div class='stat-value' style='color:{C_GREEN if n_imp else C_DIM}'>{n_imp}</div>
+            <div class='stat-label'>Improved</div>
+          </div>
+          <div class='stat-cell'>
+            <div class='stat-value' style='color:{C_RED if n_reg_ev else C_DIM}'>{n_reg_ev}</div>
+            <div class='stat-label'>Regressions</div>
+          </div>
+          <div class='stat-cell'>
+            <div class='stat-value' style='color:{C_RED if n_reg else C_DIM}'>{n_reg}</div>
+            <div class='stat-label'>Alert Now</div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
 
 
 # ── Overview page ─────────────────────────────────────────────────────────────
@@ -597,15 +591,29 @@ def page_bot_detail(bot):
             st.rerun()
     with col_eval:
         bot_id       = bot["botId"]
-        trigger_path = os.path.join(STORE_DIR, f"force_eval_{bot_id}.trigger")
-        lock_path    = os.path.join(STORE_DIR, f"eval_active_{bot_id}.lock")
+        trigger_path = os.path.join(STORE_DIR, "agent", f"force_eval_{bot_id}.trigger")
+        lock_path    = os.path.join(STORE_DIR, "agent", f"eval_active_{bot_id}.lock")
         queued       = os.path.exists(trigger_path)
         running      = os.path.exists(lock_path)
         agent_up     = _agent_running()
-        if queued:
-            st.button("⏳ Eval queued", key="btn_queued",
-                      use_container_width=True, type="secondary", disabled=True)
-        elif running:
+        import time as _t
+        queued_age   = (_t.time() - os.path.getmtime(trigger_path)) if queued else 0
+        stale        = queued_age > 180  # stuck for >3 min
+        if queued and agent_up:
+            qc1, qc2 = st.columns([3, 1])
+            with qc1:
+                label = "⚠ Eval stuck — click ✕" if stale else "⏳ Eval queued"
+                st.button(label, key="btn_queued",
+                          use_container_width=True, type="secondary", disabled=True)
+            with qc2:
+                if st.button("✕", key="btn_cancel_queued", use_container_width=True,
+                             help="Cancel queued eval"):
+                    try:
+                        os.remove(trigger_path)
+                    except Exception:
+                        pass
+                    st.rerun()
+        elif running and agent_up:
             st.button("⚡ Eval running", key="btn_running",
                       use_container_width=True, type="secondary", disabled=True)
         else:
@@ -774,28 +782,23 @@ def page_bot_detail(bot):
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
-_load_ph = st.empty()
-_spinner(_load_ph, "LOADING")
-bots       = load_all_bots()
-raw_events = load_events(STORE_DIR)
-page       = st.session_state.get("page", "overview")
-selected   = st.session_state.get("selected_bot")
+@st.fragment(run_every=30)
+def _main():
+    bots       = load_all_bots()
+    raw_events = load_events(STORE_DIR)
+    page       = st.session_state.get("page", "overview")
+    selected   = st.session_state.get("selected_bot")
 
-render_header(bots, raw_events, page=page)
+    render_header(bots, raw_events, page=page)
 
-if page == "detail":
-    bot = next((b for b in bots if b["botId"] == selected), None)
-    if bot:
-        page_bot_detail(bot)
+    if page == "detail":
+        bot = next((b for b in bots if b["botId"] == selected), None)
+        if bot:
+            page_bot_detail(bot)
+        else:
+            st.session_state.page = "overview"
+            st.rerun()
     else:
-        st.session_state.page = "overview"
-        st.rerun()
-else:
-    page_overview(bots, raw_events)
+        page_overview(bots, raw_events)
 
-_load_ph.empty()
-
-# Auto-refresh every 30 s so the events timeline stays live
-import time as _time
-_time.sleep(30)
-st.rerun()
+_main()

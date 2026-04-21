@@ -187,7 +187,7 @@ def _test_llm(base_url, model, api_key, api_version=""):
 
 
 def _llm_status_path():
-    return os.path.join(STORE_DIR, "llm_status.json")
+    return os.path.join(STORE_DIR, "agent", "llm_status.json")
 
 
 def _llm_validated():
@@ -215,7 +215,7 @@ _envs_cfg = _cfg.get("environments", [])
 _defs = {
     "s_client_id":     _cfg.get("eval_app_client_id", DEFAULT_CLIENT_ID),
     "s_tenant_id":     _cfg.get("eval_app_tenant_id", ""),
-    "s_cache_file":    _cfg.get("token_cache_file", os.path.join(STORE_DIR, "msal_cache.json")),
+    "s_cache_file":    _cfg.get("token_cache_file", os.path.join(STORE_DIR, "agent", "msal_token_cache.json")),
     "s_token":         None,
     "s_account":       "",
     "s_flow":          None,
@@ -765,7 +765,7 @@ with col_t2:
 if _loading_llm:
     with st.spinner("Pinging LLM…"):
         ok, err = _test_llm(llm_url.strip(), llm_model.strip(), _api_key, llm_api_ver.strip())
-        os.makedirs(STORE_DIR, exist_ok=True)
+        os.makedirs(os.path.join(STORE_DIR, "agent"), exist_ok=True)
         import json as _json
         open(_llm_status_path(), "w").write(_json.dumps({"ok": ok, "error": err or ""}))
     st.session_state["_op_loading_llm"] = False

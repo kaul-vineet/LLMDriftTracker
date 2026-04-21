@@ -29,7 +29,8 @@ class _JsonFormatter(logging.Formatter):
 
 def setup(store_dir: str, level: str = "INFO") -> logging.Logger:
     global _logger
-    os.makedirs(store_dir, exist_ok=True)
+    agent_dir = os.path.join(store_dir, "agent")
+    os.makedirs(agent_dir, exist_ok=True)
 
     logger = logging.getLogger("varion")
     logger.setLevel(getattr(logging, level.upper(), logging.INFO))
@@ -37,7 +38,7 @@ def setup(store_dir: str, level: str = "INFO") -> logging.Logger:
     if not logger.handlers:
         # File handler — JSON lines, rotated at 5 MB, keeps 3 backups
         fh = RotatingFileHandler(
-            os.path.join(store_dir, "agent.log"),
+            os.path.join(agent_dir, "agent.log"),
             maxBytes=5 * 1024 * 1024,
             backupCount=3,
             encoding="utf-8",

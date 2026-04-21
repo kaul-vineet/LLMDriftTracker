@@ -19,7 +19,7 @@ from dashboard.theme import (
 )
 
 STORE_DIR = os.environ.get("STORE_DIR", "data")
-PID_FILE  = os.path.join(STORE_DIR, "agent.pid")
+PID_FILE  = os.path.join(STORE_DIR, "agent", "agent.pid")
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -146,19 +146,6 @@ st.markdown(f"""
   .tl-ts {{ font-size:0.68rem; color:{C_DIM}; }}
 </style>
 <style>
-  html, body, [data-testid="stAppViewContainer"] {{
-    background-image:
-      radial-gradient(circle, rgba(0,240,255,0.035) 1px, transparent 1px),
-      radial-gradient(circle at 80% 20%, rgba(255,0,170,0.04) 0%, transparent 50%),
-      radial-gradient(circle at 20% 80%, rgba(0,240,255,0.04) 0%, transparent 50%) !important;
-    background-size: 28px 28px, 100% 100%, 100% 100% !important;
-  }}
-  @keyframes hline {{
-    0%   {{ transform: translateY(-100vh); opacity: 0; }}
-    10%  {{ opacity: 0.4; }}
-    90%  {{ opacity: 0.4; }}
-    100% {{ transform: translateY(100vh); opacity: 0; }}
-  }}
   @keyframes sp-warp  {{ from{{transform:rotate(0deg)}} to{{transform:rotate(360deg)}} }}
   @keyframes sp-pulse {{
     0%,100%{{transform:translate(-50%,-50%) scale(1);   opacity:0.85;}}
@@ -170,16 +157,7 @@ st.markdown(f"""
     0%,100%{{box-shadow:0 0 8px  rgba(0,240,255,0.5);}}
     50%    {{box-shadow:0 0 22px rgba(0,240,255,0.95);}}
   }}
-  .scan-line {{
-    position: fixed; left: 0; width: 100%; height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(0,240,255,0.15), transparent);
-    pointer-events: none; z-index: 0;
-    animation: hline 8s linear infinite;
-  }}
-  .scan-line:nth-child(2) {{ animation-delay: 3s; }}
 </style>
-<div class="scan-line"></div>
-<div class="scan-line"></div>
 """, unsafe_allow_html=True)
 
 
@@ -192,18 +170,10 @@ def _read_pid():
 
 
 def _is_pid_alive(pid):
-    # Windows: query tasklist; Unix: signal 0 checks existence without sending a real signal
-    import sys as _sys
     try:
-        if _sys.platform == "win32":
-            import subprocess as _sp
-            r = _sp.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"],
-                        capture_output=True, text=True, timeout=3)
-            return str(pid) in r.stdout
-        else:
-            import os as _os
-            _os.kill(pid, 0)
-            return True
+        import psutil as _ps
+        p = _ps.Process(pid)
+        return p.is_running() and p.status() != _ps.STATUS_ZOMBIE
     except Exception:
         return False
 
@@ -284,7 +254,7 @@ def _get_readiness():
     if not llm.get("base_url"):
         issues.append("LLM endpoint not configured")
     else:
-        llm_status_path = os.path.join(cfg.get("store_dir", "data"), "llm_status.json")
+        llm_status_path = os.path.join(cfg.get("store_dir", "data"), "agent", "llm_status.json")
         if not os.path.exists(llm_status_path):
             issues.append("LLM not validated — click Test in Setup")
         else:
@@ -299,18 +269,18 @@ def _get_readiness():
 
 
 def _get_readiness_cached():
-    """_get_readiness with 10-second session-state cache to avoid MSAL init on every rerun."""
+    """_get_readiness with 30-second cache to avoid MSAL init on every rerun."""
     now = time.time()
-    if now - st.session_state.get("_ready_ts", 0) > 10:
+    if now - st.session_state.get("_ready_ts", 0) > 30:
         st.session_state["_ready_cache"] = _get_readiness()
         st.session_state["_ready_ts"] = now
     return st.session_state["_ready_cache"]
 
 
 def _agent_running_cached():
-    """_agent_running with 5-second cache to avoid tasklist subprocess on every rerun."""
+    """_agent_running with 10-second cache — psutil is fast but no need to poll every rerun."""
     now = time.time()
-    if now - st.session_state.get("_agent_ts", 0) > 5:
+    if now - st.session_state.get("_agent_ts", 0) > 10:
         st.session_state["_agent_cache"] = _agent_running()
         st.session_state["_agent_ts"] = now
     return st.session_state["_agent_cache"]
@@ -353,15 +323,23 @@ def render_agent_controls():
             f"font-family:{FONT}'>● AGENT RUNNING &nbsp;·&nbsp; PID {pid}</div></div>",
             unsafe_allow_html=True,
         )
+        st.markdown("""<style>
+          [data-testid="stSidebar"] button[kind="secondary"] {
+            border-color:#e53e3e !important; color:#e53e3e !important;
+          }
+          [data-testid="stSidebar"] button[kind="secondary"]:hover {
+            background:rgba(229,62,62,0.12) !important;
+          }
+        </style>""", unsafe_allow_html=True)
         if st.button("■ Stop Agent", use_container_width=True, type="secondary"):
             _stop_agent()
             st.session_state["_agent_ts"] = 0
             st.rerun()
     else:
         st.markdown(
-            f"<div style='background:{C_CARD};border:1px solid {C_BORDER};"
-            f"border-radius:6px;padding:8px 12px;margin-bottom:8px'>"
-            f"<div style='color:{C_DIM};font-size:0.65rem;font-weight:700;letter-spacing:1px;"
+            f"<div style='background:rgba(255,68,68,.06);border:1px solid rgba(255,68,68,.3);"
+            f"border-radius:6px;padding:10px 14px;margin-bottom:8px;text-align:center'>"
+            f"<div style='color:{C_RED};font-size:0.85rem;font-weight:700;letter-spacing:3px;"
             f"font-family:{FONT}'>○ AGENT STOPPED</div></div>",
             unsafe_allow_html=True,
         )

@@ -11,6 +11,7 @@ run_eval_for_bot() is kept for single-bot interactive use (wizard, ad-hoc).
 import time
 import requests
 from .auth import get_eval_token
+from . import logger as logger_mod
 from . import lore
 
 PP_API_BASE  = "https://api.powerplatform.com"
@@ -86,6 +87,7 @@ def trigger_all_evals(bots_to_eval: list[dict], cfg: dict) -> list[dict]:
     Individual trigger failures are logged and skipped; the pool only contains
     runs that were successfully started.
     """
+    log   = logger_mod.get()
     token = get_eval_token(cfg)
     pool: list[dict] = []
 
@@ -96,11 +98,13 @@ def trigger_all_evals(bots_to_eval: list[dict], cfg: dict) -> list[dict]:
             test_sets = get_test_sets(pp_env_id, bot_id, token)
         except Exception as e:
             lore.eval_error(bot["name"], e)
+            log.error(f"failed to fetch test sets for {bot['name']}: {e}")
             continue
 
         active = [s for s in test_sets if s.get("state") == "Active"]
         if not active:
             lore.eval_no_testsets(bot["name"])
+            log.warning(f"no active test sets — {bot['name']}")
             continue
 
         for ts in active:
@@ -108,9 +112,22 @@ def trigger_all_evals(bots_to_eval: list[dict], cfg: dict) -> list[dict]:
             lore.eval_start(bot["name"], display_name)
             try:
                 run_id = trigger_run(pp_env_id, bot_id, ts["id"], token)
+                log.info(f"eval triggered — {bot['name']}  [{display_name}]  run={run_id[:8]}")
                 pool.append({"run_id": run_id, "bot": bot, "display_name": display_name})
+            except requests.HTTPError as he:
+                body = (he.response.text if he.response is not None else "").lower()
+                if he.response is not None and (
+                    he.response.status_code == 429
+                    or any(k in body for k in ("quota", "throttl", "daily", "limit"))
+                ):
+                    log.warning(f"eval quota hit — {bot['name']} [{display_name}]: "
+                                f"daily cap reached (HTTP {he.response.status_code})")
+                else:
+                    lore.eval_error(bot["name"], he)
+                    log.error(f"failed to trigger eval for {bot['name']} [{display_name}]: {he}")
             except Exception as e:
                 lore.eval_error(bot["name"], e)
+                log.error(f"failed to trigger eval for {bot['name']} [{display_name}]: {e}")
 
     return pool
 
@@ -124,6 +141,7 @@ def poll_all_runs(pool: list[dict], cfg: dict,
 
     Returns dict[bot_id -> dict[metric_type -> full_run_result]].
     """
+    log       = logger_mod.get()
     remaining = list(pool)
     completed: dict[str, list[tuple[str, dict]]] = {}   # bot_id -> [(display_name, result)]
     start     = time.time()
@@ -145,16 +163,20 @@ def poll_all_runs(pool: list[dict], cfg: dict,
                 r.raise_for_status()
                 data  = r.json()
                 state = data.get("state", "").lower()
-                lore.eval_polling(run_id, state,
-                                  int(time.time() - start), timeout_s,
-                                  data.get("totalTestCases", 0))
+                elapsed = int(time.time() - start)
+                total   = data.get("totalTestCases", 0)
+                lore.eval_polling(run_id, state, elapsed, timeout_s, total)
+                log.info(f"eval polling — {bot['name']}  [{ctx['display_name']}]  "
+                         f"state={state}  {elapsed}s elapsed  {total} cases")
                 if state in ("completed", "failed", "cancelled"):
                     lore.eval_poll_done()
+                    log.info(f"eval {state} — {bot['name']}  run={run_id[:8]}")
                     completed.setdefault(bot_id, []).append((ctx["display_name"], data))
                 else:
                     still_pending.append(ctx)
             except Exception as e:
                 lore.eval_error(bot["name"], e)
+                log.error(f"eval poll error — {bot['name']}: {e}")
                 still_pending.append(ctx)   # retry next sweep
 
         remaining = still_pending

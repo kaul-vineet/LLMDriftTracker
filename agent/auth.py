@@ -49,8 +49,9 @@ def _app(cfg: dict, cache: msal.SerializableTokenCache) -> msal.PublicClientAppl
 
 def _write_auth_state(cfg: dict, state: dict):
     store_dir = cfg.get("store_dir", "data")
-    os.makedirs(store_dir, exist_ok=True)
-    path = os.path.join(store_dir, "auth_state.json")
+    agent_dir = os.path.join(store_dir, "agent")
+    os.makedirs(agent_dir, exist_ok=True)
+    path = os.path.join(agent_dir, "auth_state.json")
     state["updatedAt"] = datetime.now(timezone.utc).isoformat()
     open(path, "w").write(json.dumps(state, indent=2))
 
@@ -177,7 +178,7 @@ def get_dataverse_token(org_url: str, cfg: dict) -> str:
 def get_auth_state(cfg: dict) -> dict:
     """Read last known auth state written by _write_auth_state."""
     store_dir = cfg.get("store_dir", "data")
-    path = os.path.join(store_dir, "auth_state.json")
+    path = os.path.join(store_dir, "agent", "auth_state.json")
     if not os.path.exists(path):
         return {"status": "UNKNOWN"}
     try:

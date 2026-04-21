@@ -25,12 +25,12 @@ _LOG_FILE = "events.jsonl"
 
 
 def _log_path(store_dir: str) -> str:
-    return os.path.join(store_dir, _LOG_FILE)
+    return os.path.join(store_dir, "agent", _LOG_FILE)
 
 
 def _write(store_dir: str, event_type: str, bot_name: str = "", detail: str = "",
            bot_id: str = "", extra: dict | None = None):
-    os.makedirs(store_dir, exist_ok=True)
+    os.makedirs(os.path.join(store_dir, "agent"), exist_ok=True)
     record = {
         "ts":        datetime.now(timezone.utc).isoformat(),
         "event":     event_type,

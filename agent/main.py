@@ -50,9 +50,13 @@ def load_cfg(path: str = "config.json") -> dict:
     return cfg
 
 
+def _agent_dir(store_dir: str) -> str:
+    return os.path.join(store_dir, "agent")
+
+
 def _check_file_trigger(store_dir: str) -> bool:
     """Return True and delete the global force_eval.trigger if it exists."""
-    path = os.path.join(store_dir, "force_eval.trigger")
+    path = os.path.join(_agent_dir(store_dir), "force_eval.trigger")
     if os.path.exists(path):
         try:
             os.remove(path)
@@ -64,7 +68,7 @@ def _check_file_trigger(store_dir: str) -> bool:
 
 def _check_bot_trigger(store_dir: str, bot_id: str) -> bool:
     """Return True and delete a per-bot force_eval trigger if it exists."""
-    path = os.path.join(store_dir, f"force_eval_{bot_id}.trigger")
+    path = os.path.join(_agent_dir(store_dir), f"force_eval_{bot_id}.trigger")
     if os.path.exists(path):
         try:
             os.remove(path)
@@ -76,26 +80,28 @@ def _check_bot_trigger(store_dir: str, bot_id: str) -> bool:
 
 def _has_pending_triggers(store_dir: str) -> bool:
     """Return True if any per-bot trigger file is waiting to be consumed."""
-    if not os.path.exists(store_dir):
+    adir = _agent_dir(store_dir)
+    if not os.path.exists(adir):
         return False
     return any(
         f.startswith("force_eval_") and f.endswith(".trigger")
-        for f in os.listdir(store_dir)
+        for f in os.listdir(adir)
     )
 
 
 def _clear_stale_triggers(store_dir: str):
     """Delete any leftover trigger or lock files from a previous stopped session."""
-    if not os.path.exists(store_dir):
+    adir = _agent_dir(store_dir)
+    if not os.path.exists(adir):
         return
-    for fname in os.listdir(store_dir):
+    for fname in os.listdir(adir):
         if (
             fname == "force_eval.trigger"
             or (fname.startswith("force_eval_") and fname.endswith(".trigger"))
             or (fname.startswith("eval_active_") and fname.endswith(".lock"))
         ):
             try:
-                os.remove(os.path.join(store_dir, fname))
+                os.remove(os.path.join(adir, fname))
             except Exception:
                 pass
 
@@ -144,9 +150,32 @@ def run_cycle(cfg: dict, force: bool = False):
     lore.cycle_start(ts)
 
     store_dir = cfg.get("store_dir", "data")
+    log       = logger_mod.get()
     ev.cycle_start(store_dir, forced=force)
 
-    bots = dataverse.list_all_bots(cfg)
+    # Consume ALL trigger files FIRST — before any network calls — so the
+    # dashboard never gets stuck on "queued" regardless of what happens next.
+    triggered_ids: set[str] = set()
+    adir = _agent_dir(store_dir)
+    if os.path.exists(adir):
+        for fname in os.listdir(adir):
+            if fname.startswith("force_eval_") and fname.endswith(".trigger"):
+                bot_id_from_file = fname[len("force_eval_"):-len(".trigger")]
+                triggered_ids.add(bot_id_from_file)
+                try:
+                    os.remove(os.path.join(adir, fname))
+                except Exception:
+                    pass
+    if triggered_ids:
+        log.info(f"run_cycle: consumed trigger(s) for {triggered_ids}")
+
+    try:
+        bots = dataverse.list_all_bots(cfg)
+        log.info(f"run_cycle: fetched {len(bots)} bot(s) from Dataverse")
+    except Exception as e:
+        log.error(f"run_cycle: failed to list bots — {e}")
+        lore.eval_error("list_bots", e)
+        return
 
     # ── Phase 0: classify every bot ─────────────────────────────────────────
     bots_to_eval: list[dict]  = []
@@ -156,7 +185,7 @@ def run_cycle(cfg: dict, force: bool = False):
         bot_id     = bot["botId"]
         bot_name   = bot["name"]
         curr_ver   = bot["modelVersion"]
-        bot_forced = _check_bot_trigger(store_dir, bot_id)
+        bot_forced = bot_id in triggered_ids
 
         # Skip eval: not globally forced, not per-bot forced, and model version unchanged
         if not force and not bot_forced and not store.model_changed(store_dir, bot_id, curr_ver):
@@ -169,6 +198,14 @@ def run_cycle(cfg: dict, force: bool = False):
         if not force and not bot_forced:
             lore.model_changed(bot_name, old_ver, curr_ver)
             ev.model_change(store_dir, bot_name, bot_id, old_ver, curr_ver)
+
+        # Guard against Copilot Studio's ~20 eval/day cap per bot
+        daily_count = store.daily_eval_count(store_dir, bot_id)
+        if daily_count >= 20:
+            log.warning(f"eval daily cap reached — {bot_name}: {daily_count} evals today, skipping")
+            continue
+        if daily_count >= 18:
+            log.warning(f"eval daily cap approaching — {bot_name}: {daily_count}/~20 evals today")
 
         run_folder    = store.make_run_folder_name(curr_ver)
         eval_start_ts = datetime.now(timezone.utc)
@@ -193,7 +230,7 @@ def run_cycle(cfg: dict, force: bool = False):
     # Write a lock file per bot so the dashboard knows an eval is actively running.
     # Deleted in Phase 3 (inside finally) so it disappears even if processing fails.
     for bot in bots_to_eval:
-        lock_path = os.path.join(store_dir, f"eval_active_{bot['botId']}.lock")
+        lock_path = os.path.join(_agent_dir(store_dir), f"eval_active_{bot['botId']}.lock")
         try:
             open(lock_path, "w").write(datetime.now(timezone.utc).isoformat())
         except Exception:
@@ -278,6 +315,7 @@ def run_cycle(cfg: dict, force: bool = False):
             store.save_tracking(store_dir, bot_id, curr_ver, run_folder,
                                 bot_name=bot_name, env_name=bot.get("envName", ""),
                                 env_id=env_id, org_url=org_url)
+            store.increment_daily_eval_count(store_dir, bot_id)
             bot_results.append(br)
             lore.eval_done(bot_name)
 
@@ -317,8 +355,8 @@ def _watch_loop(cfg: dict):
                 bot_id   = bot["botId"]
                 bot_name = bot["name"]
                 curr_ver = bot["modelVersion"]
-                trigger_path = os.path.join(store_dir, f"force_eval_{bot_id}.trigger")
-                lock_path    = os.path.join(store_dir, f"eval_active_{bot_id}.lock")
+                trigger_path = os.path.join(_agent_dir(store_dir), f"force_eval_{bot_id}.trigger")
+                lock_path    = os.path.join(_agent_dir(store_dir), f"eval_active_{bot_id}.lock")
                 # Already queued or running — skip to avoid duplicate triggers
                 if os.path.exists(trigger_path) or os.path.exists(lock_path):
                     continue
@@ -330,8 +368,15 @@ def _watch_loop(cfg: dict):
                     open(trigger_path, "w").write(datetime.now(timezone.utc).isoformat())
                     log.info(f"model change detected — {bot_name}: {old_ver} → {curr_ver}")
 
-            # Memory snapshot every 10 sweeps (~20 min at default interval)
             sweep += 1
+            # Heartbeat every sweep so Logs tab shows the agent is alive
+            n_stable = sum(
+                1 for b in bots
+                if not store.model_changed(store_dir, b["botId"], b["modelVersion"])
+            )
+            log.info(f"watcher sweep {sweep} — {len(bots)} bot(s) checked · {n_stable} stable · next in {interval_s}s")
+
+            # Memory snapshot every 10 sweeps (~20 min at default interval)
             if sweep % 10 == 0:
                 rss   = proc.memory_info().rss / 1024 / 1024
                 delta = rss - mem_base
@@ -363,13 +408,14 @@ def _eval_loop(cfg: dict):
 
 
 def _write_pid(store_dir: str):
-    os.makedirs(store_dir, exist_ok=True)
-    open(os.path.join(store_dir, "agent.pid"), "w").write(str(os.getpid()))
+    adir = _agent_dir(store_dir)
+    os.makedirs(adir, exist_ok=True)
+    open(os.path.join(adir, "agent.pid"), "w").write(str(os.getpid()))
 
 
 def _remove_pid(store_dir: str):
     try:
-        os.remove(os.path.join(store_dir, "agent.pid"))
+        os.remove(os.path.join(_agent_dir(store_dir), "agent.pid"))
     except Exception:
         pass
 

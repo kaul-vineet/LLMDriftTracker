@@ -38,7 +38,7 @@ def make_run_folder_name(model_version: str) -> str:
 # ── Tracking ──────────────────────────────────────────────────────────────────
 
 def load_tracking(store_dir: str, bot_id: str) -> dict:
-    path = os.path.join(_bot_dir(store_dir, bot_id), "tracking.json")
+    path = os.path.join(_bot_dir(store_dir, bot_id), "runs", "tracking.json")
     if not os.path.exists(path):
         return {}
     return _load_json(path)
@@ -48,7 +48,9 @@ def save_tracking(store_dir: str, bot_id: str, model_version: str,
                   last_run_folder: str | None,
                   bot_name: str = "", env_name: str = "",
                   env_id: str = "", org_url: str = ""):
-    path     = os.path.join(_bot_dir(store_dir, bot_id), "tracking.json")
+    runs_dir = os.path.join(_bot_dir(store_dir, bot_id), "runs")
+    os.makedirs(runs_dir, exist_ok=True)
+    path     = os.path.join(runs_dir, "tracking.json")
     existing = _load_json(path)
     data = {
         **existing,
@@ -68,6 +70,26 @@ def model_changed(store_dir: str, bot_id: str, current_model: str) -> bool:
     return load_tracking(store_dir, bot_id).get("modelVersion") != current_model
 
 
+def daily_eval_count(store_dir: str, bot_id: str) -> int:
+    """Return how many eval cycles have completed today (UTC) for this bot."""
+    t     = load_tracking(store_dir, bot_id)
+    today = datetime.now(timezone.utc).date().isoformat()
+    return int(t.get("evalCount", 0)) if t.get("evalCountDate") == today else 0
+
+
+def increment_daily_eval_count(store_dir: str, bot_id: str):
+    """Increment today's completed-eval counter stored in tracking.json."""
+    runs_dir = os.path.join(_bot_dir(store_dir, bot_id), "runs")
+    os.makedirs(runs_dir, exist_ok=True)
+    path  = os.path.join(runs_dir, "tracking.json")
+    data  = _load_json(path)
+    today = datetime.now(timezone.utc).date().isoformat()
+    count = int(data.get("evalCount", 0)) if data.get("evalCountDate") == today else 0
+    data["evalCountDate"] = today
+    data["evalCount"]     = count + 1
+    open(path, "w").write(json.dumps(data, indent=2))
+
+
 # ── Run save ──────────────────────────────────────────────────────────────────
 
 def save_run(store_dir: str, bot_id: str, model_version: str,
@@ -80,7 +102,7 @@ def save_run(store_dir: str, bot_id: str, model_version: str,
     test_sets: dict[metric_type -> {apiRunId, results}]
     """
     folder = folder_name or make_run_folder_name(model_version)
-    run_dir = os.path.join(_bot_dir(store_dir, bot_id), "runs", folder)
+    run_dir = os.path.join(_bot_dir(store_dir, bot_id), "transactions", folder)
     os.makedirs(run_dir, exist_ok=True)
 
     run = {
@@ -139,7 +161,7 @@ def _wrap_old_trigger(folder_path: str) -> dict | None:
 
 
 def load_run(store_dir: str, bot_id: str, folder_name: str) -> dict | None:
-    folder_path = os.path.join(_bot_dir(store_dir, bot_id), "runs", folder_name)
+    folder_path = os.path.join(_bot_dir(store_dir, bot_id), "transactions", folder_name)
     if _is_new_run_dir(folder_path):
         run = _load_json(os.path.join(folder_path, "run.json"))
         return {**run, "_folder": folder_name} if run else None
@@ -150,7 +172,7 @@ def load_run(store_dir: str, bot_id: str, folder_name: str) -> dict | None:
 
 def list_runs(store_dir: str, bot_id: str) -> list[dict]:
     """Return all runs sorted oldest→newest."""
-    runs_dir = os.path.join(_bot_dir(store_dir, bot_id), "runs")
+    runs_dir = os.path.join(_bot_dir(store_dir, bot_id), "transactions")
     if not os.path.exists(runs_dir):
         return []
     runs = []

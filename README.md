@@ -133,15 +133,16 @@ ASHOKA runs two independent threads inside one process. Detection never waits fo
   │                                                             │
   │   auth.py        unified MSAL — one cache, three APIs      │──► Microsoft Identity
   │   events.py      append-only JSONL event log               │
-  │   logger.py      rotating JSON file logger (data/agent.log)│
+  │   logger.py      rotating JSON file logger                  │
   └──────────────────────────┬──────────────────────────────────┘
                              │
-                    data/{botId}/runs/
-                    {timestamp}_{modelVersion}/
-                         run.json  ← full raw Eval API results
-                    events.jsonl   ← every agent action
-                    agent.log      ← rotating operational log (5 MB × 3)
-                    report_*.html  ← archived reports
+                    data/agent/
+                         agent.log       ← rotating operational log (5 MB × 3)
+                         events.jsonl    ← every agent action
+                    data/{botId}/
+                         runs/tracking.json     ← current model version
+                         transactions/{timestamp}_{modelVersion}/
+                              run.json   ← full raw Eval API results
                              │
   ┌──────────────────────────▼──────────────────────────────────┐
   │  Dashboard  —  Streamlit  (port 8501)                       │
@@ -165,10 +166,10 @@ ASHOKA runs two independent threads inside one process. Detection never waits fo
 | 📊 | **Any-run comparison** | Compare any two historical runs — not just the latest pair |
 | 🧠 | **LLM narrative** | Any OpenAI-compatible endpoint explains the response variation in plain English |
 | 🔐 | **Unified MSAL auth** | Single token cache shared across Eval API, Power Platform Inventory, and environmentmanagement |
-| 📋 | **Event log** | Append-only `events.jsonl` — every agent action timestamped and queryable |
+| 📋 | **Event log** | Append-only `data/agent/events.jsonl` — every agent action timestamped and queryable |
 | ⚡ | **Force eval** | Trigger an eval now — globally or per-bot — without restarting the agent |
 | 🧵 | **Non-blocking detection** | Watcher and evaluator run as separate threads — a model change is detected within 2 min even while a long eval cycle is running for other bots |
-| 📋 | **Operational log** | Rotating JSON log (`data/agent.log`, 5 MB × 3 files) — errors, model changes, eval timing, memory snapshots |
+| 📋 | **Operational log** | Rotating JSON log (`data/agent/agent.log`, 5 MB × 3 files) — errors, model changes, eval timing, memory snapshots |
 | 🩺 | **Memory monitoring** | Agent tracks its own RSS every ~20 min via psutil and warns in the log if growth exceeds 50% of baseline |
 | ⚙️ | **Browser setup** | Full configuration in the dashboard — no terminal, no YAML editing |
 | 📧 | **HTML reports** | Self-contained, email-ready, archived locally with full raw data |
@@ -237,11 +238,10 @@ LLM_API_KEY=your-llm-key-here
 SMTP_PASSWORD=your-smtp-password   # optional
 ```
 
-### Step 5 — Configure via dashboard
+### Step 5 — Launch the dashboard
 
-```powershell
-.\drift.bat dashboard        # Windows
-./drift dashboard            # bash / Mac / Linux
+```bash
+streamlit run dashboard/app.py
 ```
 
 Open `http://localhost:8501` → **Setup** page in the sidebar. Each section shows a ✓ or ✗ status. The sidebar shows **● READY** when all prerequisites are met.
@@ -259,30 +259,7 @@ Click **Save config.json** when all sections show ✓.
 
 ### Step 6 — Start ASHOKA
 
-Click **▶ Start Agent** in the sidebar (enabled only when ● READY). Or from the terminal:
-
-```powershell
-.\drift.bat run        # Windows
-./drift run            # bash / Mac / Linux
-```
-
-Expected terminal output:
-```
-🧙  You shall not falter. Watching every 2 minute(s).
-
-[watcher]  🌑  Safe Travels: darkness gathers — model change detected: gpt-4o → gpt-4o-mini
-[watcher]  ⚔   HR Bot: a new sword is forged — gpt-4o → gpt-4o-mini
-
-[evaluator] 🌄  The Fellowship rides at dawn — 2026-04-18 14:30 UTC
-[evaluator] ⚔   Safe Travels: trial by combat begins
-[evaluator] ⚔   HR Bot: trial by combat begins
-[evaluator] ⚔   Safe Travels: the verdict is reached.
-[evaluator] ⚔   HR Bot: the verdict is reached.
-📜  The scroll is sealed → data/report_20260418T143012.html
-🦅  The raven flies to admin@contoso.com.
-```
-
-The watcher logs model changes immediately as it finds them. The evaluator picks up all pending bots and runs them concurrently in one cycle.
+Click **▶ Start Agent** in the sidebar (enabled only when ● READY). The agent runs in the background — the dashboard stays open as your control panel. Click **■ Stop Agent** to stop it gracefully.
 
 ---
 
@@ -372,7 +349,7 @@ Browse and clean up stored data. Two-click safety on all deletes.
 
 ### 📋 Logs — Live log viewer
 
-Real-time view into `data/agent.log` — the agent's operational log.
+Real-time view into `data/agent/agent.log` — the agent's operational log.
 
 - **Level filter** — ALL / ERROR / WARNING / INFO / DEBUG
 - **Free-text search** — filter by message or thread name (`watcher` / `evaluator`)
@@ -387,13 +364,11 @@ Real-time view into `data/agent.log` — the agent's operational log.
 10:52:00  ERROR  watcher    watcher sweep failed: ConnectionError(...)
 ```
 
-From the terminal: `tail -f data/agent.log` or `grep '"level":"ERROR"' data/agent.log`
-
 ---
 
 ## 📋 Event log
 
-Every agent action is appended to `data/events.jsonl`:
+Every agent action is appended to `data/agent/events.jsonl`:
 
 ```jsonl
 {"ts":"2026-04-18T14:14:32+00:00","event":"model_change","botName":"Safe Travels","detail":"gpt-4o → gpt.default"}
@@ -413,7 +388,7 @@ Every agent action is appended to `data/events.jsonl`:
 | `regression` | One or more metrics regressed |
 | `improvement` | One or more metrics improved |
 | `stable` | No change detected |
-| `force_eval` | Triggered manually from dashboard or CLI |
+| `force_eval` | Triggered manually from dashboard |
 | `error` | Unhandled exception |
 
 ---
@@ -422,18 +397,21 @@ Every agent action is appended to `data/events.jsonl`:
 
 ```
 data/
-├── events.jsonl                       ← append-only business event log
-├── agent.log                          ← rotating operational log (JSON lines, 5 MB × 3 files)
-├── agent.log.1 / .2 / .3             ← rotated backups
-├── agent.pid                          ← agent process ID (deleted on stop)
-├── llm_status.json                    ← result of last LLM validation (Setup → Test)
-├── force_eval.trigger                 ← drop to trigger all-bot eval immediately
-├── force_eval_{botId}.trigger         ← written by watcher on model change; also written by dashboard Force Eval
-├── eval_active_{botId}.lock           ← written by evaluator while a bot's eval is running; deleted on completion
+├── agent/
+│   ├── agent.log                      ← rotating operational log (JSON lines, 5 MB × 3 files)
+│   ├── agent.log.1 / .2 / .3         ← rotated backups
+│   ├── agent.pid                      ← agent process ID (deleted on stop)
+│   ├── auth_state.json                ← auth state (re-auth tracking)
+│   ├── events.jsonl                   ← append-only business event log
+│   ├── llm_status.json                ← result of last LLM validation (Setup → Test)
+│   ├── msal_token_cache.json          ← MSAL token cache (delegated auth)
+│   ├── force_eval_{botId}.trigger     ← written on model change or dashboard Force Eval
+│   └── eval_active_{botId}.lock       ← written while a bot's eval is running
 │
 └── {botId}/
-    ├── tracking.json                  ← current model version + last run pointer
-    └── runs/
+    ├── runs/
+    │   └── tracking.json              ← current model version + last run pointer
+    └── transactions/
         └── {timestamp}_{modelVersion}/
             └── run.json               ← full raw Eval API results for all test sets
 ```
@@ -454,60 +432,40 @@ ModelSwapTracker/
 │   ├── eval_client.py        Copilot Studio Eval API — trigger + poll
 │   ├── reasoning.py          metric extraction · classify · response variation analysis
 │   ├── events.py             append-only JSONL event logger
-│   ├── logger.py             rotating JSON file logger → data/agent.log
-│   ├── store.py              run storage — {timestamp}_{modelVersion}/run.json
+│   ├── logger.py             rotating JSON file logger → data/agent/agent.log
+│   ├── store.py              run storage — transactions/{timestamp}_{modelVersion}/run.json
 │   ├── report.py             self-contained HTML report generator
-│   ├── notifier.py           SMTP email sender
-│   ├── wizard.py             terminal setup wizard (alternative to dashboard)
-│   └── lore.py               GoT/LotR themed terminal output
+│   └── notifier.py           SMTP email sender
 │
 ├── dashboard/                Streamlit web UI
 │   ├── app.py                entry point — router · sidebar · agent controls
 │   ├── theme.py              colour palette + font constants
-│   ├── spinner.py            full-screen loading overlay (hyperspace + orbit)
-│   └── pages/
+│   └── _pages/
 │       ├── ashoka.py         fleet · bot detail · run comparison · timeline
 │       ├── setup.py          browser-based configuration form
 │       ├── data.py           storage browser and cleanup
 │       └── logs.py           live log viewer — level filter · search · auto-refresh
 │
-├── scripts/                  dev utilities (not part of the app)
-│   ├── gen_dummy_data.py     generate sample run data for testing
-│   └── seed_events.py        seed the event log with sample events
-│
 ├── config.example.json       template — copy to config.json and fill in
 ├── docker/
 │   ├── Dockerfile
 │   └── docker-compose.yml    two-service local stack
-├── drift                     CLI entry point (bash / Mac / Linux)
-├── drift.bat                 CLI entry point (Windows)
 ├── requirements.txt
 └── .streamlit/config.toml   dark theme + server config
 ```
 
 ---
 
-## ⚡ CLI reference
-
-| Command (Windows) | Command (bash) | What it does |
-|---|---|---|
-| `.\drift.bat dashboard` | `./drift dashboard` | Launch dashboard on port 8501 |
-| `.\drift.bat run` | `./drift run` | Start the autonomous agent |
-| `.\drift.bat eval` | `./drift eval` | Force-run evals for all bots now |
-| `.\drift.bat setup` | `./drift setup` | Terminal setup wizard (alternative to browser) |
-
----
-
 ## 🔐 Auth
 
-All API calls (Eval API, Power Platform environmentmanagement, Power Platform Inventory) share one MSAL `PublicClientApplication` and one `SerializableTokenCache` file. Device flow runs once; all subsequent calls acquire silently via the cached refresh token.
+All API calls (Eval API, Power Platform environmentmanagement, Power Platform Inventory) share one MSAL `PublicClientApplication` and one `SerializableTokenCache` file (`data/agent/msal_token_cache.json`). Device flow runs once via the Setup page; all subsequent calls acquire silently via the cached refresh token.
 
 | Scenario | Behaviour |
 |---|---|
-| First run | MSAL device code flow — browser sign-in, token cached |
+| First run | MSAL device code flow — browser sign-in via Setup page, token cached |
 | Subsequent runs | Silent refresh — no user interaction |
 | Token expired | Agent emails admin a new device code, polls for 15 min |
-| Docker / Azure | Mount `msal_token_cache.json` on the shared volume |
+| Docker / Azure | Mount `data/agent/msal_token_cache.json` on the shared volume |
 
 ---
 
@@ -526,16 +484,17 @@ All API calls (Eval API, Power Platform environmentmanagement, Power Platform In
 |---|---|
 | `0 bots found` | Check `monitoredBots` in `config.json` — or rerun Setup to re-pick |
 | `no test sets found` | Create a test set in Copilot Studio → bot → Evaluation tab |
-| Nothing in dashboard | Use **▶ Force Eval** on the bot detail page, or run `.\drift.bat eval` |
+| Nothing in dashboard | Use **▶ Force Eval** on the bot detail page |
 | LLM 401 error | Check `LLM_API_KEY` in `.env` — key must match the endpoint |
 | `MSAL auth failed` | Re-authenticate via Setup → Authentication → Sign In |
 | 403 on Load Environments | App registration needs `EnvironmentManagement.Environments.Read` with admin consent — sign out and back in after granting |
 | SMTP failed | Office 365: `smtp.office365.com:587` — password in `.env` as `SMTP_PASSWORD` |
 | Container exits immediately | `docker compose logs varion-agent` — likely missing volume or env var |
-| Timeline empty | Run a force eval — it will write the first events to `data/events.jsonl` |
-| Logs tab empty | Start the agent — `data/agent.log` is created on first run |
+| Timeline empty | Run a force eval from the bot detail page — it will write the first events to `data/agent/events.jsonl` |
+| Logs tab empty | Start the agent — `data/agent/agent.log` is created on first run |
 | Memory warning in log | Agent RSS grew >50% from baseline — check for large Dataverse or eval API responses being held in memory across cycles |
-| Log file missing after restart | File rotates at 5 MB; check `agent.log.1` for previous session |
+| Log file missing after restart | File rotates at 5 MB; check `data/agent/agent.log.1` for previous session |
+| Eval quota reached | Copilot Studio Eval API caps at ~20 evaluations per bot per 24 h — `eval_error` is logged and the run is skipped; the next scheduled eval after reset will succeed |
 
 ---
 
