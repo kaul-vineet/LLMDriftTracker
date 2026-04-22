@@ -185,7 +185,8 @@ def _fmt_ts_long(iso):
         return iso[:16] if iso else "—"
 
 
-def load_all_bots():
+def _load_all_bots_uncached():
+    import time as _t
     from agent.store import list_runs, load_tracking
     bots = []
     if not os.path.exists(STORE_DIR):
@@ -209,6 +210,17 @@ def load_all_bots():
             "lastRun":      runs[-1] if runs else {},
         })
     return sorted(bots, key=lambda b: b["updatedAt"], reverse=True)
+
+
+def load_all_bots():
+    import time as _t
+    now = _t.time()
+    if now - st.session_state.get("_bots_ts", 0) < 10:
+        return st.session_state.get("_bots_cache", [])
+    bots = _load_all_bots_uncached()
+    st.session_state["_bots_cache"] = bots
+    st.session_state["_bots_ts"] = now
+    return bots
 
 
 def _metrics_for(run):
@@ -447,8 +459,7 @@ def render_header(bots, raw_events, page="overview"):
             <div style='font-size:0.72rem;color:{C_MAGENTA};letter-spacing:3px;
                         font-weight:700;margin-top:4px'>THE INCORRUPTIBLE JUDGE</div>
             <div style='font-size:0.72rem;color:{C_DIM};letter-spacing:1px;margin-top:4px'>
-              <span class="sys-dot-hdr"></span>{sys_label} &nbsp;·&nbsp; {dot_label}
-              &nbsp;·&nbsp; {n_bots} agent{n_plural} &nbsp;·&nbsp; {ts_str}</div>
+              <span class="sys-dot-hdr"></span>{sys_label} &nbsp;·&nbsp; {n_bots} agent{n_plural} &nbsp;·&nbsp; {ts_str}</div>
           </div>
         </div>
         <div class='stat-bar'>
@@ -510,8 +521,8 @@ def page_overview(bots, raw_events):
             with cols[i % 4]:
                 icon = {"REGRESSED":"🔴","IMPROVED":"🟢","BASELINE":"🟡"}.get(verdict,"⚪")
                 if st.button(
-                    f"{icon} {bot['botName']}\n{bot['modelVersion'][:26]}\n"
-                    f"{_fmt_ts(bot['updatedAt'])} · {bot['runCount']} run{'s' if bot['runCount']!=1 else ''}",
+                    f"{icon} {bot['botName']}\n"
+                    f"{bot['runCount']} run{'s' if bot['runCount']!=1 else ''}",
                     key=f"tile_{bot['botId']}", use_container_width=True,
                 ):
                     st.session_state.selected_bot = bot["botId"]
@@ -599,10 +610,10 @@ def page_bot_detail(bot):
         import time as _t
         queued_age   = (_t.time() - os.path.getmtime(trigger_path)) if queued else 0
         stale        = queued_age > 180  # stuck for >3 min
-        if queued and agent_up:
+        if queued:
             qc1, qc2 = st.columns([3, 1])
             with qc1:
-                label = "⚠ Eval stuck — click ✕" if stale else "⏳ Eval queued"
+                label = "⚠ Eval stuck — click ✕" if (stale or not agent_up) else "⏳ Eval queued"
                 st.button(label, key="btn_queued",
                           use_container_width=True, type="secondary", disabled=True)
             with qc2:
@@ -784,8 +795,13 @@ def page_bot_detail(bot):
 # ── Main ──────────────────────────────────────────────────────────────────────
 @st.fragment(run_every=30)
 def _main():
+    import time as _t
     bots       = load_all_bots()
-    raw_events = load_events(STORE_DIR)
+    _ev_now = _t.time()
+    if _ev_now - st.session_state.get("_ev_ts", 0) >= 10:
+        st.session_state["_ev_cache"] = load_events(STORE_DIR)
+        st.session_state["_ev_ts"] = _ev_now
+    raw_events = st.session_state.get("_ev_cache", [])
     page       = st.session_state.get("page", "overview")
     selected   = st.session_state.get("selected_bot")
 

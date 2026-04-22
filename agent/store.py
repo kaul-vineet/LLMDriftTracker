@@ -14,6 +14,7 @@ are detected and wrapped into the new run shape.
 import json
 import os
 from datetime import datetime, timezone
+from . import logger as logger_mod
 
 
 def _bot_dir(store_dir: str, bot_id: str) -> str:
@@ -48,6 +49,7 @@ def save_tracking(store_dir: str, bot_id: str, model_version: str,
                   last_run_folder: str | None,
                   bot_name: str = "", env_name: str = "",
                   env_id: str = "", org_url: str = ""):
+    log      = logger_mod.get()
     runs_dir = os.path.join(_bot_dir(store_dir, bot_id), "runs")
     os.makedirs(runs_dir, exist_ok=True)
     path     = os.path.join(runs_dir, "tracking.json")
@@ -64,6 +66,8 @@ def save_tracking(store_dir: str, bot_id: str, model_version: str,
         "updatedAt":      datetime.now(timezone.utc).isoformat(),
     }
     open(path, "w").write(json.dumps(data, indent=2))
+    log.info(f"Tracking updated for {bot_name or bot_id}: model={model_version}, "
+             f"lastRun={last_run_folder or 'none'}")
 
 
 def model_changed(store_dir: str, bot_id: str, current_model: str) -> bool:
@@ -101,6 +105,7 @@ def save_run(store_dir: str, bot_id: str, model_version: str,
     Save one run. Returns the folder name.
     test_sets: dict[metric_type -> {apiRunId, results}]
     """
+    log    = logger_mod.get()
     folder = folder_name or make_run_folder_name(model_version)
     run_dir = os.path.join(_bot_dir(store_dir, bot_id), "transactions", folder)
     os.makedirs(run_dir, exist_ok=True)
@@ -117,6 +122,8 @@ def save_run(store_dir: str, bot_id: str, model_version: str,
         "testSets":     test_sets,
     }
     open(os.path.join(run_dir, "run.json"), "w").write(json.dumps(run, indent=2))
+    log.info(f"Run saved for {bot_name or bot_id}: folder '{folder}', "
+             f"{len(test_sets)} test set(s), forced={forced}")
     return folder
 
 

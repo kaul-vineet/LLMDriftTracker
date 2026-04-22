@@ -99,7 +99,13 @@ def _render_logs():
         level  = e.get("level", "INFO").upper()
         color  = LEVEL_COLOR.get(level, C_DIM)
         ts     = e.get("ts", "")
-        ts_fmt = ts[11:19] if len(ts) >= 19 else ts or "—"
+        try:
+            from datetime import datetime, timezone, timedelta
+            _IST = timezone(timedelta(hours=5, minutes=30))
+            _dt  = datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(_IST)
+            ts_fmt = _dt.strftime("%H:%M:%S")
+        except Exception:
+            ts_fmt = ts[11:19] if len(ts) >= 19 else ts or "—"
         thread = e.get("thread", "")[:10]
         msg    = e.get("msg", "").replace("<", "&lt;").replace(">", "&gt;")
         rows.append(

@@ -98,13 +98,13 @@ def trigger_all_evals(bots_to_eval: list[dict], cfg: dict) -> list[dict]:
             test_sets = get_test_sets(pp_env_id, bot_id, token)
         except Exception as e:
             lore.eval_error(bot["name"], e)
-            log.error(f"failed to fetch test sets for {bot['name']}: {e}")
+            log.error(f"Could not load test sets for {bot['name']}: {e}")
             continue
 
         active = [s for s in test_sets if s.get("state") == "Active"]
         if not active:
             lore.eval_no_testsets(bot["name"])
-            log.warning(f"no active test sets — {bot['name']}")
+            log.warning(f"No active test sets found for {bot['name']} — skipping eval")
             continue
 
         for ts in active:
@@ -112,7 +112,7 @@ def trigger_all_evals(bots_to_eval: list[dict], cfg: dict) -> list[dict]:
             lore.eval_start(bot["name"], display_name)
             try:
                 run_id = trigger_run(pp_env_id, bot_id, ts["id"], token)
-                log.info(f"eval triggered — {bot['name']}  [{display_name}]  run={run_id[:8]}")
+                log.info(f"Eval started for {bot['name']} [{display_name}] — run ID: {run_id[:8]}")
                 pool.append({"run_id": run_id, "bot": bot, "display_name": display_name})
             except requests.HTTPError as he:
                 body = (he.response.text if he.response is not None else "").lower()
@@ -120,14 +120,14 @@ def trigger_all_evals(bots_to_eval: list[dict], cfg: dict) -> list[dict]:
                     he.response.status_code == 429
                     or any(k in body for k in ("quota", "throttl", "daily", "limit"))
                 ):
-                    log.warning(f"eval quota hit — {bot['name']} [{display_name}]: "
-                                f"daily cap reached (HTTP {he.response.status_code})")
+                    log.warning(f"Daily eval limit hit for {bot['name']} [{display_name}] "
+                                f"(HTTP {he.response.status_code}) — try again tomorrow")
                 else:
                     lore.eval_error(bot["name"], he)
-                    log.error(f"failed to trigger eval for {bot['name']} [{display_name}]: {he}")
+                    log.error(f"Could not start eval for {bot['name']} [{display_name}]: {he}")
             except Exception as e:
                 lore.eval_error(bot["name"], e)
-                log.error(f"failed to trigger eval for {bot['name']} [{display_name}]: {e}")
+                log.error(f"Could not start eval for {bot['name']} [{display_name}]: {e}")
 
     return pool
 
@@ -166,17 +166,17 @@ def poll_all_runs(pool: list[dict], cfg: dict,
                 elapsed = int(time.time() - start)
                 total   = data.get("totalTestCases", 0)
                 lore.eval_polling(run_id, state, elapsed, timeout_s, total)
-                log.info(f"eval polling — {bot['name']}  [{ctx['display_name']}]  "
-                         f"state={state}  {elapsed}s elapsed  {total} cases")
+                log.info(f"Waiting for eval result — {bot['name']} [{ctx['display_name']}]: "
+                         f"{state}, {elapsed}s elapsed, {total} case(s)")
                 if state in ("completed", "failed", "cancelled"):
                     lore.eval_poll_done()
-                    log.info(f"eval {state} — {bot['name']}  run={run_id[:8]}")
+                    log.info(f"Eval {state} for {bot['name']} — run {run_id[:8]}")
                     completed.setdefault(bot_id, []).append((ctx["display_name"], data))
                 else:
                     still_pending.append(ctx)
             except Exception as e:
                 lore.eval_error(bot["name"], e)
-                log.error(f"eval poll error — {bot['name']}: {e}")
+                log.error(f"Error checking eval status for {bot['name']}: {e}")
                 still_pending.append(ctx)   # retry next sweep
 
         remaining = still_pending

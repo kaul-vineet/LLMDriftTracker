@@ -167,14 +167,28 @@ def run_cycle(cfg: dict, force: bool = False):
                 except Exception:
                     pass
     if triggered_ids:
-        log.info(f"run_cycle: consumed trigger(s) for {triggered_ids}")
+        log.info(f"Evaluation requested — picked up pending eval for {len(triggered_ids)} bot(s)")
 
     try:
         bots = dataverse.list_all_bots(cfg)
-        log.info(f"run_cycle: fetched {len(bots)} bot(s) from Dataverse")
+        log.info(f"Agent inventory loaded — {len(bots)} agent(s) found")
     except Exception as e:
-        log.error(f"run_cycle: failed to list bots — {e}")
+        log.error(f"Could not load agent inventory from Dataverse — {e}")
         lore.eval_error("list_bots", e)
+        bots = []
+
+    # Any triggered bot not found in the current inventory was likely deleted or deactivated.
+    found_ids = {b["botId"] for b in bots}
+    for tid in triggered_ids:
+        if tid not in found_ids:
+            t    = store.load_tracking(store_dir, tid)
+            name = t.get("botName", tid)
+            log.warning(f"Bot '{name}' ({tid[:8]}...) was queued for eval but is not in the current "
+                        f"agent inventory — it may have been deleted or deactivated. Skipping.")
+            lore.eval_error(name, Exception("Bot not found in inventory — possibly deleted or deactivated"))
+
+    if not bots and not triggered_ids:
+        log.info("No agents to process this cycle")
         return
 
     # ── Phase 0: classify every bot ─────────────────────────────────────────
@@ -186,6 +200,11 @@ def run_cycle(cfg: dict, force: bool = False):
         bot_name   = bot["name"]
         curr_ver   = bot["modelVersion"]
         bot_forced = bot_id in triggered_ids
+
+        # If model version is unavailable and this is not a manual force, skip — we can't compare
+        if curr_ver == "unknown" and not force and not bot_forced:
+            log.info(f"Model version unavailable for {bot_name} — skipping eval until Dataverse token is available")
+            continue
 
         # Skip eval: not globally forced, not per-bot forced, and model version unchanged
         if not force and not bot_forced and not store.model_changed(store_dir, bot_id, curr_ver):
@@ -202,10 +221,10 @@ def run_cycle(cfg: dict, force: bool = False):
         # Guard against Copilot Studio's ~20 eval/day cap per bot
         daily_count = store.daily_eval_count(store_dir, bot_id)
         if daily_count >= 20:
-            log.warning(f"eval daily cap reached — {bot_name}: {daily_count} evals today, skipping")
+            log.warning(f"Daily eval limit reached for {bot_name} ({daily_count} evals today) — skipping until tomorrow")
             continue
         if daily_count >= 18:
-            log.warning(f"eval daily cap approaching — {bot_name}: {daily_count}/~20 evals today")
+            log.warning(f"Approaching daily eval limit for {bot_name} — {daily_count} of ~20 evals used today")
 
         run_folder    = store.make_run_folder_name(curr_ver)
         eval_start_ts = datetime.now(timezone.utc)
@@ -360,33 +379,43 @@ def _watch_loop(cfg: dict):
                 # Already queued or running — skip to avoid duplicate triggers
                 if os.path.exists(trigger_path) or os.path.exists(lock_path):
                     continue
+                # If model version is unavailable (no Dataverse token cached), skip change detection
+                if curr_ver == "unknown":
+                    log.info(f"Model version unavailable for {bot_name} — skipping change detection this sweep")
+                    continue
                 if store.model_changed(store_dir, bot_id, curr_ver):
                     tracking = store.load_tracking(store_dir, bot_id)
                     old_ver  = tracking.get("modelVersion", "unknown")
                     lore.model_changed(bot_name, old_ver, curr_ver)
                     ev.model_change(store_dir, bot_name, bot_id, old_ver, curr_ver)
                     open(trigger_path, "w").write(datetime.now(timezone.utc).isoformat())
-                    log.info(f"model change detected — {bot_name}: {old_ver} → {curr_ver}")
+                    log.info(f"Model change detected for {bot_name}: {old_ver} → {curr_ver}")
 
             sweep += 1
             # Heartbeat every sweep so Logs tab shows the agent is alive
+            # Bots with "unknown" model version are excluded from change count (Dataverse token unavailable)
             n_stable = sum(
                 1 for b in bots
-                if not store.model_changed(store_dir, b["botId"], b["modelVersion"])
+                if b["modelVersion"] != "unknown"
+                and not store.model_changed(store_dir, b["botId"], b["modelVersion"])
             )
-            log.info(f"watcher sweep {sweep} — {len(bots)} bot(s) checked · {n_stable} stable · next in {interval_s}s")
+            n_unknown = sum(1 for b in bots if b["modelVersion"] == "unknown")
+            status    = f"{n_stable} stable"
+            if n_unknown:
+                status += f", {n_unknown} version unavailable"
+            log.info(f"Watching: checked {len(bots)} agent(s), {status} · next check in {interval_s}s")
 
             # Memory snapshot every 10 sweeps (~20 min at default interval)
             if sweep % 10 == 0:
                 rss   = proc.memory_info().rss / 1024 / 1024
                 delta = rss - mem_base
-                log.info(f"memory rss={rss:.1f}MB delta={delta:+.1f}MB")
+                log.info(f"Memory usage: {rss:.1f} MB (change since start: {delta:+.1f} MB)")
                 if delta > mem_base * 0.5:
-                    log.warning(f"memory growth >50% from baseline={mem_base:.1f}MB — possible leak")
+                    log.warning(f"Memory growing fast — was {mem_base:.1f} MB at startup, now {rss:.1f} MB · possible memory leak")
 
         except Exception as e:
             lore.eval_error("watcher", e)
-            log.error(f"watcher sweep failed: {e}")
+            log.error(f"Watcher check failed: {e}")
         time.sleep(interval_s)
 
 
@@ -398,12 +427,13 @@ def _eval_loop(cfg: dict):
         try:
             force = _check_file_trigger(store_dir)
             if force or _has_pending_triggers(store_dir):
-                log.info(f"eval cycle starting (force={force})")
+                label = "forced" if force else "triggered"
+                log.info(f"Evaluation cycle starting ({label})")
                 run_cycle(cfg, force=force)
-                log.info("eval cycle complete")
+                log.info("Evaluation cycle complete")
         except Exception as e:
             lore.eval_error("evaluator", e)
-            log.error(f"eval cycle failed: {e}")
+            log.error(f"Evaluation cycle failed: {e}")
         time.sleep(30)
 
 
@@ -432,13 +462,13 @@ def main():
     # ── Startup banner ────────────────────────────────────────────────────────
     watch_s = cfg.get("watch_interval_seconds", 120)
     poll_s  = cfg.get("eval_poll_interval_seconds", 20)
-    log.info(f"VARION agent starting — watch_interval={watch_s}s  eval_poll_interval={poll_s}s")
+    log.info(f"VARION starting — checking every {watch_s}s, polling every {poll_s}s")
 
     envs = cfg.get("environments", [])
     for e in envs:
         monitored = e.get("monitoredBots", [])
         label     = f"{len(monitored)} agent(s)" if monitored else "all agents"
-        log.info(f"environment: {e['name']} ({e.get('environmentId', 'no-id')}) — monitoring {label}")
+        log.info(f"Monitoring environment: {e['name']} — {label}")
 
     if not envs:
         log.warning("no environments configured — nothing to watch (run Setup to configure)")

@@ -168,11 +168,28 @@ def get_bapi_token(cfg: dict) -> str:
 
 
 def get_dataverse_token(org_url: str, cfg: dict) -> str:
-    """Token for a specific Dataverse org — bot discovery."""
+    """Token for a specific Dataverse org — bot configuration / model version."""
     if not org_url.startswith("http"):
         org_url = "https://" + org_url
     scopes = [org_url.rstrip("/") + "/.default"]
     return _acquire(scopes, cfg)
+
+
+def get_dataverse_token_silent(org_url: str, cfg: dict) -> str | None:
+    """Silent-only Dataverse token — returns None instead of blocking on device flow."""
+    if not org_url.startswith("http"):
+        org_url = "https://" + org_url
+    scopes = [org_url.rstrip("/") + "/.default"]
+    cache  = _load_cache(cfg)
+    app    = _app(cfg, cache)
+    accounts = app.get_accounts()
+    if not accounts:
+        return None
+    result = app.acquire_token_silent(scopes, account=accounts[0])
+    if result and "access_token" in result:
+        _save_cache(cache, cfg)
+        return result["access_token"]
+    return None
 
 
 def get_auth_state(cfg: dict) -> dict:

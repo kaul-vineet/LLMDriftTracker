@@ -9,6 +9,7 @@ extract_metrics_for_report() accepts the testSets dict shape:
 import json
 import os
 from openai import OpenAI
+from . import logger as logger_mod
 
 REGRESS_THRESHOLD = 0.03   # absolute change to count as regression/improvement
 
@@ -219,15 +220,21 @@ def analyse_variation(bot_name: str, old_model: str, new_model: str,
 
     prompt = _build_prompt(bot_name, old_model, new_model, classifications, ai_reasons)
 
+    log = logger_mod.get()
+    log.info(f"Requesting LLM analysis for {bot_name} (model swap: {old_model} → {new_model})")
     try:
         client   = _build_client(cfg)
+        model_id = _model(cfg)
         response = client.chat.completions.create(
-            model=_model(cfg),
+            model=model_id,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=1024,
         )
-        return response.choices[0].message.content
+        text = response.choices[0].message.content
+        log.info(f"LLM analysis complete for {bot_name} ({len(text)} chars)")
+        return text
     except Exception as e:
+        log.error(f"LLM analysis failed for {bot_name}: {e}")
         summary = verdict_summary(classifications)
         return (f"LLM analysis unavailable ({e}).\n"
                 f"Verdict: {summary}\n"
