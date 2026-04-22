@@ -8,8 +8,9 @@ Event types:
   agent_start     — agent process started
   agent_stop      — agent process stopped
   scan_start      — watcher began its first active scan
+  scan_complete   — one watcher sweep finished (emitted after every poll)
   scan_end        — watcher scan session ended (emitted before agent_stop)
-  cycle_start     — poll cycle began (pinned as heartbeat; not shown in main timeline)
+  cycle_start     — eval cycle began (evaluator thread only)
   model_change    — model version shift detected for a bot
   agent_eval      — eval queued automatically on model change
   eval_queued     — eval queued from the dashboard Force Eval button
@@ -153,6 +154,11 @@ def agent_stop(store_dir: str):
 def scan_start(store_dir: str, n_bots: int):
     _write(store_dir, "scan_start",
            detail=f"Watcher began scanning {n_bots} agent(s)")
+
+
+def scan_complete(store_dir: str, n_bots: int, n_stable: int):
+    _write(store_dir, "scan_complete",
+           detail=f"Scan complete — {n_bots} agent(s) checked, {n_stable} stable")
 
 
 def scan_end(store_dir: str):

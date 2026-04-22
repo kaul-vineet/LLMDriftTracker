@@ -429,9 +429,10 @@ _V_COLORS = {"REGRESSED":C_RED,"IMPROVED":C_GREEN,"STABLE":C_DIM,"NEW":C_GOLD,"B
 _EVENT_META = {
     "agent_start":   ("ok",  "🟢","AGENT START",  "imp"),   # green  — system up
     "agent_stop":    ("bad", "🔴","AGENT STOP",   "reg"),   # red    — system down
-    "scan_start":    ("info","🔍","SCAN START",   "new"),   # cyan   — active scan
-    "scan_end":      ("info","🔲","SCAN END",     "stb"),   # grey   — scan ended
-    "cycle_start":   ("info","📡","SCANNING",     "stb"),   # grey   — heartbeat
+    "scan_start":    ("info","🔍","SCAN START",    "new"),   # cyan   — first scan
+    "scan_complete": ("info","✔","SCAN DONE",    "stb"),   # grey   — sweep done
+    "scan_end":      ("info","🔲","SCAN END",     "stb"),   # grey   — agent exiting
+    "cycle_start":   ("info","📡","SCANNING",     "stb"),   # grey   — eval heartbeat
     "model_change":  ("warn","🔄","MODEL SHIFT",  "warn"),  # gold   — change detected
     "eval_queued":   ("info","⏳","EVAL QUEUED",  "stb"),   # grey   — pending
     "agent_eval":    ("info","🤖","AGENT EVAL",   "birth"), # magenta— agent-triggered
@@ -462,7 +463,7 @@ def _event_to_dict(e: dict, model_lookup: dict | None = None) -> dict:
 
 def _build_timeline_events(raw, model_lookup: dict | None = None):
     """Newest-first, noise-filtered list of timeline event dicts."""
-    _FILTER = {"cycle_start","stable","regression","improvement"}
+    _FILTER = {"cycle_start","scan_complete","stable","regression","improvement"}
     return [_event_to_dict(e, model_lookup) for e in raw
             if e.get("event","") not in _FILTER]
 
@@ -607,7 +608,7 @@ def page_overview(bots, raw_events):
     # non-noise events that can shift agent_start past the [:15] threshold.
     _visible_ts = {e["ts"] for e in live}
     _pinned = []
-    for _etype in ("cycle_start", "scan_end", "scan_start", "agent_stop", "agent_start"):
+    for _etype in ("scan_complete", "scan_end", "scan_start", "agent_stop", "agent_start"):
         _match = next((e for e in raw_events if e.get("event") == _etype), None)
         if _match and _match.get("ts") not in _visible_ts:
             _pinned.append(_event_to_dict(_match, model_lookup))
