@@ -1,4 +1,4 @@
-"""dashboard/pages/logs.py — Live log viewer for the VARION agent."""
+"""dashboard/pages/logs.py — Live log viewer for the ASHOKA agent."""
 import json
 import os
 import time
@@ -32,7 +32,7 @@ st.markdown(
 )
 
 # ── Controls ──────────────────────────────────────────────────────────────────
-c1, c2 = st.columns([2, 3])
+c1, c2, c3 = st.columns([2, 3, 1])
 with c1:
     level_filter = st.selectbox(
         "Level", ["ALL", "ERROR", "WARNING", "INFO", "DEBUG"],
@@ -43,6 +43,22 @@ with c2:
         "Search", placeholder="filter by text or thread…",
         key="log_search", label_visibility="collapsed",
     )
+with c3:
+    if os.path.exists(LOG_PATH):
+        if st.session_state.get("_confirm_clear_log"):
+            if st.button("⚠ Confirm", key="btn_clear_log_yes",
+                         type="primary", use_container_width=True):
+                try:
+                    open(LOG_PATH, "w").close()
+                except Exception:
+                    pass
+                st.session_state.pop("_confirm_clear_log", None)
+                st.rerun()
+        else:
+            if st.button("🗑 Clear", key="btn_clear_log",
+                         type="secondary", use_container_width=True):
+                st.session_state["_confirm_clear_log"] = True
+                st.rerun()
 
 # ── Auto-refresh every 5 s permanently ───────────────────────────────────────
 @st.fragment(run_every=5)

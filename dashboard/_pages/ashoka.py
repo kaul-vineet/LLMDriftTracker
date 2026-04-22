@@ -506,23 +506,43 @@ def page_overview(bots, raw_events):
 
     # ── MONITORED AGENTS ─────────────────────────────────────────────────────
     if not bots:
-        st.markdown(
-            f"<div style='text-align:center;padding:40px;color:{C_DIM}'>"
-            f"<div style='font-size:1.17rem;color:{C_TEXT}'>No bots tracked yet</div>"
-            f"<div style='font-size:0.98rem;margin-top:6px'>Start the agent — it will begin evaluating on the next poll cycle</div>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
+        # Show configured bots from config.json even before first run
+        _cfg_bots = []
+        try:
+            _cfg = json.loads(open("config.json").read())
+            for _env in _cfg.get("environments", []):
+                _monitored = _env.get("monitoredBots", [])
+                if _monitored:
+                    for _schema in _monitored:
+                        _cfg_bots.append({"name": _schema, "env": _env["name"]})
+                else:
+                    _cfg_bots.append({"name": f"All agents", "env": _env["name"]})
+        except Exception:
+            pass
+
+        st.markdown("<div class='sec-label'>MONITORED AGENTS</div>", unsafe_allow_html=True)
+        if _cfg_bots:
+            cols = st.columns(4)
+            for i, b in enumerate(_cfg_bots):
+                with cols[i % 4]:
+                    if st.button(b["name"],
+                                 key=f"cfg_tile_{i}", use_container_width=True):
+                        st.session_state["selected_cfg_bot"] = b
+                        st.session_state.page = "cfg_detail"
+                        st.rerun()
+        else:
+            st.markdown(
+                f"<div style='color:{C_DIM};font-size:0.85rem;padding:20px 0'>"
+                f"No agents configured — complete Setup to add environments and agents.</div>",
+                unsafe_allow_html=True,
+            )
     else:
         st.markdown("<div class='sec-label'>MONITORED AGENTS</div>", unsafe_allow_html=True)
         cols = st.columns(4)
         for i, bot in enumerate(bots):
-            verdict = _bot_verdict(bot)
             with cols[i % 4]:
-                icon = {"REGRESSED":"🔴","IMPROVED":"🟢","BASELINE":"🟡"}.get(verdict,"⚪")
                 if st.button(
-                    f"{icon} {bot['botName']}\n"
-                    f"{bot['runCount']} run{'s' if bot['runCount']!=1 else ''}",
+                    bot["botName"],
                     key=f"tile_{bot['botId']}", use_container_width=True,
                 ):
                     st.session_state.selected_bot = bot["botId"]
@@ -841,6 +861,84 @@ def page_bot_detail(bot):
         )
     st.markdown("<div class='rh-timeline'>" + rh_html + "</div>", unsafe_allow_html=True)
 
+    # ── Delete all runs ───────────────────────────────────────────────────────
+    st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
+    st.divider()
+    bot_id   = bot["botId"]
+    _del_key = f"confirm_del_runs_{bot_id}"
+    if st.session_state.get(_del_key):
+        st.warning(f"This will permanently delete all {len(runs)} run(s) for **{name}**.")
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("⚠ Confirm — delete all runs", key=f"del_runs_yes_{bot_id}",
+                         type="primary", use_container_width=True):
+                import shutil
+                txn_dir = os.path.join(STORE_DIR, bot_id, "transactions")
+                if os.path.isdir(txn_dir):
+                    shutil.rmtree(txn_dir, ignore_errors=True)
+                for suffix in (f"force_eval_{bot_id}.trigger",
+                               f"eval_active_{bot_id}.lock",
+                               f"eval_progress_{bot_id}.json"):
+                    try:
+                        os.remove(os.path.join(STORE_DIR, "agent", suffix))
+                    except Exception:
+                        pass
+                st.session_state.pop(_del_key, None)
+                st.session_state["_bots_ts"] = 0   # bust cache
+                st.session_state.page = "overview"
+                st.rerun()
+        with c2:
+            if st.button("Cancel", key=f"del_runs_no_{bot_id}",
+                         type="secondary", use_container_width=True):
+                st.session_state.pop(_del_key, None)
+                st.rerun()
+    else:
+        if st.button("✕ Delete all runs", key=f"del_runs_arm_{bot_id}",
+                     use_container_width=False):
+            st.session_state[_del_key] = True
+            st.rerun()
+
+
+# ── Config bot detail (no tracking data yet) ──────────────────────────────────
+def page_cfg_bot_detail(cfg_bot: dict):
+    if st.button("← Back", key="cfg_back_btn"):
+        st.session_state.page = "overview"
+        st.session_state.pop("selected_cfg_bot", None)
+        st.rerun()
+
+    name = cfg_bot.get("name", "—")
+    env  = cfg_bot.get("env", "—")
+
+    st.markdown(
+        f"<div style='padding:14px 0 8px;border-bottom:1px solid {C_BORDER};margin-bottom:20px'>"
+        f"<span style='font-size:1.43rem;font-weight:700;color:{C_TEXT};font-family:{FONT}'>{name}</span>"
+        f"<span style='color:{C_DIM};font-size:0.98rem;margin-left:12px'>{env}</span>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        f"<div style='color:{C_DIM};font-size:0.98rem;padding:20px 0'>"
+        f"No eval runs yet — force an eval to begin tracking this agent.</div>",
+        unsafe_allow_html=True,
+    )
+
+    agent_up     = _agent_running()
+    trigger_path = os.path.join(STORE_DIR, "agent", "force_eval.trigger")
+    queued       = os.path.exists(trigger_path)
+
+    if queued:
+        st.button("⏳ Eval queued…", key="cfg_eval_queued",
+                  use_container_width=False, type="secondary", disabled=True)
+    else:
+        if st.button("▶ Force Eval", key="cfg_force_eval_btn",
+                     type="secondary",
+                     disabled=not agent_up,
+                     help=None if agent_up else "Start the agent first"):
+            os.makedirs(os.path.join(STORE_DIR, "agent"), exist_ok=True)
+            open(trigger_path, "w").write(datetime.now(timezone.utc).isoformat())
+            st.rerun()
+
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 @st.fragment(run_every=30)
@@ -861,6 +959,29 @@ def _main():
         bot = next((b for b in bots if b["botId"] == selected), None)
         if bot:
             page_bot_detail(bot)
+        elif selected and os.path.exists(
+            os.path.join(STORE_DIR, "agent", f"eval_active_{selected}.lock")
+        ):
+            # Tracking file mid-write during active eval — bust cache and retry
+            st.session_state["_bots_ts"] = 0
+            _t.sleep(1)
+            st.rerun()
+        else:
+            st.session_state.page = "overview"
+            st.rerun()
+    elif page == "cfg_detail":
+        cfg_bot = st.session_state.get("selected_cfg_bot")
+        if cfg_bot:
+            # If agent has now created tracking data, switch to real detail page
+            real_bot = next((b for b in bots if b["botName"] == cfg_bot.get("name")
+                             or b["botId"] in cfg_bot.get("name", "")), None)
+            if real_bot:
+                st.session_state.selected_bot = real_bot["botId"]
+                st.session_state.page = "detail"
+                st.session_state.pop("selected_cfg_bot", None)
+                st.rerun()
+            else:
+                page_cfg_bot_detail(cfg_bot)
         else:
             st.session_state.page = "overview"
             st.rerun()

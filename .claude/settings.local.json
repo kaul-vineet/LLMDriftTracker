@@ -10,7 +10,18 @@
       "Bash(git rm *)",
       "Bash(git mv *)",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebSearch",
+      "WebFetch(domain:community.powerplatform.com)",
+      "Bash(tasklist /FI \"PID eq 53020\")",
+      "Bash(powershell -c \"Get-Process -Id 53020 -ErrorAction SilentlyContinue | Select-Object Id,Name,CPU\")",
+      "Bash(Get-Content \"C:/demoprojects/DriftTrackerv1.0/data/agent/agent.log\" -Tail 20)",
+      "Bash(Get-Content \"C:/demoprojects/DriftTrackerv1.0/data/agent/agent.log\")",
+      "Bash(Select-String \".\")",
+      "Bash(Select-Object -Last 30)",
+      "Bash(python3 *)",
+      "Bash(cd /tmp)",
+      "Bash(gh pr *)"
     ]
   }
 }

@@ -4,16 +4,18 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime, timezone
 from . import lore
+from . import logger as logger_mod
 
 
 def send_report(html: str, cfg: dict):
-    smtp_cfg = cfg["smtp"]
+    smtp_cfg  = cfg.get("smtp", {})
+    log       = logger_mod.get()
 
-    host      = os.environ.get("SMTP_HOST")      or smtp_cfg["host"]
-    port      = int(os.environ.get("SMTP_PORT")  or smtp_cfg["port"])
-    user      = os.environ.get("SMTP_USER")      or smtp_cfg["user"]
-    password  = os.environ.get("SMTP_PASSWORD")  or smtp_cfg["password"]
-    recipient = os.environ.get("SMTP_RECIPIENT") or smtp_cfg["recipient"]
+    host      = os.environ.get("SMTP_HOST")     or smtp_cfg.get("host", "")
+    port      = int(os.environ.get("SMTP_PORT") or smtp_cfg.get("port") or 587)
+    user      = os.environ.get("SMTP_USER")     or smtp_cfg.get("user", "")
+    password  = os.environ.get("SMTP_PASSWORD") or smtp_cfg.get("password", "")
+    recipient = os.environ.get("SMTP_RECIPIENT")or smtp_cfg.get("recipient", "")
 
     if not all([host, user, password, recipient]):
         lore.report_skipped()
@@ -28,10 +30,13 @@ def send_report(html: str, cfg: dict):
     msg["To"]      = recipient
     msg.attach(MIMEText(html, "html"))
 
-    with smtplib.SMTP(host, port) as s:
-        s.ehlo()
-        s.starttls()
-        s.login(user, password)
-        s.send_message(msg)
-
-    lore.report_sent(recipient)
+    try:
+        with smtplib.SMTP(host, port) as s:
+            s.ehlo()
+            s.starttls()
+            s.login(user, password)
+            s.send_message(msg)
+        lore.report_sent(recipient)
+    except Exception as e:
+        lore.eval_error("notifier", e)
+        log.error(f"Failed to send report email to {recipient}: {e}")

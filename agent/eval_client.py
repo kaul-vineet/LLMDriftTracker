@@ -72,7 +72,7 @@ def get_historical_runs(pp_env_id: str, bot_id: str, token: str, n: int = 5) -> 
 
 def _infer_metric_type(result: dict) -> str:
     """First non-empty metric type found; assumes all test cases in a set share the same type."""
-    for case in result.get("testCasesResults", []):
+    for case in (result.get("testCasesResults") or []):
         for m in case.get("metricsResults", []):
             t = m.get("type", "").strip()
             if t:
@@ -206,7 +206,7 @@ def poll_all_runs(pool: list[dict], cfg: dict,
                 state = data.get("state", "").lower()
                 elapsed    = int(time.time() - start)
                 total      = data.get("totalTestCases", 0)
-                done_cases = len(data.get("testCasesResults", []))
+                done_cases = len(data.get("testCasesResults") or [])
                 sets_done  = len(completed.get(bot_id, []))
                 sets_total = sets_total_by_bot.get(bot_id, 1)
                 lore.eval_polling(run_id, state, elapsed, timeout_s, total)

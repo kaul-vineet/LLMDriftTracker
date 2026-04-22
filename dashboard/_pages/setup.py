@@ -17,7 +17,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from theme import C_BG, C_CARD, C_BORDER, C_CYAN, C_MAGENTA, C_GOLD, C_RED, C_GREEN, C_DIM, C_TEXT, FONT
 
 EVAL_SCOPES = ["https://api.powerplatform.com/.default"]
-ENV_SCOPES  = ["https://api.powerplatform.com/EnvironmentManagement.Environments.Read"]
 STORE_DIR   = os.environ.get("STORE_DIR", "data")
 CONFIG_PATH = "config.json"
 DEFAULT_CLIENT_ID = "774142ce-9070-446b-83ac-e2053c716879"
@@ -149,20 +148,28 @@ def _fetch_bots_inventory(env_id, token):
 def _fetch_envs(token):
     import requests
     try:
-        r = requests.get(
-            "https://api.powerplatform.com/environmentmanagement/environments",
-            params={"api-version": "2022-03-01-preview"},
-            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+        r = requests.post(
+            "https://api.powerplatform.com/resourcequery/resources/query",
+            params={"api-version": "2024-10-01"},
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json",
+                     "Accept": "application/json"},
+            json={"TableName": "PowerPlatformResources",
+                  "Clauses": [{"$type": "where", "FieldName": "type",
+                               "Operator": "==",
+                               "Values": ["'microsoft.powerplatform/environments'"]}]},
             timeout=15,
         )
         if r.status_code != 200:
             return [], f"HTTP {r.status_code}: {r.text[:300]}"
         envs = []
-        for item in r.json().get("value", []):
-            org_url = item.get("url", "")
-            name    = item.get("displayName") or item.get("name") or ""
-            env_id  = item.get("id", "")
-            if org_url and name:
+        for item in r.json().get("data", []):
+            p      = item.get("properties", {})
+            env_id = item.get("name", "")
+            name   = p.get("displayName", env_id)
+            org_url = (p.get("linkedEnvironmentMetadata", {}).get("instanceUrl", "")
+                       or p.get("url", "")
+                       or p.get("instanceUrl", ""))
+            if name:
                 envs.append({"name": name, "orgUrl": org_url.rstrip("/"), "environmentId": env_id})
         return envs, None
     except Exception as e:
@@ -277,8 +284,7 @@ with c1:
     client_id = st.text_input("Client (App) ID *", value=st.session_state.s_client_id,
                                key="in_client_id",
                                help="The Application (client) ID of your Entra app registration. "
-                                    "Must have CopilotStudio.MakerOperations.Read and "
-                                    "EnvironmentManagement.Environments.Read delegated permissions.")
+                                    "Must have CopilotStudio.MakerOperations.Read delegated permissions.")
 with c2:
     tenant_id = st.text_input("Tenant ID *", value=st.session_state.s_tenant_id,
                                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
@@ -410,9 +416,7 @@ else:
 
     if _loading_envs:
         with st.spinner("Scanning environments…"):
-            # Use explicit ENV_SCOPES so MSAL picks the token that contains
-            # EnvironmentManagement.Environments.Read, not the older CopilotStudio-only token.
-            tok, tok_err = _token_silent(ENV_SCOPES, st.session_state.s_client_id,
+            tok, tok_err = _token_silent(EVAL_SCOPES, st.session_state.s_client_id,
                                          st.session_state.s_tenant_id, st.session_state.s_cache_file)
             if not tok:
                 st.session_state["_env_load_err"] = tok_err or "Token acquisition failed — sign in first (Section 2)."
@@ -868,44 +872,3 @@ with col_s2:
 if not _ready:
     st.caption("⚠ Client ID and Tenant ID are required to save.")
 
-# ── Agent maintenance ─────────────────────────────────────────────────────────
-st.markdown("---")
-st.markdown(
-    f"<div style='font-size:0.85rem;font-weight:700;letter-spacing:3px;"
-    f"text-transform:uppercase;color:{C_DIM};margin-bottom:12px;font-family:{FONT}'>"
-    f"AGENT MAINTENANCE</div>",
-    unsafe_allow_html=True,
-)
-
-def _stale_files():
-    import glob
-    agent_dir = os.path.join(STORE_DIR, "agent")
-    patterns  = [
-        os.path.join(agent_dir, "force_eval*.trigger"),
-        os.path.join(agent_dir, "eval_active_*.lock"),
-        os.path.join(agent_dir, "eval_progress_*.json"),
-    ]
-    found = []
-    for p in patterns:
-        found.extend(glob.glob(p))
-    return found
-
-stale = _stale_files()
-if stale:
-    st.warning(f"{len(stale)} stale agent file(s) found: trigger, lock, or progress files left from a previous session.")
-    st.caption("  \n".join(os.path.basename(f) for f in stale))
-    if st.button("🗑 Clear stale agent files", type="secondary"):
-        removed, failed = 0, 0
-        for f in stale:
-            try:
-                os.remove(f)
-                removed += 1
-            except Exception:
-                failed += 1
-        if failed:
-            st.error(f"Removed {removed}, failed to remove {failed}.")
-        else:
-            st.success(f"Cleared {removed} stale file(s). Dashboard state reset.")
-        st.rerun()
-else:
-    st.caption("No stale agent files found.")

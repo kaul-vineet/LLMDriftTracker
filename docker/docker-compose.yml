@@ -1,8 +1,8 @@
-# VARION — two services, one image, shared volume
+# ASHOKA — two services, one image, shared volume
 #
 # Local usage (run from repo root):
 #   docker compose -f docker/docker-compose.yml up --build -d
-#   docker compose -f docker/docker-compose.yml logs -f varion-agent
+#   docker compose -f docker/docker-compose.yml logs -f ashoka-agent
 #   open http://localhost:8501
 #
 # Azure Container Apps:
@@ -17,12 +17,12 @@
 
 services:
 
-  varion-agent:
+  ashoka-agent:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    image: varion:latest
-    container_name: varion-agent
+    image: ashoka:latest
+    container_name: ashoka-agent
     restart: unless-stopped
     command: python -m agent.main
     volumes:
@@ -38,9 +38,9 @@ services:
       SMTP_PASSWORD:  ${SMTP_PASSWORD:-}
       SMTP_RECIPIENT: ${SMTP_RECIPIENT:-}
 
-  varion-dashboard:
-    image: varion:latest
-    container_name: varion-dashboard
+  ashoka-dashboard:
+    image: ashoka:latest
+    container_name: ashoka-dashboard
     restart: unless-stopped
     command: >
       streamlit run dashboard/app.py
@@ -59,4 +59,4 @@ services:
       LLM_BASE_URL:   ${LLM_BASE_URL:-}
       LLM_MODEL:      ${LLM_MODEL:-}
     depends_on:
-      - varion-agent
+      - ashoka-agent

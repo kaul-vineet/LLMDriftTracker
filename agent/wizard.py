@@ -3,7 +3,7 @@ agent/wizard.py — one-time setup wizard for copilot-eval-agent
 Invoked via:  drift setup
 
 Step order: credentials → sign-in → environments → agent settings → SMTP
-Credentials must come first so MSAL tokens are available for BAPI/Dataverse discovery.
+Credentials must come first so MSAL token is available for Inventory API discovery.
 """
 import json, msal, os, sys, time, threading, smtplib, getpass, requests
 from email.mime.multipart import MIMEMultipart
@@ -196,13 +196,13 @@ def authenticate(cfg: dict) -> str:
 # ── SMTP test ─────────────────────────────────────────────────────────────────
 def _send_test_email(host: str, port: int, user: str, password: str, recipient: str):
     msg           = MIMEMultipart("alternative")
-    msg["Subject"] = "✅ VARION — You're all set!"
+    msg["Subject"] = "✅ ASHOKA — You're all set!"
     msg["From"]    = user
     msg["To"]      = recipient
     ts             = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     body = f"""<html><body style="font-family:sans-serif;background:#0d1117;color:#c9d1d9;padding:32px">
   <div style="max-width:520px;margin:auto;border:1px solid #30363d;border-radius:8px;padding:28px">
-    <h2 style="color:#58a6ff;margin-top:0">⚡ VARION</h2>
+    <h2 style="color:#58a6ff;margin-top:0">⚡ ASHOKA</h2>
     <p style="color:#8b949e;font-size:13px;margin-top:-12px">copilot-eval-agent · v1.0</p>
     <hr style="border-color:#30363d">
     <p>Setup is complete. The agent will start monitoring your Copilot Studio bots and
@@ -215,32 +215,37 @@ def _send_test_email(host: str, port: int, user: str, password: str, recipient: 
         s.ehlo(); s.starttls(); s.login(user, password); s.send_message(msg)
 
 
-# ── Tenant / environment discovery via BAPI ───────────────────────────────────
-def _fetch_environments_from_bapi(cfg: dict) -> list:
-    """Fetch all environments using MSAL-acquired BAPI token."""
-    from .auth import get_bapi_token
-    token = get_bapi_token(cfg)
-    resp = requests.get(
-        "https://api.bap.microsoft.com/providers/Microsoft.BusinessAppPlatform/environments",
-        params={"api-version": "2020-10-01"},
-        headers={"Authorization": f"Bearer {token}"},
+# ── Tenant / environment discovery via Inventory API ─────────────────────────
+def _fetch_environments_from_inventory(cfg: dict) -> list:
+    """Fetch all environments via Power Platform Inventory API (eval token — no BAPI needed)."""
+    from .auth import get_eval_token
+    token = get_eval_token(cfg)
+    r = requests.post(
+        "https://api.powerplatform.com/resourcequery/resources/query",
+        params={"api-version": "2024-10-01"},
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json",
+                 "Accept": "application/json"},
+        json={"TableName": "PowerPlatformResources",
+              "Clauses": [{"$type": "where", "FieldName": "type",
+                           "Operator": "==",
+                           "Values": ["'microsoft.powerplatform/environments'"]}]},
         timeout=20,
     )
-    resp.raise_for_status()
+    if r.status_code != 200:
+        raise RuntimeError(f"Inventory API (environments) HTTP {r.status_code}: {r.text[:200]}")
 
-    # Show raw response for connectivity diagnostics
-    raw = resp.json()
-    total = len(raw.get("value", []))
-    hint(f"  BAPI returned {total} environment(s).")
+    data = r.json().get("data", [])
+    hint(f"  Inventory API returned {len(data)} environment(s).")
 
     envs = []
-    for item in raw.get("value", []):
-        env_id  = item.get("name", "")
-        props   = item.get("properties", {})
-        display = props.get("displayName", env_id)
-        url     = props.get("linkedEnvironmentMetadata", {}).get("instanceUrl", "")
-        if url:
-            envs.append({"name": display, "orgUrl": url.rstrip("/"), "environmentId": env_id})
+    for item in data:
+        p      = item.get("properties", {})
+        env_id = item.get("name", "")
+        name   = p.get("displayName", env_id)
+        org_url = (p.get("linkedEnvironmentMetadata", {}).get("instanceUrl", "")
+                   or p.get("url", "")
+                   or p.get("instanceUrl", ""))
+        envs.append({"name": name, "orgUrl": org_url.rstrip("/"), "environmentId": env_id})
     return envs
 
 
@@ -339,19 +344,18 @@ def _step_environments_manual() -> list:
 
 
 def step_environments(cfg: dict) -> list:
-    """Discover environments via BAPI (uses MSAL token from cfg), fall back to manual."""
+    """Discover environments via Inventory API (eval token), fall back to manual."""
     print()
     try:
-        raw = with_spinner("Fetching environments from tenant…", _fetch_environments_from_bapi, cfg)
+        raw = with_spinner("Fetching environments from tenant…", _fetch_environments_from_inventory, cfg)
     except Exception as e:
-        step_fail(f"BAPI lookup failed: {e}")
+        step_fail(f"Inventory API lookup failed: {e}")
         hint("Verify your App registration has Power Platform API permissions.")
         hint("Falling back to manual entry.\n")
         return _step_environments_manual()
 
     if not raw:
-        # BAPI call succeeded but returned no environments — distinct from a call failure above
-        step_fail("No environments with a Dataverse org URL found in tenant.")
+        step_fail("No environments found in tenant via Inventory API.")
         return _step_environments_manual()
 
     print()
@@ -554,7 +558,7 @@ def main():
     # Step 2 — Microsoft sign-in (device flow, caches token)
     _run_step("2", cfg)
 
-    # Step 3 — Environments + bot picker (uses BAPI + Dataverse tokens)
+    # Step 3 — Environments + bot picker (uses Inventory API eval token)
     section_header(3, "🌐", "Power Platform Environments")
     cfg["environments"] = step_environments(cfg)
     section_ok(3, "Environments")
@@ -620,7 +624,7 @@ def main():
         print(f"  {DM}{path:<32}{RS}  {DM}{desc}{RS}")
     print()
     print(f"  {DM}Docker  →  docker compose up -d{RS}")
-    print(f"  {DM}           docker compose logs -f varion-agent{RS}")
+    print(f"  {DM}           docker compose logs -f ashoka-agent{RS}")
     print(f"  {DM}           open http://localhost:8501  # dashboard{RS}")
     print(f"  {DM}{'─' * 56}{RS}\n")
 

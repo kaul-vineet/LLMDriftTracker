@@ -1,5 +1,5 @@
 """
-dashboard/app.py — VARION · entry point & router
+dashboard/app.py — ASHOKA · entry point & router
 Runs on every page load: sets config, applies CSS, renders shared sidebar, then routes.
 """
 import json
@@ -23,7 +23,7 @@ PID_FILE  = os.path.join(STORE_DIR, "agent", "agent.pid")
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="VARION",
+    page_title="ASHOKA",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -318,9 +318,9 @@ def render_agent_controls():
         pid = _read_pid()
         st.markdown(
             f"<div style='background:rgba(40,200,64,.06);border:1px solid rgba(40,200,64,.25);"
-            f"border-radius:6px;padding:8px 12px;margin-bottom:8px'>"
-            f"<div style='color:{C_GREEN};font-size:0.65rem;font-weight:700;letter-spacing:1px;"
-            f"font-family:{FONT}'>● AGENT RUNNING &nbsp;·&nbsp; PID {pid}</div></div>",
+            f"border-radius:6px;padding:10px 14px;margin-bottom:8px;width:100%;box-sizing:border-box'>"
+            f"<div style='color:{C_GREEN};font-size:0.78rem;font-weight:700;letter-spacing:1px;"
+            f"font-family:{FONT};text-align:center'>● AGENT RUNNING<br><span style='font-size:0.65rem;letter-spacing:0;font-weight:400'>PID {pid}</span></div></div>",
             unsafe_allow_html=True,
         )
         st.markdown("""<style>
@@ -331,10 +331,15 @@ def render_agent_controls():
             background:rgba(229,62,62,0.12) !important;
           }
         </style>""", unsafe_allow_html=True)
-        if st.button("■ Stop Agent", use_container_width=True, type="secondary"):
-            with st.spinner("Shutting down…"):
-                _stop_agent()
-                time.sleep(1)
+        _stopping = st.session_state.get("_op_stopping", False)
+        if st.button("Shutting down…" if _stopping else "■ Stop Agent",
+                     use_container_width=True, type="secondary", disabled=_stopping):
+            st.session_state["_op_stopping"] = True
+            st.rerun()
+        if _stopping:
+            _stop_agent()
+            time.sleep(1)
+            st.session_state["_op_stopping"] = False
             st.session_state["_agent_ts"] = 0
             st.rerun()
     else:
@@ -346,12 +351,17 @@ def render_agent_controls():
             unsafe_allow_html=True,
         )
         _ready, _ = _get_readiness_cached()
-        if st.button("▶ Start Agent", use_container_width=True, type="primary",
-                     disabled=not _ready,
-                     help=None if _ready else "Complete setup before starting the agent"):
-            with st.spinner("Starting…"):
-                _start_agent()
-                time.sleep(2)
+        _starting = st.session_state.get("_op_starting", False)
+        if st.button("Starting…" if _starting else "▶ Start Agent",
+                     use_container_width=True, type="primary",
+                     disabled=_starting or not _ready,
+                     help=None if (_ready or _starting) else "Complete setup before starting the agent"):
+            st.session_state["_op_starting"] = True
+            st.rerun()
+        if _starting:
+            _start_agent()
+            time.sleep(2)
+            st.session_state["_op_starting"] = False
             st.session_state["_agent_ts"] = 0
             st.rerun()
 
@@ -361,7 +371,7 @@ with st.sidebar:
     st.markdown(
         f"<div style='padding:4px 0 14px'>"
         f"<div style='font-size:16px;font-weight:700;letter-spacing:3px;"
-        f"color:{C_CYAN};font-family:{FONT}'>⚡ VARION</div>"
+        f"color:{C_CYAN};font-family:{FONT}'>⚡ ASHOKA</div>"
         f"<div style='font-size:0.6rem;color:{C_DIM};margin-top:2px;letter-spacing:1px'>"
         f"copilot-eval-agent · v1.1</div></div>",
         unsafe_allow_html=True,
@@ -397,7 +407,7 @@ if os.path.exists(_auth_err_path):
 pg = st.navigation([
     st.Page("_pages/ashoka.py", title="ASHOKA", icon="⚡", default=True),
     st.Page("_pages/setup.py",  title="Setup",  icon="⚙"),
-    st.Page("_pages/data.py",   title="Data",   icon="🗄"),
+    st.Page("_pages/control.py", title="Control", icon="🗄"),
     st.Page("_pages/logs.py",   title="Logs",   icon="📋"),
 ])
 pg.run()

@@ -38,15 +38,6 @@ st.markdown(f"""
   .run-meta   {{ color:{C_DIM};  font-size:0.75rem; margin-top:2px; }}
   .run-forced {{ color:{C_GOLD}; font-size:0.7rem; font-family:{FONT};
                  letter-spacing:1px; margin-left:8px; }}
-  .stat-row {{
-    display:grid; grid-template-columns:repeat(4,1fr);
-    gap:1px; background:{C_BORDER}; border:1px solid {C_BORDER};
-    border-radius:8px; overflow:hidden; margin-bottom:24px;
-  }}
-  .stat-cell {{ background:{C_CARD}; padding:12px 16px; text-align:center; }}
-  .stat-val  {{ font-size:1.6rem; font-weight:700; font-family:{FONT}; line-height:1; }}
-  .stat-lbl  {{ font-size:0.65rem; color:{C_DIM}; letter-spacing:2px;
-                text-transform:uppercase; margin-top:4px; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -134,22 +125,6 @@ def _load_all_bots():
     return bots
 
 
-def _load_reports():
-    reports = []
-    if not os.path.exists(STORE_DIR):
-        return reports
-    for fname in sorted(os.listdir(STORE_DIR), reverse=True):
-        if not fname.startswith("report_") or not fname.endswith(".html"):
-            continue
-        path = os.path.join(STORE_DIR, fname)
-        reports.append({
-            "fname": fname,
-            "path":  path,
-            "size":  os.path.getsize(path),
-            "ts":    fname[7:22],
-        })
-    return reports
-
 
 def _events_path():
     return os.path.join(STORE_DIR, "events.jsonl")
@@ -169,34 +144,6 @@ def _events_count():
     except Exception:
         return 0
 
-
-# ── Summary stats ─────────────────────────────────────────────────────────────
-def render_summary(bots, reports):
-    total_runs    = sum(len(b["runs"]) for b in bots)
-    total_size    = sum(b["size"] for b in bots)
-    total_reports = len(reports)
-    ev_count      = _events_count()
-
-    st.markdown(f"""
-    <div class='stat-row'>
-      <div class='stat-cell'>
-        <div class='stat-val' style='color:{C_CYAN}'>{len(bots)}</div>
-        <div class='stat-lbl'>Agents</div>
-      </div>
-      <div class='stat-cell'>
-        <div class='stat-val' style='color:{C_TEXT}'>{total_runs}</div>
-        <div class='stat-lbl'>Eval Runs</div>
-      </div>
-      <div class='stat-cell'>
-        <div class='stat-val' style='color:{C_DIM}'>{ev_count}</div>
-        <div class='stat-lbl'>Events</div>
-      </div>
-      <div class='stat-cell'>
-        <div class='stat-val' style='color:{C_MAGENTA}'>{_fmt_size(total_size)}</div>
-        <div class='stat-lbl'>Total Size</div>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
 
 
 # ── Confirmation guard ────────────────────────────────────────────────────────
@@ -254,29 +201,21 @@ def render_bots(bots):
             )
 
             if bot["runs"]:
-                # ── Individual run list ───────────────────────────────────────
+                # ── Run summary (read-only) ───────────────────────────────────
                 for run in reversed(bot["runs"]):
-                    col_info, col_del = st.columns([5, 1])
-                    with col_info:
-                        forced_tag = (f"<span class='run-forced'>FORCED</span>"
-                                      if run["forced"] else "")
-                        ts_str = run["testSets"]
-                        st.markdown(
-                            f"<div class='run-row'>"
-                            f"<div>"
-                            f"<div class='run-model'>{run['model']}{forced_tag}</div>"
-                            f"<div class='run-meta'>"
-                            f"{_fmt_ts(run['ts'])} &nbsp;·&nbsp; "
-                            f"{', '.join(ts_str) or '—'} &nbsp;·&nbsp; "
-                            f"{_fmt_size(run['size'])}</div>"
-                            f"</div></div>",
-                            unsafe_allow_html=True,
-                        )
-                    with col_del:
-                        if _delete_button("✕", key=f"run_{run['folder']}"):
-                            shutil.rmtree(run["path"], ignore_errors=True)
-                            st.rerun()
-
+                    forced_tag = (f"<span class='run-forced'>FORCED</span>"
+                                  if run["forced"] else "")
+                    ts_str = run["testSets"]
+                    st.markdown(
+                        f"<div class='run-row'>"
+                        f"<div class='run-model'>{run['model']}{forced_tag}</div>"
+                        f"<div class='run-meta'>"
+                        f"{_fmt_ts(run['ts'])} &nbsp;·&nbsp; "
+                        f"{', '.join(ts_str) or '—'} &nbsp;·&nbsp; "
+                        f"{_fmt_size(run['size'])}</div>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
                 st.divider()
 
             # ── Bot-level actions ─────────────────────────────────────────────
@@ -320,58 +259,93 @@ def render_events():
                 st.rerun()
 
 
-# ── Reports section ───────────────────────────────────────────────────────────
-def render_reports(reports):
-    st.markdown("<div style='margin-top:24px'></div>", unsafe_allow_html=True)
-    total_size = sum(r["size"] for r in reports)
 
-    st.markdown(
-        f"<div class='data-head' style='font-size:0.85rem;font-weight:700;"
-        f"letter-spacing:2px;font-family:{FONT};text-transform:uppercase;"
-        f"color:{C_DIM};border-bottom:1px solid {C_BORDER};"
-        f"padding-bottom:6px;margin-bottom:16px'>HTML REPORTS &nbsp;·&nbsp; "
-        f"<span style='color:{C_TEXT}'>{len(reports)}</span> &nbsp;·&nbsp; "
-        f"<span style='color:{C_DIM}'>{_fmt_size(total_size)}</span></div>",
-        unsafe_allow_html=True,
-    )
+
+# ── HTML reports ─────────────────────────────────────────────────────────────
+def _render_reports():
+    import glob
+    st.markdown("<div style='margin-top:24px'></div>", unsafe_allow_html=True)
+    pattern = os.path.join(STORE_DIR, "report_*.html")
+    reports = sorted(glob.glob(pattern), reverse=True)
+    total   = sum(os.path.getsize(p) for p in reports)
+
+    col_info, col_del = st.columns([5, 1])
+    with col_info:
+        st.markdown(
+            f"<div class='data-head' style='font-size:0.85rem;font-weight:700;"
+            f"letter-spacing:2px;font-family:{FONT};text-transform:uppercase;"
+            f"color:{C_DIM};border-bottom:1px solid {C_BORDER};"
+            f"padding-bottom:6px;margin-bottom:0'>HTML REPORTS &nbsp;·&nbsp; "
+            f"<span style='color:{C_TEXT}'>{len(reports)}</span> &nbsp;·&nbsp; "
+            f"<span style='color:{C_DIM}'>{_fmt_size(total)}</span></div>",
+            unsafe_allow_html=True,
+        )
+    with col_del:
+        if reports and _delete_button("✕ Clear all", key="del_all_reports"):
+            for p in reports:
+                try: os.remove(p)
+                except Exception: pass
+            st.rerun()
 
     if not reports:
-        st.markdown(f"<div style='color:{C_DIM};font-size:0.85rem'>No reports yet.</div>",
+        st.markdown(f"<div style='color:{C_DIM};font-size:0.85rem;margin-top:8px'>No reports yet.</div>",
                     unsafe_allow_html=True)
         return
+    for p in reports:
+        fname = os.path.basename(p)
+        size  = os.path.getsize(p)
+        st.markdown(
+            f"<div style='padding:6px 0;border-bottom:1px solid {C_BORDER};"
+            f"font-size:0.8rem;color:{C_DIM}'>"
+            f"<span style='color:{C_TEXT};font-family:{FONT}'>{fname}</span>"
+            f" &nbsp;·&nbsp; {_fmt_size(size)}</div>",
+            unsafe_allow_html=True,
+        )
 
-    for r in reports:
-        col_info, col_del = st.columns([5, 1])
-        with col_info:
-            st.markdown(
-                f"<div style='padding:8px 0;border-bottom:1px solid {C_BORDER}'>"
-                f"<span style='color:{C_TEXT};font-family:{FONT};font-size:0.85rem'>{r['fname']}</span>"
-                f"<span style='color:{C_DIM};font-size:0.75rem;margin-left:10px'>{_fmt_size(r['size'])}</span>"
-                f"</div>",
-                unsafe_allow_html=True,
-            )
-        with col_del:
-            if _delete_button("✕", key=f"report_{r['fname']}"):
-                try:
-                    os.remove(r["path"])
-                except Exception:
-                    pass
-                st.rerun()
 
-    st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
-    if _delete_button("✕ Delete all reports", key="delete_all_reports"):
-        for r in reports:
-            try:
-                os.remove(r["path"])
-            except Exception:
-                pass
-        st.rerun()
+# ── Agent maintenance ─────────────────────────────────────────────────────────
+def _render_maintenance():
+    import glob
+    st.markdown("<div style='margin-top:24px'></div>", unsafe_allow_html=True)
+    agent_dir = os.path.join(STORE_DIR, "agent")
+    patterns  = [
+        os.path.join(agent_dir, "force_eval*.trigger"),
+        os.path.join(agent_dir, "eval_active_*.lock"),
+        os.path.join(agent_dir, "eval_progress_*.json"),
+    ]
+    stale = []
+    for p in patterns:
+        stale.extend(glob.glob(p))
+
+    col_info, col_del = st.columns([5, 1])
+    with col_info:
+        st.markdown(
+            f"<div class='data-head' style='font-size:0.85rem;font-weight:700;"
+            f"letter-spacing:2px;font-family:{FONT};text-transform:uppercase;"
+            f"color:{C_DIM};border-bottom:1px solid {C_BORDER};"
+            f"padding-bottom:6px;margin-bottom:0'>AGENT MAINTENANCE &nbsp;·&nbsp; "
+            f"<span style='color:{C_RED if stale else C_DIM}'>"
+            f"{len(stale)} stale file(s)</span></div>",
+            unsafe_allow_html=True,
+        )
+    with col_del:
+        if stale and _delete_button("🗑 Clear", key="del_stale"):
+            for f in stale:
+                try: os.remove(f)
+                except Exception: pass
+            st.rerun()
+
+    if stale:
+        st.caption("  \n".join(os.path.basename(f) for f in stale))
+    else:
+        st.markdown(f"<div style='color:{C_DIM};font-size:0.85rem;margin-top:8px'>No stale files.</div>",
+                    unsafe_allow_html=True)
 
 
 # ── Page ──────────────────────────────────────────────────────────────────────
 st.markdown(
     f"<div style='font-size:1.4rem;font-weight:700;letter-spacing:4px;"
-    f"color:{C_CYAN};font-family:{FONT};margin-bottom:4px'>DATA</div>"
+    f"color:{C_CYAN};font-family:{FONT};margin-bottom:4px'>CONTROL</div>"
     f"<div style='font-size:0.7rem;color:{C_DIM};letter-spacing:1px;"
     f"margin-bottom:24px'>Manage stored eval runs, events, and reports</div>",
     unsafe_allow_html=True,
@@ -379,12 +353,11 @@ st.markdown(
 
 _load_ph = st.empty()
 _spinner(_load_ph, "LOADING")
-bots    = _load_all_bots()
-reports = _load_reports()
+bots = _load_all_bots()
 
-render_summary(bots, reports)
 render_bots(bots)
 render_events()
-render_reports(reports)
+_render_reports()
+_render_maintenance()
 
 _load_ph.empty()

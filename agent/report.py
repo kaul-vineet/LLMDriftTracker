@@ -5,7 +5,9 @@ Layout (regression-first):
   Header → Verdict hero → LLM Analysis → Metric type summary table →
   Per-metric-type sections (REGRESSED expanded) → Radar chart
 """
+import html
 import json
+import math
 import uuid
 from datetime import datetime, timezone
 
@@ -21,6 +23,16 @@ C_GREEN   = "#28c840"
 C_DIM     = "#666666"
 C_TEXT    = "#e0e0e0"
 FONT      = "'SF Mono','Cascadia Code','Fira Code',monospace"
+
+
+def _esc(s) -> str:
+    return html.escape(str(s or ""), quote=True)
+
+
+def _radar_value(v, is_rate: bool) -> float:
+    if v is None or not math.isfinite(float(v)) if isinstance(v, (int, float)) else True:
+        return 0
+    return round(float(v) * 100, 1) if is_rate else round(float(v), 1)
 
 
 def _badge(status: str) -> str:
@@ -95,7 +107,7 @@ def _metric_section(metric_type: str, verdict: str,
         cs      = cc.get("status", "—")
         psc     = pc.get("score")
         csc     = cc.get("score")
-        reason  = cc.get("reason", "")
+        reason  = cc.get("reason") or ""
 
         if isinstance(psc, float) and isinstance(csc, float):
             d     = csc - psc
@@ -109,7 +121,7 @@ def _metric_section(metric_type: str, verdict: str,
         if cs == "Fail":
             failures.append({"num": i + 1, "score": csc, "reason": reason})
 
-        short = (reason[:120] + "…") if len(reason) > 120 else reason
+        short = (_esc(reason[:120]) + "…") if len(reason) > 120 else _esc(reason)
         rows_html += (
             f"<tr style='border-bottom:1px solid {C_BORDER}'>"
             f"<td style='color:{C_DIM};padding:6px 8px'>{i+1}</td>"
@@ -129,7 +141,7 @@ def _metric_section(metric_type: str, verdict: str,
             f"border-left:3px solid {C_RED};border-radius:0 4px 4px 0'>"
             f"<div style='font-weight:700;color:{C_TEXT};font-family:{FONT};margin-bottom:4px'>"
             f"Case {f['num']} — Score {_fmt_score(f['score'])}</div>"
-            f"<div style='color:{C_DIM};font-size:0.85rem;line-height:1.6'>{f['reason']}</div>"
+            f"<div style='color:{C_DIM};font-size:0.85rem;line-height:1.6'>{_esc(f['reason'])}</div>"
             f"</div>"
             for f in failures
         )
@@ -183,9 +195,9 @@ def _metric_section(metric_type: str, verdict: str,
 
 
 def _bot_section(br: dict) -> str:
-    bot_name        = br["botName"]
-    old_model       = br["oldModel"]
-    new_model       = br["newModel"]
+    bot_name        = _esc(br["botName"])
+    old_model       = _esc(br["oldModel"])
+    new_model       = _esc(br["newModel"])
     run_folder      = br.get("runFolder", "")
     verdict_line    = br.get("verdictSummary", "")
     analysis        = br.get("analysis", "")
@@ -263,12 +275,8 @@ def _bot_section(br: dict) -> str:
     sid          = uuid.uuid4().hex[:8]
     metric_keys  = [c["key"] for c in classifications]
     radar_labels = json.dumps([k.split(".")[-1][:16] for k in metric_keys])
-    radar_prev   = json.dumps([round(c["prev"] * 100, 1) if c["prev"] is not None and "passRate" in c["key"]
-                               else (round(c["prev"], 1) if c["prev"] is not None else 0)
-                               for c in classifications])
-    radar_curr   = json.dumps([round(c["curr"] * 100, 1) if c["curr"] is not None and "passRate" in c["key"]
-                               else (round(c["curr"], 1) if c["curr"] is not None else 0)
-                               for c in classifications])
+    radar_prev   = json.dumps([_radar_value(c["prev"], "passRate" in c["key"]) for c in classifications])
+    radar_curr   = json.dumps([_radar_value(c["curr"], "passRate" in c["key"]) for c in classifications])
 
     force_eval  = old_model == new_model
     model_line  = (
@@ -307,7 +315,7 @@ def _bot_section(br: dict) -> str:
                     background:{C_BG};border-left:3px solid {C_MAGENTA};border-radius:0 6px 6px 0'>
           <div style='font-size:0.68rem;font-weight:700;color:{C_MAGENTA};
                       letter-spacing:2px;margin-bottom:8px;font-family:{FONT}'>⚡ RESPONSE VARIATION ANALYSIS</div>
-          <div style='font-size:0.875rem;line-height:1.75;color:{C_TEXT};white-space:pre-wrap'>{analysis}</div>
+          <div style='font-size:0.875rem;line-height:1.75;color:{C_TEXT};white-space:pre-wrap'>{_esc(analysis)}</div>
         </div>
 
         <!-- Metric Summary Table -->
@@ -416,7 +424,7 @@ def generate_report(bot_results: list[dict]) -> str:
 <html lang='en'>
 <head>
   <meta charset='UTF-8'>
-  <title>VARION — Response Variation Report — {ts}</title>
+  <title>ASHOKA — Response Variation Report — {ts}</title>
   <script src='https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js'></script>
   <style>
     * {{ box-sizing:border-box; margin:0; padding:0 }}
@@ -431,7 +439,7 @@ def generate_report(bot_results: list[dict]) -> str:
   </style>
 </head>
 <body>
-  <h1>⚡ VARION</h1>
+  <h1>⚡ ASHOKA</h1>
   <div class='sub'>{ts} &nbsp;·&nbsp; {count} agent(s) evaluated &nbsp;·&nbsp;
     <span style='color:{hero_color};font-weight:700'>{total_reg} REGRESSED · {total_imp} IMPROVED</span>
   </div>

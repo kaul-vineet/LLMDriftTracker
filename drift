@@ -7,7 +7,7 @@ case "${1:-}" in
   dashboard) python -m streamlit run dashboard/app.py ;;
   *)
     echo ""
-    echo "  ⚡  VARION"
+    echo "  ⚡  ASHOKA"
     echo ""
     echo "  drift setup        run the setup wizard"
     echo "  drift run          start the autonomous polling agent"

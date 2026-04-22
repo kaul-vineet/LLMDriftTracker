@@ -1,9 +1,8 @@
 """
 agent/auth.py — unified MSAL delegated auth for all Power Platform resources.
 
-All three token types (Eval API, BAPI, Dataverse) share one PublicClientApplication
-and one SerializableTokenCache file. Device flow is initiated once; subsequent calls
-for other resources acquire silently via the cached refresh token.
+All token types share one PublicClientApplication and one SerializableTokenCache file.
+Device flow is initiated once; subsequent calls acquire silently via the cached refresh token.
 
 On Azure: set token_cache_file to a path on the shared Azure Files volume so both
 containers share the same authenticated session.
@@ -17,7 +16,6 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 EVAL_SCOPES = ["https://api.powerplatform.com/.default"]
-BAPI_SCOPES = ["https://service.powerapps.com/.default"]
 
 
 class AuthError(RuntimeError):
@@ -74,7 +72,7 @@ def _email_device_code(cfg: dict, code: str, expires_in: int):
     ts   = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     body = f"""<html><body style="font-family:sans-serif;background:#0a0a0f;color:#e0e0e0;padding:32px">
   <div style="max-width:520px;margin:auto;border:1px solid #1a1a2e;border-radius:8px;padding:28px;background:#12121a">
-    <h2 style="color:#ff4444;margin-top:0;font-family:monospace">⚠ ACTION REQUIRED — Sign in to VARION</h2>
+    <h2 style="color:#ff4444;margin-top:0;font-family:monospace">⚠ ACTION REQUIRED — Sign in to ASHOKA</h2>
     <p>The agent needs re-authentication. Eval cycles are paused until you sign in.</p>
     <hr style="border-color:#1a1a2e">
     <p><strong>Step 1 —</strong> Open: <a href="https://microsoft.com/devicelogin" style="color:#00f0ff">https://microsoft.com/devicelogin</a></p>
@@ -88,7 +86,7 @@ def _email_device_code(cfg: dict, code: str, expires_in: int):
   </div>
 </body></html>"""
     msg            = MIMEMultipart("alternative")
-    msg["Subject"] = f"[VARION] Sign-in required — code {code}"
+    msg["Subject"] = f"[ASHOKA] Sign-in required — code {code}"
     msg["From"]    = user
     msg["To"]      = recipient
     msg.attach(MIMEText(body, "html"))
@@ -185,23 +183,13 @@ def _acquire_silent(scopes: list[str], cfg: dict) -> str:
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def get_eval_token(cfg: dict) -> str:
-    """Token for Copilot Studio Eval API (api.powerplatform.com). Uses device flow if needed — for Setup only."""
+    """Token for Power Platform APIs (api.powerplatform.com). Uses device flow if needed — for Setup only."""
     return _acquire(EVAL_SCOPES, cfg)
 
 
 def get_eval_token_agent(cfg: dict) -> str:
     """Silent-only eval token for use inside the running agent. Raises AuthError if unavailable."""
     return _acquire_silent(EVAL_SCOPES, cfg)
-
-
-def get_bapi_token(cfg: dict) -> str:
-    """Token for Power Apps BAPI (service.powerapps.com). Uses device flow if needed — for Setup only."""
-    return _acquire(BAPI_SCOPES, cfg)
-
-
-def get_bapi_token_agent(cfg: dict) -> str:
-    """Silent-only BAPI token for use inside the running agent. Raises AuthError if unavailable."""
-    return _acquire_silent(BAPI_SCOPES, cfg)
 
 
 def get_dataverse_token(org_url: str, cfg: dict) -> str:

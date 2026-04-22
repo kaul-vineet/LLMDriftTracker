@@ -8,13 +8,11 @@ never blocks on a device-flow prompt.
 """
 import os
 import requests
-from .auth import get_bapi_token, get_eval_token_agent, AuthError
+from .auth import get_eval_token, get_eval_token_agent, AuthError
 from . import logger as logger_mod
 from . import lore
 
 INVENTORY_URL = "https://api.powerplatform.com/resourcequery/resources/query"
-BAPI_ENVS     = ("https://api.bap.microsoft.com/providers/"
-                 "Microsoft.BusinessAppPlatform/environments")
 CS_API_BASE   = "https://api.powerplatform.com/copilotstudio"
 PP_API_VER    = "2024-10-01"
 
@@ -25,10 +23,6 @@ def _eval_headers(token: str) -> dict:
         "Content-Type":  "application/json",
         "Accept":        "application/json",
     }
-
-
-def _bapi_headers(token: str) -> dict:
-    return {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
 
 def _model_from_properties(p: dict) -> str:
@@ -63,40 +57,49 @@ def _model_from_properties(p: dict) -> str:
 
 def list_environments(cfg: dict) -> list[dict]:
     """
-    Fetch all Power Platform environments from BAPI (Setup/wizard only — not called by agent loop).
+    Fetch all Power Platform environments via Inventory API (eval token — Setup/wizard only).
     Returns list of {name, displayName, orgUrl, environmentId}.
     """
     log   = logger_mod.get()
-    token = get_bapi_token(cfg)   # full device-flow version — only called from Setup
-    log.info("Fetching Power Platform environments from BAPI")
-    resp  = requests.get(
-        BAPI_ENVS,
-        params={"api-version": "2020-10-01"},
-        headers=_bapi_headers(token),
+    token = get_eval_token(cfg)   # full device-flow version — called from Setup only
+    log.info("Fetching environments from Power Platform Inventory API")
+    r = requests.post(
+        INVENTORY_URL,
+        params={"api-version": PP_API_VER},
+        headers=_eval_headers(token),
+        json={"TableName": "PowerPlatformResources",
+              "Clauses": [{"$type": "where", "FieldName": "type",
+                           "Operator": "==",
+                           "Values": ["'microsoft.powerplatform/environments'"]}]},
         timeout=20,
     )
-    resp.raise_for_status()
-    raw = resp.json()
+    if r.status_code != 200:
+        raise RuntimeError(f"Inventory API (environments) HTTP {r.status_code}: {r.text[:200]}")
 
-    if os.environ.get("VERBOSE"):
+    data = r.json().get("data", [])
+    log.info(f"Inventory API returned {len(data)} environment(s)")
+
+    if os.environ.get("VERBOSE") and data:
         import json
-        print("[probe] BAPI /environments raw keys:", list(raw.keys()))
-        print("[probe] First env sample:", json.dumps(raw.get("value", [{}])[0], indent=2)[:400])
+        p = data[0].get("properties", {})
+        log.info(f"[verbose] First env property keys: {sorted(p.keys())}")
+        log.info(f"[verbose] First env raw: {json.dumps(data[0], indent=2)[:800]}")
 
     envs = []
-    for item in raw.get("value", []):
-        env_id  = item.get("name", "")
-        props   = item.get("properties", {})
-        display = props.get("displayName", env_id)
-        url     = props.get("linkedEnvironmentMetadata", {}).get("instanceUrl", "")
-        if url:
-            envs.append({
-                "name":          display,
-                "displayName":   display,
-                "orgUrl":        url.rstrip("/"),
-                "environmentId": env_id,
-            })
-    log.info(f"Found {len(envs)} Power Platform environment(s) with Dataverse")
+    for item in data:
+        p      = item.get("properties", {})
+        env_id = item.get("name", "")
+        name   = p.get("displayName", env_id)
+        org_url = (p.get("linkedEnvironmentMetadata", {}).get("instanceUrl", "")
+                   or p.get("url", "")
+                   or p.get("instanceUrl", ""))
+        envs.append({
+            "name":          name,
+            "displayName":   name,
+            "orgUrl":        org_url.rstrip("/"),
+            "environmentId": env_id,
+        })
+    log.info(f"Found {len(envs)} Power Platform environment(s)")
     return envs
 
 
@@ -150,10 +153,16 @@ def _fetch_bots_inventory(env_id: str, token: str) -> list[dict]:
         log.info(f"[verbose] First bot property keys: {sorted(p.keys())}")
         log.info(f"[verbose] First bot raw: {json.dumps(data[0], indent=2)[:800]}")
 
+    verbose = os.environ.get("VERBOSE")
     bots = []
     for item in data:
         p  = item.get("properties", {})
         mv = _model_from_properties(p)
+        if verbose and mv == "unknown":
+            import json
+            log.info(f"[verbose] model=unknown for '{p.get('displayName','?')}' "
+                     f"— property keys: {sorted(p.keys())}")
+            log.info(f"[verbose] raw properties: {json.dumps(p, indent=2)[:1200]}")
         bots.append({
             "botId":        item.get("name", ""),
             "name":         p.get("displayName", ""),
@@ -168,16 +177,24 @@ def _fetch_model_version_cs_api(pp_env_id: str, bot_id: str, token: str) -> str:
     Fallback: fetch model name via the Copilot Studio REST API (same eval token).
     Tries GET /copilotstudio/environments/{env}/bots/{bot} and reads aISettings.
     """
-    log = logger_mod.get()
+    log     = logger_mod.get()
+    verbose = os.environ.get("VERBOSE")
     try:
         url = f"{CS_API_BASE}/environments/{pp_env_id}/bots/{bot_id}?api-version={PP_API_VER}"
         r   = requests.get(url, headers=_eval_headers(token), timeout=15)
         if not r.ok:
             log.info(f"CS bot detail API returned HTTP {r.status_code} for {bot_id[:8]}")
             return "unknown"
-        mv = _model_from_properties(r.json().get("properties", r.json()))
+        body = r.json()
+        mv   = _model_from_properties(body.get("properties", body))
         if mv != "unknown":
             log.info(f"Model version for {bot_id[:8]} from CS API: {mv}")
+        elif verbose:
+            import json
+            props = body.get("properties", body)
+            log.info(f"[verbose] CS API also returned unknown for {bot_id[:8]} "
+                     f"— keys: {sorted(props.keys()) if isinstance(props, dict) else type(props)}")
+            log.info(f"[verbose] CS API raw: {json.dumps(body, indent=2)[:1200]}")
         return mv
     except Exception as e:
         log.info(f"CS bot detail API error for {bot_id[:8]}: {e}")

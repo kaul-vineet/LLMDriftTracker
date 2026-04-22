@@ -13,8 +13,13 @@ are detected and wrapped into the new run shape.
 """
 import json
 import os
+import re
+import sys
+import tempfile
 from datetime import datetime, timezone
 from . import logger as logger_mod
+
+_UNSAFE_PATH_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
 def _bot_dir(store_dir: str, bot_id: str) -> str:
@@ -24,15 +29,29 @@ def _bot_dir(store_dir: str, bot_id: str) -> str:
 
 
 def _load_json(path: str) -> dict:
+    if not os.path.exists(path):
+        return {}
     try:
-        return json.loads(open(path).read())
-    except Exception:
+        with open(path, encoding="utf-8") as f:
+            return json.loads(f.read())
+    except Exception as e:
+        print(f"[store] WARNING: corrupt JSON at {path}: {e}", file=sys.stderr)
         return {}
 
 
+def _atomic_write_json(path: str, data: dict):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(json.dumps(data, indent=2))
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
 def make_run_folder_name(model_version: str) -> str:
-    ts          = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-    safe_model  = model_version.replace("/", "_").replace("\\", "_").replace(" ", "_")
+    ts         = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    safe_model = _UNSAFE_PATH_CHARS.sub("_", model_version).strip("._")
+    safe_model = re.sub(r"_+", "_", safe_model) or "unknown"
     return f"{ts}_{safe_model}"
 
 
@@ -65,7 +84,7 @@ def save_tracking(store_dir: str, bot_id: str, model_version: str,
         "lastRunFolder":  last_run_folder,
         "updatedAt":      datetime.now(timezone.utc).isoformat(),
     }
-    open(path, "w").write(json.dumps(data, indent=2))
+    _atomic_write_json(path, data)
     log.info(f"Tracking updated for {bot_name or bot_id}: model={model_version}, "
              f"lastRun={last_run_folder or 'none'}")
 
@@ -91,7 +110,7 @@ def increment_daily_eval_count(store_dir: str, bot_id: str):
     count = int(data.get("evalCount", 0)) if data.get("evalCountDate") == today else 0
     data["evalCountDate"] = today
     data["evalCount"]     = count + 1
-    open(path, "w").write(json.dumps(data, indent=2))
+    _atomic_write_json(path, data)
 
 
 # ── Run save ──────────────────────────────────────────────────────────────────
@@ -121,7 +140,7 @@ def save_run(store_dir: str, bot_id: str, model_version: str,
         "forced":       forced,
         "testSets":     test_sets,
     }
-    open(os.path.join(run_dir, "run.json"), "w").write(json.dumps(run, indent=2))
+    _atomic_write_json(os.path.join(run_dir, "run.json"), run)
     log.info(f"Run saved for {bot_name or bot_id}: folder '{folder}', "
              f"{len(test_sets)} test set(s), forced={forced}")
     return folder

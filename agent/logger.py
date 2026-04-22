@@ -1,6 +1,6 @@
-"""agent/logger.py — Rotating JSON file logger for the VARION agent.
+"""agent/logger.py — Rotating JSON file logger for the ASHOKA agent.
 
-One logger ("varion"), two handlers:
+One logger ("ashoka"), two handlers:
   - RotatingFileHandler → data/agent.log  (5 MB × 3 files, JSON lines)
   - StreamHandler       → stderr          (plain text, for container stdout capture)
 
@@ -32,7 +32,7 @@ def setup(store_dir: str, level: str = "INFO") -> logging.Logger:
     agent_dir = os.path.join(store_dir, "agent")
     os.makedirs(agent_dir, exist_ok=True)
 
-    logger = logging.getLogger("varion")
+    logger = logging.getLogger("ashoka")
     logger.setLevel(getattr(logging, level.upper(), logging.INFO))
 
     if not logger.handlers:
@@ -52,4 +52,4 @@ def setup(store_dir: str, level: str = "INFO") -> logging.Logger:
 
 def get() -> logging.Logger:
     """Return the configured logger, or a default if setup() hasn't been called."""
-    return _logger or logging.getLogger("varion")
+    return _logger or logging.getLogger("ashoka")

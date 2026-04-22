@@ -126,6 +126,7 @@ def _clear_stale_triggers(store_dir: str):
             fname == "force_eval.trigger"
             or (fname.startswith("force_eval_") and fname.endswith(".trigger"))
             or (fname.startswith("eval_active_") and fname.endswith(".lock"))
+            or (fname.startswith("eval_progress_") and fname.endswith(".json"))
         ):
             try:
                 os.remove(os.path.join(adir, fname))
@@ -287,7 +288,7 @@ def run_cycle(cfg: dict, force: bool = False):
         pool = eval_client.trigger_all_evals(bots_to_eval, cfg)
     except Exception as e:
         lore.eval_error("trigger phase", e)
-        return
+        pool = []   # fall through to Phase 3 so lock files are always cleaned up
 
     # ── Phase 2: single-threaded round-robin poll until all done ────────────
     results_by_bot = eval_client.poll_all_runs(
@@ -345,8 +346,10 @@ def run_cycle(cfg: dict, force: bool = False):
             reg_metrics = [c["key"] for c in cls if c["verdict"] == "REGRESSED"]
             imp_metrics = [c["key"] for c in cls if c["verdict"] == "IMPROVED"]
             curr_m      = br.get("currMetrics", {})
-            pass_rate   = curr_m.get("CompareMeaning.passRate", 0.0)
-            avg_score   = curr_m.get("CompareMeaning.score", 0.0)
+            pass_rates = [v for k, v in curr_m.items() if k.endswith(".passRate")]
+            scores     = [v for k, v in curr_m.items() if k.endswith(".score")]
+            pass_rate  = round(sum(pass_rates) / len(pass_rates), 4) if pass_rates else 0.0
+            avg_score  = round(sum(scores)     / len(scores),     4) if scores     else 0.0
             verdict     = br.get("verdictSummary", "STABLE")
             duration_s  = int((datetime.now(timezone.utc) - eval_start_ts).total_seconds())
 
@@ -385,17 +388,44 @@ def run_cycle(cfg: dict, force: bool = False):
     _save_and_notify(bot_results, store_dir, cfg)
 
 
+def _poll_trigger_path(store_dir: str) -> str:
+    return os.path.join(_agent_dir(store_dir), "force_poll.trigger")
+
+
+def _consume_poll_trigger(store_dir: str) -> bool:
+    path = _poll_trigger_path(store_dir)
+    if os.path.exists(path):
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+        return True
+    return False
+
+
+def _interruptible_sleep(interval_s: int, store_dir: str):
+    """Sleep for interval_s but wake immediately if force_poll.trigger appears."""
+    deadline = time.time() + interval_s
+    while time.time() < deadline:
+        if os.path.exists(_poll_trigger_path(store_dir)):
+            break
+        time.sleep(2)
+
+
 def _watch_loop(cfg: dict):
-    """Watcher thread — polls Dataverse every watch_interval_seconds and writes a
+    """Watcher thread — polls every watch_interval_seconds and writes a
     trigger file the moment a model version change is detected. Never runs evals."""
     store_dir  = cfg.get("store_dir", "data")
-    interval_s = cfg.get("watch_interval_seconds", 120)
+    interval_s = max(30, cfg.get("watch_interval_seconds", 120))
     log        = logger_mod.get()
     proc       = psutil.Process()
     mem_base   = proc.memory_info().rss / 1024 / 1024
     sweep      = 0
 
     while True:
+        forced_poll = _consume_poll_trigger(store_dir)
+        if forced_poll:
+            log.info("Force poll requested — running watcher cycle immediately")
         try:
             bots = dataverse.list_all_bots(cfg)
             for bot in bots:
@@ -446,7 +476,7 @@ def _watch_loop(cfg: dict):
         except Exception as e:
             lore.eval_error("watcher", e)
             log.error(f"Watcher check failed: {e}")
-        time.sleep(interval_s)
+        _interruptible_sleep(interval_s, store_dir)
 
 
 def _eval_loop(cfg: dict):
@@ -466,7 +496,7 @@ def _eval_loop(cfg: dict):
         except Exception as e:
             lore.eval_error("evaluator", e)
             log.error(f"Evaluation cycle failed: {e}")
-        time.sleep(30)
+        time.sleep(max(5, cfg.get("eval_loop_interval_seconds", 30)))
 
 
 def _write_pid(store_dir: str):
@@ -495,7 +525,7 @@ def main():
     # ── Startup banner ────────────────────────────────────────────────────────
     watch_s = cfg.get("watch_interval_seconds", 120)
     poll_s  = cfg.get("eval_poll_interval_seconds", 20)
-    log.info(f"VARION starting — checking every {watch_s}s, polling every {poll_s}s")
+    log.info(f"ASHOKA starting — checking every {watch_s}s, polling every {poll_s}s")
 
     envs = cfg.get("environments", [])
     for e in envs:
