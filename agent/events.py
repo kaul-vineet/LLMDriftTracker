@@ -166,7 +166,9 @@ def scan_end(store_dir: str):
 
 
 def agent_start(store_dir: str, watch_interval_s: int, n_envs: int, n_bots: int):
-    detail = f"Watching {n_bots} agent(s) across {n_envs} environment(s) · poll every {watch_interval_s}s"
+    mins   = watch_interval_s // 60
+    period = f"{mins} min" if mins >= 1 else f"{watch_interval_s}s"
+    detail = f"Watching {n_bots} agent(s) across {n_envs} environment(s) · poll every {period}"
     _write(store_dir, "agent_start", detail=detail)
 
 

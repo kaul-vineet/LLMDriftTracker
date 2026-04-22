@@ -479,9 +479,11 @@ def _next_scan_str(raw_events: list) -> str:
     for e in raw_events:
         ev = e.get("event", "")
         if ev == "agent_start" and interval_s is None:
-            m = re.search(r"poll every (\d+)s", e.get("detail", ""))
+            m = re.search(r"poll every (\d+)\s*min", e.get("detail", "")) or \
+                re.search(r"poll every (\d+)s", e.get("detail", ""))
             if m:
-                interval_s = int(m.group(1))
+                val = int(m.group(1))
+                interval_s = val * 60 if "min" in e.get("detail", "") else val
         if ev == "scan_complete" and last_complete_ts is None:
             last_complete_ts = e.get("ts")
         if interval_s and last_complete_ts:
