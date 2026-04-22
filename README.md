@@ -128,7 +128,10 @@ The LLM is asked to distinguish:
 - **Model effects** — cases where the old model passed and the new model failed (or vice versa) → these point to model capability changes
 - **Persistent weaknesses** — cases where both models fail → these are agent/prompt issues, not model issues
 
-The output is a storytelling narrative written for a mixed architect and business audience: what changed, why it matters, what to watch, and a single closing verdict — **PROCEED**, **INVESTIGATE**, or **REVERT**.
+The output is a two-part narrative written for a mixed architect and business audience:
+
+1. **Analysis** — what changed, why it changed, grounded exclusively in the case evidence. No assumptions about model capabilities are made; every claim must trace to a specific score or evaluator reason in the data.
+2. **Best-practice layer** *(only when metrics regressed or improved)* — a second LLM call produces architect-level recommendations: system prompt changes, grounding strategy, test coverage gaps, rollback criteria, and stakeholder communication — all tied to the failure pattern identified in part one.
 
 The LLM analysis is generated automatically on every eval run and stored in `run.json`. It is also available on demand from the **ask āshokā** panel on the bot detail page.
 
@@ -218,7 +221,7 @@ To wire a new event source, write a `force_eval_{botId}.trigger` file to the `da
 | 🌐 | **Multi-environment** | Scans all Power Platform environments |
 | 📋 | **Opt-in per bot** | Choose which bots to monitor — empty = watch all |
 | 🤖 | **Zero-touch eval** | Discovers all test sets, triggers Eval API, polls to completion automatically |
-| 🧠 | **LLM analysis** | Auto-generated on every eval run; storytelling narrative for architects and business — not a report |
+| 🧠 | **LLM analysis** | Two-call approach: analysis grounded only in case data (no model assumptions), followed by architect best-practice recommendations when metrics change |
 | 📡 | **Event-driven** | File-based trigger system — any external event source can queue an eval in 30 seconds |
 | 📊 | **Any-run comparison** | Compare any two historical runs — not just the latest pair |
 | 🔐 | **Unified MSAL auth** | Single device-flow sign-in covers Eval API, Power Platform Inventory, and all Dataverse org URLs |
@@ -428,10 +431,13 @@ The main view. Your eval control panel.
 ● SYSTEM ONLINE · ALL STABLE
 
        Ā S H O K Ā
-    THE INCORRUPTIBLE JUDGE
   copilot-eval-agent · N agents monitored
 
 [ MONITORED ]  [ EVAL RUNS ]  [ IMPROVED ]  [ REGRESSIONS ]
+
+── ĀSHOKĀ ──────────────────────────────────────────────────────────
+  I am āshokā — born April 1, 2026.
+  Model swaps. I score. You decide.
 
 ── MONITORED AGENTS ───────────────────────────────────────────────
   🟢 Safe Travels  gpt-4o   Apr 18 · 4 runs   →
@@ -440,16 +446,12 @@ The main view. Your eval control panel.
 ── MISSION TIMELINE ───────────────────────────────────────────────
   Apr 22  🟢 AGENT START   Watching 1 agent(s) across 1 environment(s)
   Apr 22  ⏳ EVAL QUEUED   Safe Travels  Eval queued from dashboard
-  Apr 22  🚀 EVAL START    Safe Travels  Eval triggered — fetching test sets
-  Apr 22  ✅ STABLE        Safe Travels  pass 80% · avg score 60.0
+  Apr 22  🚀 EVAL START    Safe Travels  · gpt-4o  Eval triggered — fetching test sets
+  Apr 22  ✅ STABLE        Safe Travels  · gpt-4o  pass 80% · avg score 60.0
   Apr 18  🤖 AGENT EVAL    Safe Travels  gpt-4o → gpt-4o-mini (auto-detected)
   Apr 18  🔄 MODEL SHIFT   Safe Travels  gpt-4o → gpt-4o-mini
-  Apr 18  🚀 EVAL START    Safe Travels  Eval triggered — fetching test sets
-  Apr 18  ✅ REGRESSED     Safe Travels  pass 70% · avg score 47.5
-          ·  ·  ·
-  🎂 ORIGIN    Born. Received a config.json and a mandate.
-  🌙 AUTONOMOUS  Began autonomous polling.
-  ☀️ MILESTONE   "I built this in a cave with a box of scraps."
+  Apr 18  🚀 EVAL START    Safe Travels  · gpt-4o-mini  Eval triggered — fetching test sets
+  Apr 18  ✅ REGRESSED     Safe Travels  · gpt-4o-mini  pass 70% · avg score 47.5
 ```
 
 Click any bot to open the **detail view**:
@@ -459,7 +461,7 @@ Click any bot to open the **detail view**:
 - **Baseline selector** — pick any previous run as the comparison baseline
 - **Radar chart** — current vs baseline overlaid on a polar chart
 - **Metric table** — Pass/Fail highlighted, Δ column colour-coded
-- **ask āshokā** — LLM storytelling analysis, auto-generated on every eval and cached; re-analyse on demand
+- **ask āshokā** — two-part LLM narrative: evidence-only analysis + architect best-practice layer; auto-generated on every eval and cached in `run.json`; regenerate on demand
 - **Per-metric breakdown** — delta bar, status grid, per-case cards grouped by Pass→Fail / Fail→Pass / Fail→Fail / Pass→Pass
 - **▶ Force Eval** — queue an immediate eval for this bot
 
@@ -639,7 +641,7 @@ No secrets in environment variables. All credentials — LLM API key, SMTP passw
 | LLM calls not visible in Logs | Set `log_level: "DEBUG"` in config — LLM and web API calls are at DEBUG level by default |
 | Memory warning in log | Agent RSS grew >50% from baseline — check for large Dataverse or eval API payloads |
 | Eval quota reached | Copilot Studio Eval API caps at ~20 evals per bot per 24 h — `error` is logged, next cycle retries |
-| `ask āshokā` shows button after auto-run | Restart the agent to pick up the latest code — analysis is now persisted automatically on every run |
+| `ask āshokā` shows button but no analysis | Analysis is auto-persisted on every agent run — click the button to regenerate on demand if the cached text is missing |
 
 ---
 
