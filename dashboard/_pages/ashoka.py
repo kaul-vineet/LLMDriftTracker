@@ -614,7 +614,7 @@ def page_overview(bots, raw_events):
         if _match and _match.get("ts") not in _visible_ts:
             _pinned.append(_event_to_dict(_match, model_lookup))
 
-    all_events = live + _pinned
+    all_events = sorted(live + _pinned, key=lambda e: e["ts"], reverse=True)
 
     parts = []
     for ev in all_events:
