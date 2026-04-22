@@ -972,7 +972,7 @@ with st.expander("Preview config.json"):
 col_s1, col_s2 = st.columns([3, 1])
 with col_s2:
     if st.button("💾 Save config.json", type="primary", disabled=not _ready,
-                 use_container_width=True):
+                 width="stretch"):
         try:
             open(CONFIG_PATH, "w").write(json.dumps(cfg_out, indent=2))
             st.session_state["_ready_ts"] = 0  # invalidate sidebar readiness cache

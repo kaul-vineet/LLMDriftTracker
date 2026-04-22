@@ -331,7 +331,7 @@ def render_agent_controls():
         </style>""", unsafe_allow_html=True)
         _stopping = st.session_state.get("_op_stopping", False)
         if st.button("Shutting down…" if _stopping else "■ Stop Agent",
-                     use_container_width=True, type="secondary", disabled=_stopping):
+                     width="stretch", type="secondary", disabled=_stopping):
             st.session_state["_op_stopping"] = True
             st.rerun()
         if _stopping:
@@ -351,7 +351,7 @@ def render_agent_controls():
         _ready, _ = _get_readiness_cached()
         _starting = st.session_state.get("_op_starting", False)
         if st.button("Starting…" if _starting else "▶ Start Agent",
-                     use_container_width=True, type="primary",
+                     width="stretch", type="primary",
                      disabled=_starting or not _ready,
                      help=None if (_ready or _starting) else "Complete setup before starting the agent"):
             st.session_state["_op_starting"] = True

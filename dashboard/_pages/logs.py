@@ -47,7 +47,7 @@ with c3:
     if os.path.exists(LOG_PATH):
         if st.session_state.get("_confirm_clear_log"):
             if st.button("⚠ Confirm", key="btn_clear_log_yes",
-                         type="primary", use_container_width=True):
+                         type="primary", width="stretch"):
                 try:
                     open(LOG_PATH, "w").close()
                 except Exception:
@@ -56,7 +56,7 @@ with c3:
                 st.rerun()
         else:
             if st.button("🗑 Clear", key="btn_clear_log",
-                         type="secondary", use_container_width=True):
+                         type="secondary", width="stretch"):
                 st.session_state["_confirm_clear_log"] = True
                 st.rerun()
 

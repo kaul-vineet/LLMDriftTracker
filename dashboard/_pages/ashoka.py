@@ -570,7 +570,7 @@ def page_overview(bots, raw_events):
             for i, b in enumerate(_cfg_bots):
                 with cols[i % 4]:
                     if st.button(b["name"],
-                                 key=f"cfg_tile_{i}", use_container_width=True):
+                                 key=f"cfg_tile_{i}", width="stretch"):
                         st.session_state["selected_cfg_bot"] = b
                         st.session_state.page = "cfg_detail"
                         st.rerun()
@@ -589,7 +589,7 @@ def page_overview(bots, raw_events):
                 mv_warn = " ⚠" if (_dv_auth_missing and bot.get("modelVersion") == "unknown") else ""
                 if st.button(
                     bot["botName"] + mv_warn,
-                    key=f"tile_{bot['botId']}", use_container_width=True,
+                    key=f"tile_{bot['botId']}", width="stretch",
                 ):
                     st.session_state.selected_bot = bot["botId"]
                     st.session_state.page = "detail"
@@ -727,9 +727,9 @@ def page_bot_detail(bot):
             with qc1:
                 label = "⚠ Eval stuck — click ✕" if (stale or not agent_up) else "⏳ Eval queued"
                 st.button(label, key="btn_queued",
-                          use_container_width=True, type="secondary", disabled=True)
+                          width="stretch", type="secondary", disabled=True)
             with qc2:
-                if st.button("✕", key="btn_cancel_queued", use_container_width=True,
+                if st.button("✕", key="btn_cancel_queued", width="stretch",
                              help="Cancel queued eval"):
                     try:
                         os.remove(trigger_path)
@@ -740,7 +740,7 @@ def page_bot_detail(bot):
             _eval_live_banner(bot_id)
         else:
             if st.button("▶ Force Eval", key="force_eval_btn",
-                         use_container_width=True, type="secondary",
+                         width="stretch", type="secondary",
                          disabled=not agent_up,
                          help=None if agent_up else "Start the agent first"):
                 os.makedirs(STORE_DIR, exist_ok=True)
@@ -969,11 +969,11 @@ def page_bot_detail(bot):
             if cases_prev and cases_curr:
                 fig_s = chart_score_comparison(cases_prev, cases_curr, lbl_a, lbl_b)
                 if fig_s.data:
-                    st.plotly_chart(fig_s, width="stretch", config={"displayModeBar": False})
+                    st.plotly_chart(fig_s, use_container_width=True, config={"displayModeBar": False})
                 fig_g = chart_status_grid(cases_prev, cases_curr)
                 if fig_g.data:
                     st.caption("Status transitions")
-                    st.plotly_chart(fig_g, width="stretch", config={"displayModeBar": False})
+                    st.plotly_chart(fig_g, use_container_width=True, config={"displayModeBar": False})
 
             # Per-case detail: summary table + expandable reasons (scales to 100+ cases)
             if cases_curr:
@@ -1106,7 +1106,7 @@ def page_bot_detail(bot):
         c1, c2 = st.columns(2)
         with c1:
             if st.button("⚠ Confirm — delete all runs", key=f"del_runs_yes_{bot_id}",
-                         type="primary", use_container_width=True):
+                         type="primary", width="stretch"):
                 import shutil
                 txn_dir = os.path.join(STORE_DIR, bot_id, "transactions")
                 if os.path.isdir(txn_dir):
@@ -1124,12 +1124,12 @@ def page_bot_detail(bot):
                 st.rerun()
         with c2:
             if st.button("Cancel", key=f"del_runs_no_{bot_id}",
-                         type="secondary", use_container_width=True):
+                         type="secondary", width="stretch"):
                 st.session_state.pop(_del_key, None)
                 st.rerun()
     else:
         if st.button("✕ Delete all runs", key=f"del_runs_arm_{bot_id}",
-                     use_container_width=False):
+                     width="content"):
             st.session_state[_del_key] = True
             st.rerun()
 
@@ -1164,7 +1164,7 @@ def page_cfg_bot_detail(cfg_bot: dict):
 
     if queued:
         st.button("⏳ Eval queued…", key="cfg_eval_queued",
-                  use_container_width=False, type="secondary", disabled=True)
+                  width="content", type="secondary", disabled=True)
     else:
         if st.button("▶ Force Eval", key="cfg_force_eval_btn",
                      type="secondary",

@@ -158,17 +158,17 @@ def _delete_button(label, key, danger=True):
         col1, col2 = st.columns(2)
         with col1:
             if st.button("⚠ Confirm delete", key=f"{key}_yes",
-                         type="primary", use_container_width=True):
+                         type="primary", width="stretch"):
                 st.session_state.pop(ck, None)
                 return True
         with col2:
             if st.button("Cancel", key=f"{key}_no",
-                         type="secondary", use_container_width=True):
+                         type="secondary", width="stretch"):
                 st.session_state.pop(ck, None)
                 st.rerun()
     else:
         color = C_RED if danger else C_DIM
-        if st.button(label, key=key, use_container_width=True):
+        if st.button(label, key=key, width="stretch"):
             st.session_state[ck] = True
             st.rerun()
     return False
