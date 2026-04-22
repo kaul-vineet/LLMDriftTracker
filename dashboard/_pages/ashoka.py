@@ -641,19 +641,7 @@ def page_overview(bots, raw_events):
     st.markdown("<div class='sec-label'>MISSION TIMELINE</div>", unsafe_allow_html=True)
 
     model_lookup = {b["botId"]: b.get("modelVersion","") for b in bots}
-    live         = _build_timeline_events(raw_events, model_lookup)[:15]
-
-    # Pin lifecycle + heartbeat at the bottom if not already in the visible window.
-    # Derive _visible_ts from `live` directly — avoids counting agent_eval and other
-    # non-noise events that can shift agent_start past the [:15] threshold.
-    _visible_ts = {e["ts"] for e in live}
-    _pinned = []
-    for _etype in ("scan_start", "scan_end", "agent_stop", "agent_start"):
-        _match = next((e for e in raw_events if e.get("event") == _etype), None)
-        if _match and _match.get("ts") not in _visible_ts:
-            _pinned.append(_event_to_dict(_match, model_lookup))
-
-    all_events = sorted(live + _pinned, key=lambda e: e["ts"], reverse=True)
+    all_events   = _build_timeline_events(raw_events, model_lookup)[:25]
 
     parts = []
     for ev in all_events:
