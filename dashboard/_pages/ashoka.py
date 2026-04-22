@@ -49,7 +49,7 @@ st.markdown(f"""
 <style>
   /* Stat bar */
   .stat-bar {{
-    display:grid; grid-template-columns:repeat(5,1fr);
+    display:grid; grid-template-columns:repeat(4,1fr);
     gap:1px; background:{C_BORDER}; border:1px solid {C_BORDER};
     border-radius:8px; overflow:hidden; margin-bottom:20px;
   }}
