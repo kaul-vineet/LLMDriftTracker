@@ -147,9 +147,13 @@ def _fetch_bots_inventory(env_id: str, token: str) -> list[dict]:
 
 def _fetch_model_version(org_url: str, bot_id: str, cfg: dict) -> str:
     """
-    Retrieve model version from Dataverse using a silent-only token.
+    Read the active LLM model from botcomponents.aISettings.model.modelNameHint.
+    This field (e.g. 'GPT5Chat', 'sonnet4-5', 'opus4-1') changes when the user
+    picks a different model in Copilot Studio — unlike gPTSettings.defaultSchemaName
+    on the bot record which is a static schema identifier that never changes.
     Returns 'unknown' without blocking if no Dataverse token is cached.
     """
+    import json as _json
     log   = logger_mod.get()
     token = get_dataverse_token_silent(org_url, cfg)
     if not token:
@@ -157,18 +161,38 @@ def _fetch_model_version(org_url: str, bot_id: str, cfg: dict) -> str:
         return "unknown"
     try:
         r = requests.get(
-            f"{org_url}{DV_API}/bots({bot_id})",
+            f"{org_url}{DV_API}/botcomponents",
             headers=_dv_headers(token),
-            params={"$select": "configuration"},
+            params={
+                "$filter": f"_parentbotid_value eq {bot_id}",
+                "$select": "name,aisettings",
+                "$top":    "50",
+            },
             timeout=20,
         )
-        if r.ok:
-            mv = extract_model_version(r.json().get("configuration"))
-            log.info(f"Model version for {bot_id}: {mv}")
-            return mv
-        log.warning(f"Dataverse returned HTTP {r.status_code} fetching model version for {bot_id}")
+        if not r.ok:
+            log.warning(f"Dataverse botcomponents returned HTTP {r.status_code} for bot {bot_id[:8]}")
+            return "unknown"
+
+        components = r.json().get("value", [])
+        log.info(f"Fetched {len(components)} botcomponent(s) for {bot_id[:8]}")
+
+        for comp in components:
+            raw = comp.get("aisettings") or ""
+            if not raw:
+                continue
+            try:
+                ai    = _json.loads(raw)
+                hint  = ai.get("model", {}).get("modelNameHint", "")
+                if hint:
+                    log.info(f"Model version for {bot_id[:8]}: {hint} (from botcomponents.aISettings)")
+                    return hint
+            except Exception:
+                continue
+
+        log.warning(f"No aISettings.model.modelNameHint found in {len(components)} component(s) for bot {bot_id[:8]}")
     except Exception as e:
-        log.warning(f"Could not fetch model version for {bot_id} from {org_url}: {e}")
+        log.warning(f"Could not fetch model version for {bot_id[:8]} from {org_url}: {e}")
     return "unknown"
 
 
