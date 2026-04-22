@@ -794,11 +794,13 @@ def page_bot_detail(bot):
         return
 
     def _run_label(r):
-        src    = r.get("triggerSource", "")
-        forced = (" · USER" if src == "user" else " · AGENT") if r.get("forced") else ""
-        mv     = r.get("modelVersion") or ""
-        mv_str = f"  ·  {mv}" if mv and mv not in ("unknown", "?") else ""
-        return f"{_fmt_ts(r.get('triggeredAt',''))}{mv_str}{forced}"
+        src = r.get("triggerSource", "")
+        mv  = r.get("modelVersion") or ""
+        mv  = mv if mv and mv not in ("unknown", "?") else ""
+        if r.get("forced"):
+            source = "USER" if (src == "user" or not src) else "AGENT"
+            return f"{mv}  ·  {source}" if mv else source
+        return f"{_fmt_ts(r.get('triggeredAt',''))}" + (f"  ·  {mv}" if mv else "")
 
     run_labels = [_run_label(r) for r in runs]
     run_b = runs[-1]
