@@ -463,7 +463,7 @@ def _event_to_dict(e: dict, model_lookup: dict | None = None) -> dict:
 
 def _build_timeline_events(raw, model_lookup: dict | None = None):
     """Newest-first, noise-filtered list of timeline event dicts."""
-    _FILTER = {"cycle_start","scan_complete","scan_start","scan_end",
+    _FILTER = {"cycle_start","scan_end",
                "agent_start","agent_stop","stable","regression","improvement"}
     return [_event_to_dict(e, model_lookup) for e in raw
             if e.get("event","") not in _FILTER]
@@ -648,7 +648,7 @@ def page_overview(bots, raw_events):
     # non-noise events that can shift agent_start past the [:15] threshold.
     _visible_ts = {e["ts"] for e in live}
     _pinned = []
-    for _etype in ("scan_complete", "scan_end", "scan_start", "agent_stop", "agent_start"):
+    for _etype in ("scan_end", "agent_stop", "agent_start"):
         _match = next((e for e in raw_events if e.get("event") == _etype), None)
         if _match and _match.get("ts") not in _visible_ts:
             _pinned.append(_event_to_dict(_match, model_lookup))
