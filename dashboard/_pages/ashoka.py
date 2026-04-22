@@ -443,31 +443,28 @@ _EVENT_META = {
     "error":         ("bad", "🔥","ERROR",         "reg"),
 }
 
+def _event_to_dict(e: dict, model_lookup: dict | None = None) -> dict:
+    """Convert one raw event to a timeline dict. No noise filtering."""
+    et       = e.get("event","")
+    dot, icon, badge, badge_c = _EVENT_META.get(et, ("info","·",et.upper(),"stb"))
+    if et == "eval_complete":
+        v = e.get("verdict","")
+        if v == "REGRESSED":  dot,badge,badge_c = "bad","REGRESSED","reg"
+        elif v == "IMPROVED": dot,badge,badge_c = "ok","IMPROVED","imp"
+        else:                 dot,badge,badge_c = "info","STABLE","stb"
+    bot_name = e.get("botName") or "Agent"
+    model    = (e.get("newModel") or e.get("oldModel") or "") if et == "model_change" \
+               else (model_lookup or {}).get(e.get("botId",""), "")
+    return {"ts":e.get("ts",""), "dot":dot, "icon":icon,
+            "head":bot_name, "model":model,
+            "badge":badge, "badge_c":badge_c, "body":e.get("detail","")}
+
+
 def _build_timeline_events(raw, model_lookup: dict | None = None):
-    """model_lookup: {botId: modelVersion} for showing model alongside agent name."""
-    out = []
-    for e in raw:
-        et = e.get("event","")
-        if et in ("cycle_start", "stable", "regression", "improvement"):
-            continue
-        dot, icon, badge, badge_c = _EVENT_META.get(et, ("info","·",et.upper(),"stb"))
-        if et == "eval_complete":
-            v = e.get("verdict","")
-            if v == "REGRESSED":  dot,badge,badge_c = "bad","REGRESSED","reg"
-            elif v == "IMPROVED": dot,badge,badge_c = "ok","IMPROVED","imp"
-            else:                 dot,badge,badge_c = "info","STABLE","stb"
-
-        bot_name = e.get("botName") or "Agent"
-        # For model_change use the new model; otherwise look up current model from bots
-        if et == "model_change":
-            model = e.get("newModel") or e.get("oldModel") or ""
-        else:
-            model = (model_lookup or {}).get(e.get("botId",""), "")
-
-        out.append({"ts":e.get("ts",""), "dot":dot, "icon":icon,
-                    "head":bot_name, "model":model,
-                    "badge":badge, "badge_c":badge_c, "body":e.get("detail","")})
-    return out
+    """Newest-first, noise-filtered list of timeline event dicts."""
+    _FILTER = {"cycle_start","stable","regression","improvement"}
+    return [_event_to_dict(e, model_lookup) for e in raw
+            if e.get("event","") not in _FILTER]
 
 
 # ── Header ────────────────────────────────────────────────────────────────────
@@ -606,17 +603,15 @@ def page_overview(bots, raw_events):
     _NOISE       = ("cycle_start", "stable", "regression", "improvement")
     live         = _build_timeline_events(raw_events, model_lookup)[:15]
 
-    # Pin lifecycle + heartbeat events at the bottom if pushed off by eval cycles
-    _visible_ts  = {e.get("ts") for e in [r for r in raw_events if r.get("event") not in _NOISE][:15]}
-    _pinned      = []
-    # Most recent cycle_start = proof agent is scanning even when no changes detected
-    _last_scan = next((e for e in raw_events if e.get("event") == "cycle_start"), None)
-    if _last_scan and _last_scan.get("ts") not in _visible_ts:
-        _pinned.extend(_build_timeline_events([_last_scan], model_lookup))
-    for _etype in ("scan_end", "scan_start", "agent_stop", "agent_start"):
+    # Pin lifecycle + heartbeat events at the bottom if pushed off by eval cycles.
+    # Use _event_to_dict directly — _build_timeline_events would filter cycle_start.
+    _visible_ts = {e.get("ts") for e in [r for r in raw_events
+                                          if r.get("event") not in _NOISE][:15]}
+    _pinned = []
+    for _etype in ("cycle_start", "scan_end", "scan_start", "agent_stop", "agent_start"):
         _match = next((e for e in raw_events if e.get("event") == _etype), None)
         if _match and _match.get("ts") not in _visible_ts:
-            _pinned.extend(_build_timeline_events([_match], model_lookup))
+            _pinned.append(_event_to_dict(_match, model_lookup))
 
     all_events = live + _pinned
 
