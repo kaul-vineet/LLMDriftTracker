@@ -488,6 +488,7 @@ def _watch_loop(cfg: dict):
                     old_ver  = tracking.get("modelVersion", "unknown")
                     lore.model_changed(bot_name, old_ver, curr_ver)
                     ev.model_change(store_dir, bot_name, bot_id, old_ver, curr_ver)
+                    ev.agent_eval(store_dir, bot_name, bot_id, old_ver, curr_ver)
                     with open(trigger_path, "w", encoding="utf-8") as f:
                         f.write("agent")
                     log.info(f"Model change detected for {bot_name}: {old_ver} → {curr_ver}")

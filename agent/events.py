@@ -146,6 +146,12 @@ def eval_queued(store_dir: str, bot_name: str, bot_id: str):
            detail="Eval queued from dashboard")
 
 
+def agent_eval(store_dir: str, bot_name: str, bot_id: str, old_ver: str, new_ver: str):
+    _write(store_dir, "agent_eval", bot_name=bot_name, bot_id=bot_id,
+           detail=f"Model change detected — eval queued automatically: {old_ver} → {new_ver}",
+           extra={"oldModel": old_ver, "newModel": new_ver})
+
+
 def force_eval(store_dir: str):
     _write(store_dir, "force_eval",
            detail="force_eval.trigger file detected — running eval immediately")

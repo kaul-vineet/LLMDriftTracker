@@ -427,14 +427,15 @@ _V_COLORS = {"REGRESSED":C_RED,"IMPROVED":C_GREEN,"STABLE":C_DIM,"NEW":C_GOLD,"B
 
 # ── Timeline helpers ──────────────────────────────────────────────────────────
 _EVENT_META = {
-    "model_change":  ("warn","🔄","MODEL SHIFT","warn"),
-    "eval_queued":   ("info","⚡","USER EVAL",  "new"),
-    "eval_start":    ("info","🚀","EVAL START", "new"),
-    "eval_complete": ("info","✅","EVAL DONE",  "stb"),
-    "eval_timeout":  ("bad", "⏱️","TIMEOUT",    "reg"),
+    "model_change":  ("warn","🔄","MODEL SHIFT", "warn"),
+    "eval_queued":   ("info","⏳","EVAL QUEUED", "new"),
+    "agent_eval":    ("info","🤖","AGENT EVAL",  "new"),
+    "eval_start":    ("info","🚀","EVAL START",  "new"),
+    "eval_complete": ("info","✅","EVAL DONE",   "stb"),
+    "eval_timeout":  ("bad", "⏱️","TIMEOUT",     "reg"),
     "eval_no_sets":  ("warn","📭","NO TEST SETS","warn"),
-    "force_eval":    ("info","⚡","USER EVAL",  "new"),
-    "error":         ("bad", "🔥","ERROR",       "reg"),
+    "force_eval":    ("info","⚡","USER EVAL",   "new"),
+    "error":         ("bad", "🔥","ERROR",        "reg"),
 }
 
 def _build_timeline_events(raw, model_lookup: dict | None = None):
