@@ -471,8 +471,7 @@ def _watch_loop(cfg: dict):
             log.info("Force poll requested — running watcher cycle immediately")
         try:
             bots = dataverse.list_all_bots(cfg)
-            if sweep == 0:
-                ev.scan_start(store_dir, len(bots))
+            ev.scan_start(store_dir, len(bots))
             for bot in bots:
                 bot_id   = bot["botId"]
                 bot_name = bot["name"]
