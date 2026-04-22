@@ -533,6 +533,8 @@ def _eval_loop(cfg: dict):
     while True:
         try:
             force = _check_file_trigger(store_dir)
+            if force:
+                ev.force_eval(store_dir)
             if force or _has_pending_triggers(store_dir):
                 label = "forced" if force else "triggered"
                 log.info(f"Evaluation cycle starting ({label})")
