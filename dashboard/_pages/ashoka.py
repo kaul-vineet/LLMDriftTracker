@@ -171,7 +171,7 @@ st.markdown(f"""
 # ── Data helpers ──────────────────────────────────────────────────────────────
 def _fmt_ts(iso):
     try:
-        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone()
         return dt.strftime("%b %d, %H:%M")
     except Exception:
         return iso or "—"
@@ -179,8 +179,8 @@ def _fmt_ts(iso):
 
 def _fmt_ts_long(iso):
     try:
-        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
-        return dt.strftime("%b %d, %Y  %H:%M UTC")
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone()
+        return dt.strftime("%b %d, %Y  %H:%M")
     except Exception:
         return iso[:16] if iso else "—"
 
