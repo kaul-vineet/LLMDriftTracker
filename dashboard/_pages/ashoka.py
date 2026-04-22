@@ -530,10 +530,10 @@ def render_header(bots, raw_events, page="overview"):
             display:inline-block;margin-right:8px;
             animation:{blink_anim};vertical-align:middle;
           }}
-          .radar-wrap {{ width:200px;height:200px; }}
-          .r1 {{ width:200px;height:200px; }} .r2 {{ width:145px;height:145px; }}
-          .r3 {{ width:90px;height:90px; }}   .r4 {{ width:38px;height:38px; }}
-          .radar-h {{ width:200px; }} .radar-v {{ height:200px; }}
+          .radar-wrap {{ width:150px;height:150px; }}
+          .r1 {{ width:150px;height:150px; }} .r2 {{ width:108px;height:108px; }}
+          .r3 {{ width:68px;height:68px; }}   .r4 {{ width:28px;height:28px; }}
+          .radar-h {{ width:150px; }} .radar-v {{ height:150px; }}
         </style>
         <div style='display:flex;align-items:center;gap:20px;max-width:860px;margin:0 auto 12px'>
           <div class='radar-wrap' style='flex-shrink:0'>
