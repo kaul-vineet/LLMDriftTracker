@@ -427,20 +427,20 @@ _V_COLORS = {"REGRESSED":C_RED,"IMPROVED":C_GREEN,"STABLE":C_DIM,"NEW":C_GOLD,"B
 
 # ── Timeline helpers ──────────────────────────────────────────────────────────
 _EVENT_META = {
-    "agent_start":   ("info","🟢","AGENT START",  "new"),
-    "agent_stop":    ("warn","🔴","AGENT STOP",   "warn"),
-    "scan_start":    ("info","🔍","SCAN START",   "new"),
-    "scan_end":      ("warn","🔲","SCAN END",     "warn"),
-    "cycle_start":   ("info","📡","SCANNING",     "stb"),
-    "model_change":  ("warn","🔄","MODEL SHIFT",  "warn"),
-    "eval_queued":   ("info","⏳","EVAL QUEUED",  "new"),
-    "agent_eval":    ("info","🤖","AGENT EVAL",   "new"),
-    "eval_start":    ("info","🚀","EVAL START",   "new"),
-    "eval_complete": ("info","✅","EVAL DONE",    "stb"),
-    "eval_timeout":  ("bad", "⏱️","TIMEOUT",      "reg"),
-    "eval_no_sets":  ("warn","📭","NO TEST SETS", "warn"),
-    "force_eval":    ("info","⚡","USER EVAL",    "new"),
-    "error":         ("bad", "🔥","ERROR",         "reg"),
+    "agent_start":   ("ok",  "🟢","AGENT START",  "imp"),   # green  — system up
+    "agent_stop":    ("bad", "🔴","AGENT STOP",   "reg"),   # red    — system down
+    "scan_start":    ("info","🔍","SCAN START",   "new"),   # cyan   — active scan
+    "scan_end":      ("info","🔲","SCAN END",     "stb"),   # grey   — scan ended
+    "cycle_start":   ("info","📡","SCANNING",     "stb"),   # grey   — heartbeat
+    "model_change":  ("warn","🔄","MODEL SHIFT",  "warn"),  # gold   — change detected
+    "eval_queued":   ("info","⏳","EVAL QUEUED",  "stb"),   # grey   — pending
+    "agent_eval":    ("info","🤖","AGENT EVAL",   "birth"), # magenta— agent-triggered
+    "eval_start":    ("info","🚀","EVAL START",   "new"),   # cyan   — eval running
+    "eval_complete": ("info","✅","EVAL DONE",    "stb"),   # dynamic below
+    "eval_timeout":  ("bad", "⏱️","TIMEOUT",      "reg"),   # red    — failure
+    "eval_no_sets":  ("warn","📭","NO TEST SETS", "warn"),  # gold   — warning
+    "force_eval":    ("warn","⚡","USER EVAL",    "warn"),  # gold   — user-forced
+    "error":         ("bad", "🔥","ERROR",        "reg"),   # red    — error
 }
 
 def _event_to_dict(e: dict, model_lookup: dict | None = None) -> dict:
