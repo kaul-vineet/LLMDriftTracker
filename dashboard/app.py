@@ -332,7 +332,9 @@ def render_agent_controls():
           }
         </style>""", unsafe_allow_html=True)
         if st.button("■ Stop Agent", use_container_width=True, type="secondary"):
-            _stop_agent()
+            with st.spinner("Shutting down…"):
+                _stop_agent()
+                time.sleep(1)
             st.session_state["_agent_ts"] = 0
             st.rerun()
     else:
@@ -347,8 +349,9 @@ def render_agent_controls():
         if st.button("▶ Start Agent", use_container_width=True, type="primary",
                      disabled=not _ready,
                      help=None if _ready else "Complete setup before starting the agent"):
-            _start_agent()
-            time.sleep(1)
+            with st.spinner("Starting…"):
+                _start_agent()
+                time.sleep(2)
             st.session_state["_agent_ts"] = 0
             st.rerun()
 
