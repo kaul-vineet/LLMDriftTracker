@@ -8,14 +8,15 @@ never blocks on a device-flow prompt.
 """
 import os
 import requests
-from .auth import get_bapi_token, get_eval_token, get_dataverse_token_silent
+from .auth import get_bapi_token, get_eval_token_agent, AuthError
 from . import logger as logger_mod
 from . import lore
 
 INVENTORY_URL = "https://api.powerplatform.com/resourcequery/resources/query"
 BAPI_ENVS     = ("https://api.bap.microsoft.com/providers/"
                  "Microsoft.BusinessAppPlatform/environments")
-DV_API        = "/api/data/v9.2"
+CS_API_BASE   = "https://api.powerplatform.com/copilotstudio"
+PP_API_VER    = "2024-10-01"
 
 
 def _eval_headers(token: str) -> dict:
@@ -30,32 +31,43 @@ def _bapi_headers(token: str) -> dict:
     return {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
 
-def _dv_headers(token: str) -> dict:
-    return {
-        "Authorization":    f"Bearer {token}",
-        "OData-MaxVersion": "4.0",
-        "Accept":           "application/json",
-    }
+def _model_from_properties(p: dict) -> str:
+    """Extract model name from Inventory API bot properties (no Dataverse needed).
 
+    Tries aISettings.model.modelNameHint first (e.g. 'GPT5Chat', 'sonnet4-5'),
+    then falls back to publishedConfiguration and gPTSettings paths.
+    """
+    import json as _j
 
-def extract_model_version(configuration: str) -> str:
-    import json
-    try:
-        cfg = json.loads(configuration or "{}")
-        return cfg.get("gPTSettings", {}).get("defaultSchemaName", "unknown")
-    except Exception:
-        return "unknown"
+    def _parse(raw) -> str:
+        if isinstance(raw, str):
+            try:
+                raw = _j.loads(raw)
+            except Exception:
+                return ""
+        if isinstance(raw, dict):
+            hint = raw.get("model", {}).get("modelNameHint", "")
+            if hint:
+                return hint
+        return ""
+
+    for key in ("aISettings", "aiSettings", "aisettings"):
+        hint = _parse(p.get(key, ""))
+        if hint:
+            return hint
+
+    return "unknown"
 
 
 # ── Environment discovery ─────────────────────────────────────────────────────
 
 def list_environments(cfg: dict) -> list[dict]:
     """
-    Fetch all Power Platform environments from BAPI that have a Dataverse org URL.
+    Fetch all Power Platform environments from BAPI (Setup/wizard only — not called by agent loop).
     Returns list of {name, displayName, orgUrl, environmentId}.
     """
     log   = logger_mod.get()
-    token = get_bapi_token(cfg)
+    token = get_bapi_token(cfg)   # full device-flow version — only called from Setup
     log.info("Fetching Power Platform environments from BAPI")
     resp  = requests.get(
         BAPI_ENVS,
@@ -104,12 +116,16 @@ def probe_environments(cfg: dict) -> dict:
 # ── Bot discovery via Inventory API ──────────────────────────────────────────
 
 def _fetch_bots_inventory(env_id: str, token: str) -> list[dict]:
-    """List Copilot Studio agents via Inventory API — eval token, no Dataverse needed."""
+    """
+    List Copilot Studio agents via Power Platform Inventory API (eval token only).
+    Returns each bot with model name extracted directly from Inventory API properties
+    — no Dataverse call needed.
+    """
     log = logger_mod.get()
     log.info(f"Querying bot inventory for environment {env_id[:12]}...")
     r = requests.post(
         INVENTORY_URL,
-        params={"api-version": "2024-10-01"},
+        params={"api-version": PP_API_VER},
         headers=_eval_headers(token),
         json={
             "TableName": "PowerPlatformResources",
@@ -123,87 +139,60 @@ def _fetch_bots_inventory(env_id: str, token: str) -> list[dict]:
         timeout=15,
     )
     if r.status_code != 200:
-        log.error(f"Inventory API returned HTTP {r.status_code}: {r.text[:300]}")
-        return []
+        raise AuthError(f"Inventory API returned HTTP {r.status_code} — token may have expired")
 
     data = r.json().get("data", [])
     log.info(f"Inventory API returned {len(data)} agent(s) for env {env_id[:12]}...")
 
-    if os.environ.get("VERBOSE"):
+    if os.environ.get("VERBOSE") and data:
         import json
-        if data:
-            print(f"[probe] First bot sample: {json.dumps(data[0], indent=2)[:400]}")
+        p = data[0].get("properties", {})
+        log.info(f"[verbose] First bot property keys: {sorted(p.keys())}")
+        log.info(f"[verbose] First bot raw: {json.dumps(data[0], indent=2)[:800]}")
 
     bots = []
     for item in data:
-        p = item.get("properties", {})
+        p  = item.get("properties", {})
+        mv = _model_from_properties(p)
         bots.append({
-            "botId":      item.get("name", ""),
-            "name":       p.get("displayName", ""),
-            "schemaName": p.get("schemaName", ""),
+            "botId":        item.get("name", ""),
+            "name":         p.get("displayName", ""),
+            "schemaName":   p.get("schemaName", ""),
+            "modelVersion": mv,
         })
     return bots
 
 
-def _fetch_model_version(org_url: str, bot_id: str, cfg: dict) -> str:
+def _fetch_model_version_cs_api(pp_env_id: str, bot_id: str, token: str) -> str:
     """
-    Read the active LLM model from botcomponents.aISettings.model.modelNameHint.
-    This field (e.g. 'GPT5Chat', 'sonnet4-5', 'opus4-1') changes when the user
-    picks a different model in Copilot Studio — unlike gPTSettings.defaultSchemaName
-    on the bot record which is a static schema identifier that never changes.
-    Returns 'unknown' without blocking if no Dataverse token is cached.
+    Fallback: fetch model name via the Copilot Studio REST API (same eval token).
+    Tries GET /copilotstudio/environments/{env}/bots/{bot} and reads aISettings.
     """
-    import json as _json
-    log   = logger_mod.get()
-    token = get_dataverse_token_silent(org_url, cfg)
-    if not token:
-        log.info(f"No cached Dataverse token for {org_url} — model version will be unavailable")
-        return "unknown"
+    log = logger_mod.get()
     try:
-        r = requests.get(
-            f"{org_url}{DV_API}/botcomponents",
-            headers=_dv_headers(token),
-            params={
-                "$filter": f"_parentbotid_value eq {bot_id}",
-                "$select": "name,aisettings",
-                "$top":    "50",
-            },
-            timeout=20,
-        )
+        url = f"{CS_API_BASE}/environments/{pp_env_id}/bots/{bot_id}?api-version={PP_API_VER}"
+        r   = requests.get(url, headers=_eval_headers(token), timeout=15)
         if not r.ok:
-            log.warning(f"Dataverse botcomponents returned HTTP {r.status_code} for bot {bot_id[:8]}")
+            log.info(f"CS bot detail API returned HTTP {r.status_code} for {bot_id[:8]}")
             return "unknown"
-
-        components = r.json().get("value", [])
-        log.info(f"Fetched {len(components)} botcomponent(s) for {bot_id[:8]}")
-
-        for comp in components:
-            raw = comp.get("aisettings") or ""
-            if not raw:
-                continue
-            try:
-                ai    = _json.loads(raw)
-                hint  = ai.get("model", {}).get("modelNameHint", "")
-                if hint:
-                    log.info(f"Model version for {bot_id[:8]}: {hint} (from botcomponents.aISettings)")
-                    return hint
-            except Exception:
-                continue
-
-        log.warning(f"No aISettings.model.modelNameHint found in {len(components)} component(s) for bot {bot_id[:8]}")
+        mv = _model_from_properties(r.json().get("properties", r.json()))
+        if mv != "unknown":
+            log.info(f"Model version for {bot_id[:8]} from CS API: {mv}")
+        return mv
     except Exception as e:
-        log.warning(f"Could not fetch model version for {bot_id[:8]} from {org_url}: {e}")
-    return "unknown"
+        log.info(f"CS bot detail API error for {bot_id[:8]}: {e}")
+        return "unknown"
 
 
 def list_bots(env_id: str, org_url: str, monitored: list, cfg: dict) -> list[dict]:
     """
-    List active bots for an environment using the Inventory API (eval token).
-    Model version is fetched via silent Dataverse token; defaults to 'unknown' if unavailable.
+    List active bots for an environment using Power Platform APIs only (eval token throughout).
+    Model name comes from Inventory API properties; if absent, falls back to Copilot Studio API.
+    No Dataverse / Dynamics API calls.
     monitored: list of schemanames to filter; empty = return all.
     """
     log   = logger_mod.get()
-    token = get_eval_token(cfg)
+    token = get_eval_token_agent(cfg)   # raises AuthError if no valid token
     raw   = _fetch_bots_inventory(env_id, token)
 
     if monitored:
@@ -212,16 +201,19 @@ def list_bots(env_id: str, org_url: str, monitored: list, cfg: dict) -> list[dic
 
     bots = []
     for b in raw:
-        bot_id        = b["botId"]
-        model_version = _fetch_model_version(org_url, bot_id, cfg)
+        bot_id = b["botId"]
+        mv     = b.get("modelVersion", "unknown")
+        if mv == "unknown":
+            # Inventory API didn't carry aISettings — try CS bot detail endpoint
+            mv = _fetch_model_version_cs_api(env_id, bot_id, token)
         bots.append({
             "botId":        bot_id,
             "name":         b.get("name", ""),
             "schemaName":   b.get("schemaName", ""),
-            "modelVersion": model_version,
+            "modelVersion": mv,
             "orgUrl":       org_url,
         })
-        log.info(f"Bot loaded: {b.get('name', bot_id)} (schema: {b.get('schemaName', '')}, model: {model_version})")
+        log.info(f"Bot loaded: {b.get('name', bot_id)} (schema: {b.get('schemaName', '')}, model: {mv})")
     return bots
 
 

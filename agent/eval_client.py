@@ -10,7 +10,7 @@ run_eval_for_bot() is kept for single-bot interactive use (wizard, ad-hoc).
 """
 import time
 import requests
-from .auth import get_eval_token
+from .auth import get_eval_token, get_eval_token_agent, AuthError
 from . import logger as logger_mod
 from . import lore
 
@@ -88,7 +88,7 @@ def trigger_all_evals(bots_to_eval: list[dict], cfg: dict) -> list[dict]:
     runs that were successfully started.
     """
     log   = logger_mod.get()
-    token = get_eval_token(cfg)
+    token = get_eval_token_agent(cfg)
     pool: list[dict] = []
 
     for bot in bots_to_eval:
@@ -190,7 +190,7 @@ def poll_all_runs(pool: list[dict], cfg: dict,
 
     while remaining and time.time() < deadline:
         still_pending: list[dict] = []
-        token = get_eval_token(cfg)   # MSAL returns cached token; refresh ensures no mid-run expiry
+        token = get_eval_token_agent(cfg)   # MSAL returns cached token; refresh ensures no mid-run expiry
 
         for ctx in remaining:
             run_id    = ctx["run_id"]
@@ -256,7 +256,7 @@ def poll_all_runs(pool: list[dict], cfg: dict,
 def probe_test_sets(pp_env_id: str, bot_id: str, cfg: dict) -> dict:
     """Connectivity probe — list test sets and return raw response. For diagnostics."""
     try:
-        token     = get_eval_token(cfg)
+        token     = get_eval_token_agent(cfg)
         test_sets = get_test_sets(pp_env_id, bot_id, token)
         active    = [s for s in test_sets if s.get("state") == "Active"]
         return {
@@ -276,7 +276,7 @@ def run_eval_for_bot(bot: dict, cfg: dict) -> dict[str, dict] | None:
     Returns dict[metric_type -> full_run_result] or None if no active test sets found.
     Each test set is run sequentially. Individual failures are logged but don't abort others.
     """
-    token     = get_eval_token(cfg)
+    token     = get_eval_token_agent(cfg)
     pp_env_id = bot["ppEnvId"]
     bot_id    = bot["botId"]
 

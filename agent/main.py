@@ -34,6 +34,33 @@ from . import notifier
 from . import reasoning
 from . import report
 from . import store
+from .auth import AuthError
+
+
+def _auth_error_path(store_dir: str) -> str:
+    return os.path.join(_agent_dir(store_dir), "auth_error.json")
+
+
+def _write_auth_error(store_dir: str, msg: str):
+    path = _auth_error_path(store_dir)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    open(path, "w").write(json.dumps({
+        "error": msg,
+        "ts":    datetime.now(timezone.utc).isoformat(),
+    }))
+
+
+def _clear_auth_error(store_dir: str):
+    try:
+        os.remove(_auth_error_path(store_dir))
+    except FileNotFoundError:
+        pass
+
+
+def _fatal_auth_error(store_dir: str, msg: str, log):
+    log.critical(f"AUTH ERROR — agent shutting down: {msg}")
+    _write_auth_error(store_dir, msg)
+    os._exit(1)   # terminate all threads immediately
 
 
 def load_cfg(path: str = "config.json") -> dict:
@@ -414,6 +441,8 @@ def _watch_loop(cfg: dict):
                 if delta > mem_base * 0.5:
                     log.warning(f"Memory growing fast — was {mem_base:.1f} MB at startup, now {rss:.1f} MB · possible memory leak")
 
+        except AuthError as e:
+            _fatal_auth_error(store_dir, str(e), log)
         except Exception as e:
             lore.eval_error("watcher", e)
             log.error(f"Watcher check failed: {e}")
@@ -432,6 +461,8 @@ def _eval_loop(cfg: dict):
                 log.info(f"Evaluation cycle starting ({label})")
                 run_cycle(cfg, force=force)
                 log.info("Evaluation cycle complete")
+        except AuthError as e:
+            _fatal_auth_error(store_dir, str(e), log)
         except Exception as e:
             lore.eval_error("evaluator", e)
             log.error(f"Evaluation cycle failed: {e}")
@@ -457,6 +488,7 @@ def main():
 
     _write_pid(store_dir)
     _clear_stale_triggers(store_dir)
+    _clear_auth_error(store_dir)   # fresh start — clear any previous auth-error state
 
     log = logger_mod.setup(store_dir, level=cfg.get("log_level", "INFO"))
 

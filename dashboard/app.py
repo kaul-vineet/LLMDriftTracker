@@ -373,6 +373,26 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
+# ── Auth error banner (shown on every page when agent stopped due to auth failure) ──
+_auth_err_path = os.path.join(STORE_DIR, "agent", "auth_error.json")
+if os.path.exists(_auth_err_path):
+    try:
+        _auth_err = json.loads(open(_auth_err_path).read())
+        _auth_msg = _auth_err.get("error", "Unknown auth error")
+    except Exception:
+        _auth_msg = "Unknown auth error"
+    st.markdown(f"""
+<div style="background:#2a0a0a;border:2px solid {C_RED};border-radius:8px;
+            padding:16px 20px;margin-bottom:16px">
+  <div style="font-size:0.9rem;font-weight:700;color:{C_RED};letter-spacing:3px;
+              font-family:{FONT};margin-bottom:6px">⛔ CRITICAL AUTH ERROR — AGENT STOPPED</div>
+  <div style="font-size:0.82rem;color:#ffaaaa;margin-bottom:10px">{_auth_msg}</div>
+  <div style="font-size:0.78rem;color:{C_DIM}">
+    All Power Platform APIs must be accessible with the existing token.
+    Go to <b style="color:{C_CYAN}">Setup</b> → re-authenticate → restart the agent.
+  </div>
+</div>""", unsafe_allow_html=True)
+
 # ── Page routing ──────────────────────────────────────────────────────────────
 pg = st.navigation([
     st.Page("_pages/ashoka.py", title="ASHOKA", icon="⚡", default=True),

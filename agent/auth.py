@@ -20,6 +20,11 @@ EVAL_SCOPES = ["https://api.powerplatform.com/.default"]
 BAPI_SCOPES = ["https://service.powerapps.com/.default"]
 
 
+class AuthError(RuntimeError):
+    """Token unavailable silently — agent must stop and user must re-authenticate via Setup."""
+    pass
+
+
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 def _cache_path(cfg: dict) -> str:
@@ -155,16 +160,48 @@ def _acquire(scopes: list[str], cfg: dict) -> str:
     return result["access_token"]
 
 
+def _acquire_silent(scopes: list[str], cfg: dict) -> str:
+    """
+    Silent-only token acquisition for use during normal agent operation.
+    Raises AuthError (never blocks on device flow) if the token cannot be obtained.
+    """
+    cache    = _load_cache(cfg)
+    app      = _app(cfg, cache)
+    accounts = app.get_accounts()
+    if not accounts:
+        raise AuthError("No authenticated session — sign in via Setup before starting the agent")
+    result = app.acquire_token_silent(scopes, account=accounts[0])
+    if result and "access_token" in result:
+        _save_cache(cache, cfg)
+        return result["access_token"]
+    detail = ""
+    if result:
+        detail = result.get("error_description") or result.get("error") or ""
+    raise AuthError(f"Token expired or unavailable for {scopes[0][:60]}"
+                    + (f" — {detail}" if detail else "") +
+                    " — re-authenticate via Setup")
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def get_eval_token(cfg: dict) -> str:
-    """Token for Copilot Studio Eval API (api.powerplatform.com)."""
+    """Token for Copilot Studio Eval API (api.powerplatform.com). Uses device flow if needed — for Setup only."""
     return _acquire(EVAL_SCOPES, cfg)
 
 
+def get_eval_token_agent(cfg: dict) -> str:
+    """Silent-only eval token for use inside the running agent. Raises AuthError if unavailable."""
+    return _acquire_silent(EVAL_SCOPES, cfg)
+
+
 def get_bapi_token(cfg: dict) -> str:
-    """Token for Power Apps BAPI (service.powerapps.com) — environment discovery."""
+    """Token for Power Apps BAPI (service.powerapps.com). Uses device flow if needed — for Setup only."""
     return _acquire(BAPI_SCOPES, cfg)
+
+
+def get_bapi_token_agent(cfg: dict) -> str:
+    """Silent-only BAPI token for use inside the running agent. Raises AuthError if unavailable."""
+    return _acquire_silent(BAPI_SCOPES, cfg)
 
 
 def get_dataverse_token(org_url: str, cfg: dict) -> str:
