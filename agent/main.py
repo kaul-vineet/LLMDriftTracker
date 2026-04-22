@@ -268,6 +268,7 @@ def run_cycle(cfg: dict, force: bool = False):
         pool, cfg,
         timeout_s=cfg.get("eval_poll_timeout_seconds", 1200),
         interval_s=cfg.get("eval_poll_interval_seconds", 20),
+        store_dir=store_dir,
     )
 
     # ── Phase 3: process & persist results per bot ──────────────────────────

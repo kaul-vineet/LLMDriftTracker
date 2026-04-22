@@ -625,8 +625,58 @@ def page_bot_detail(bot):
                         pass
                     st.rerun()
         elif running and agent_up:
-            st.button("⚡ Eval running", key="btn_running",
-                      use_container_width=True, type="secondary", disabled=True)
+            import time as _t
+            progress_path = os.path.join(STORE_DIR, "agent", f"eval_progress_{bot_id}.json")
+            prog = {}
+            try:
+                if os.path.exists(progress_path):
+                    prog = json.loads(open(progress_path).read())
+            except Exception:
+                pass
+            sets_done  = prog.get("setsDone", 0)
+            sets_total = prog.get("setsTotal", 1)
+            total      = prog.get("totalCases", 0)
+            done       = prog.get("doneCases", 0)
+            elapsed    = prog.get("elapsedSecs", 0)
+            if sets_total > 1:
+                ticker = f"{sets_done}/{sets_total} sets"
+            elif total:
+                ticker = f"{done}/{total} cases"
+            else:
+                ticker = "running"
+            elapsed_fmt = f"{elapsed // 60}m {elapsed % 60}s" if elapsed >= 60 else f"{elapsed}s"
+            st.markdown(f"""
+<style>
+@keyframes eval-blink {{
+  0%,100% {{ opacity:1; box-shadow:0 0 6px #ff4444; }}
+  50%      {{ opacity:0.2; box-shadow:none; }}
+}}
+.eval-live {{
+  display:flex; align-items:center; gap:10px;
+  background:#1a0808; border:1px solid #ff4444;
+  border-radius:8px; padding:10px 14px;
+}}
+.eval-dot {{
+  width:10px; height:10px; border-radius:50%;
+  background:#ff4444; flex-shrink:0;
+  animation:eval-blink 1s ease-in-out infinite;
+}}
+.eval-text {{
+  font-family:monospace; font-size:0.88rem; color:#ff8888;
+  display:flex; gap:14px; flex-wrap:wrap;
+}}
+.eval-ticker {{ color:#ffffff; font-weight:700; }}
+</style>
+<div class="eval-live">
+  <div class="eval-dot"></div>
+  <div class="eval-text">
+    <span>EVAL RUNNING</span>
+    <span class="eval-ticker">{ticker}</span>
+    <span>{elapsed_fmt}</span>
+  </div>
+</div>""", unsafe_allow_html=True)
+            _t.sleep(3)
+            st.rerun()
         else:
             if st.button("▶ Force Eval", key="force_eval_btn",
                          use_container_width=True, type="secondary",

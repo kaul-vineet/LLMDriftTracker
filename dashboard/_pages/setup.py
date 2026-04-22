@@ -867,3 +867,45 @@ with col_s2:
 
 if not _ready:
     st.caption("⚠ Client ID and Tenant ID are required to save.")
+
+# ── Agent maintenance ─────────────────────────────────────────────────────────
+st.markdown("---")
+st.markdown(
+    f"<div style='font-size:0.85rem;font-weight:700;letter-spacing:3px;"
+    f"text-transform:uppercase;color:{C_DIM};margin-bottom:12px;font-family:{FONT}'>"
+    f"AGENT MAINTENANCE</div>",
+    unsafe_allow_html=True,
+)
+
+def _stale_files():
+    import glob
+    agent_dir = os.path.join(STORE_DIR, "agent")
+    patterns  = [
+        os.path.join(agent_dir, "force_eval*.trigger"),
+        os.path.join(agent_dir, "eval_active_*.lock"),
+        os.path.join(agent_dir, "eval_progress_*.json"),
+    ]
+    found = []
+    for p in patterns:
+        found.extend(glob.glob(p))
+    return found
+
+stale = _stale_files()
+if stale:
+    st.warning(f"{len(stale)} stale agent file(s) found: trigger, lock, or progress files left from a previous session.")
+    st.caption("  \n".join(os.path.basename(f) for f in stale))
+    if st.button("🗑 Clear stale agent files", type="secondary"):
+        removed, failed = 0, 0
+        for f in stale:
+            try:
+                os.remove(f)
+                removed += 1
+            except Exception:
+                failed += 1
+        if failed:
+            st.error(f"Removed {removed}, failed to remove {failed}.")
+        else:
+            st.success(f"Cleared {removed} stale file(s). Dashboard state reset.")
+        st.rerun()
+else:
+    st.caption("No stale agent files found.")

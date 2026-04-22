@@ -132,8 +132,43 @@ def trigger_all_evals(bots_to_eval: list[dict], cfg: dict) -> list[dict]:
     return pool
 
 
+def _write_progress(store_dir: str | None, bot_id: str, bot_name: str,
+                    test_set: str, state: str, total: int, done_cases: int,
+                    elapsed: int, sets_done: int, sets_total: int):
+    if not store_dir:
+        return
+    import json as _j, os as _os
+    path = _os.path.join(store_dir, "agent", f"eval_progress_{bot_id}.json")
+    try:
+        _os.makedirs(_os.path.dirname(path), exist_ok=True)
+        open(path, "w").write(_j.dumps({
+            "botId":       bot_id,
+            "botName":     bot_name,
+            "testSetName": test_set,
+            "state":       state,
+            "totalCases":  total,
+            "doneCases":   done_cases,
+            "elapsedSecs": elapsed,
+            "setsDone":    sets_done,
+            "setsTotal":   sets_total,
+        }))
+    except Exception:
+        pass
+
+
+def _clear_progress(store_dir: str | None, bot_id: str):
+    if not store_dir:
+        return
+    import os as _os
+    try:
+        _os.remove(_os.path.join(store_dir, "agent", f"eval_progress_{bot_id}.json"))
+    except Exception:
+        pass
+
+
 def poll_all_runs(pool: list[dict], cfg: dict,
-                  timeout_s: int = 1200, interval_s: int = 20) -> dict[str, dict[str, dict]]:
+                  timeout_s: int = 1200, interval_s: int = 20,
+                  store_dir: str | None = None) -> dict[str, dict[str, dict]]:
     """
     Phase 2 — round-robin poll every run_id until terminal state or timeout.
     Single-threaded: each sweep checks all pending runs (fast HTTP GETs), then
@@ -146,6 +181,12 @@ def poll_all_runs(pool: list[dict], cfg: dict,
     completed: dict[str, list[tuple[str, dict]]] = {}   # bot_id -> [(display_name, result)]
     start     = time.time()
     deadline  = start + timeout_s
+
+    # Pre-compute how many test sets each bot has so we can show X/N progress
+    sets_total_by_bot: dict[str, int] = {}
+    for ctx in pool:
+        bid = ctx["bot"]["botId"]
+        sets_total_by_bot[bid] = sets_total_by_bot.get(bid, 0) + 1
 
     while remaining and time.time() < deadline:
         still_pending: list[dict] = []
@@ -163,15 +204,23 @@ def poll_all_runs(pool: list[dict], cfg: dict,
                 r.raise_for_status()
                 data  = r.json()
                 state = data.get("state", "").lower()
-                elapsed = int(time.time() - start)
-                total   = data.get("totalTestCases", 0)
+                elapsed    = int(time.time() - start)
+                total      = data.get("totalTestCases", 0)
+                done_cases = len(data.get("testCasesResults", []))
+                sets_done  = len(completed.get(bot_id, []))
+                sets_total = sets_total_by_bot.get(bot_id, 1)
                 lore.eval_polling(run_id, state, elapsed, timeout_s, total)
                 log.info(f"Waiting for eval result — {bot['name']} [{ctx['display_name']}]: "
                          f"{state}, {elapsed}s elapsed, {total} case(s)")
+                _write_progress(store_dir, bot_id, bot["name"], ctx["display_name"],
+                                state, total, done_cases, elapsed, sets_done, sets_total)
                 if state in ("completed", "failed", "cancelled"):
                     lore.eval_poll_done()
                     log.info(f"Eval {state} for {bot['name']} — run {run_id[:8]}")
                     completed.setdefault(bot_id, []).append((ctx["display_name"], data))
+                    _write_progress(store_dir, bot_id, bot["name"], ctx["display_name"],
+                                    state, total, total, elapsed,
+                                    len(completed[bot_id]), sets_total)
                 else:
                     still_pending.append(ctx)
             except Exception as e:
@@ -182,6 +231,10 @@ def poll_all_runs(pool: list[dict], cfg: dict,
         remaining = still_pending
         if remaining:
             time.sleep(interval_s)
+
+    # Clear progress files for all bots now that polling is done
+    for bid in sets_total_by_bot:
+        _clear_progress(store_dir, bid)
 
     for ctx in remaining:
         lore.eval_error(ctx["bot"]["name"],
