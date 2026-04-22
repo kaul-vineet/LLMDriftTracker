@@ -433,9 +433,9 @@ _EVENT_META = {
     "scan_complete": ("info","✔","SCAN DONE",    "stb"),   # grey   — sweep done
     "scan_end":      ("info","🔲","SCAN END",     "stb"),   # grey   — agent exiting
     "cycle_start":   ("info","📡","SCANNING",     "stb"),   # grey   — eval heartbeat
-    "model_change":  ("warn","🔄","MODEL SHIFT",  "warn"),  # gold   — change detected
+    "model_change":  ("warn","🔄","SWAP DETECTED","warn"),  # gold   — change detected
     "eval_queued":   ("info","⏳","EVAL QUEUED",  "stb"),   # grey   — pending
-    "agent_eval":    ("info","🤖","AGENT EVAL",   "birth"), # magenta— agent-triggered
+    "agent_eval":    ("info","🤖","EVAL QUEUED",  "birth"), # magenta— agent-triggered
     "eval_start":    ("info","🚀","EVAL START",   "new"),   # cyan   — eval running
     "eval_complete": ("info","✅","EVAL DONE",    "stb"),   # dynamic below
     "eval_timeout":  ("bad", "⏱️","TIMEOUT",      "reg"),   # red    — failure
