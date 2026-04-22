@@ -464,7 +464,7 @@ def _build_timeline_events(raw, model_lookup: dict | None = None):
         out.append({"ts":e.get("ts",""), "dot":dot, "icon":icon,
                     "head":bot_name, "model":model,
                     "badge":badge, "badge_c":badge_c, "body":e.get("detail","")})
-    return list(reversed(out))
+    return out
 
 
 # ── Header ────────────────────────────────────────────────────────────────────
@@ -797,10 +797,15 @@ def page_bot_detail(bot):
         src = r.get("triggerSource", "")
         mv  = r.get("modelVersion") or ""
         mv  = mv if mv and mv not in ("unknown", "?") else ""
+        ts  = _fmt_ts(r.get("triggeredAt", ""))
         if r.get("forced"):
-            source = "USER" if (src == "user" or not src) else "AGENT"
-            return f"{mv}  ·  {source}" if mv else source
-        return f"{_fmt_ts(r.get('triggeredAt',''))}" + (f"  ·  {mv}" if mv else "")
+            if src == "agent":
+                # Agent-triggered (model change): keep timestamp for context
+                return (f"{ts}  ·  {mv}  ·  AGENT" if mv else f"{ts}  ·  AGENT") if ts else f"{mv}  ·  AGENT"
+            else:
+                # User-triggered force eval: no timestamp needed
+                return f"{mv}  ·  USER" if mv else "USER"
+        return (f"{ts}  ·  {mv}" if mv else ts)
 
     run_labels = [_run_label(r) for r in runs]
     run_b = runs[-1]
