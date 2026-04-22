@@ -582,15 +582,7 @@ def page_overview(bots, raw_events):
         f"line-height:1.85;color:{C_TEXT}'>"
         f"I am <span style='color:{C_CYAN};font-variant:small-caps'>āshokā</span> — born April 1, 2026. "
         f"Model swaps. I score. You decide."
-        f"<div style='margin-top:16px;padding-top:12px;border-top:1px solid {C_BORDER}'>"
-        f"<div style='font-size:0.72rem;letter-spacing:3px;color:{C_DIM};"
-        f"font-family:{FONT};font-weight:700'>UI INSPIRED BY</div>"
-        f"<div style='font-size:1.43rem;font-weight:700;letter-spacing:6px;"
-        f"color:{C_MAGENTA};font-family:{FONT};margin-top:4px;"
-        f"text-shadow:0 0 20px rgba(255,0,170,0.4)'>OUROBOROS</div>"
-        f"<div style='font-size:0.72rem;color:{C_DIM};letter-spacing:2px;margin-top:3px'>"
-        f"THE SNAKE THAT EATS ITS OWN TAIL &nbsp;·&nbsp; 2026</div>"
-        f"</div></div>",
+        f"</div>",
         unsafe_allow_html=True,
     )
 
@@ -682,6 +674,21 @@ def page_overview(bots, raw_events):
         '<div class="etl-wrap"><div class="etl-line"></div>'
         + "".join(parts)
         + '</div></div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── PAGE FOOTER ───────────────────────────────────────────────────────────
+    st.markdown(
+        f"<div style='text-align:center;margin-top:48px;padding-top:20px;"
+        f"border-top:1px solid {C_BORDER}'>"
+        f"<div style='font-size:0.72rem;letter-spacing:3px;color:{C_DIM};"
+        f"font-family:{FONT};font-weight:700'>UI INSPIRED BY</div>"
+        f"<div style='font-size:1.43rem;font-weight:700;letter-spacing:6px;"
+        f"color:{C_MAGENTA};font-family:{FONT};margin-top:4px;"
+        f"text-shadow:0 0 20px rgba(255,0,170,0.4)'>OUROBOROS</div>"
+        f"<div style='font-size:0.72rem;color:{C_DIM};letter-spacing:2px;margin-top:3px'>"
+        f"THE SNAKE THAT EATS ITS OWN TAIL &nbsp;·&nbsp; 2026</div>"
+        f"</div>",
         unsafe_allow_html=True,
     )
 
