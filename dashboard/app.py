@@ -293,7 +293,7 @@ def render_readiness():
             f"<div style='background:rgba(40,200,64,.08);border:1px solid rgba(40,200,64,.35);"
             f"border-radius:6px;padding:10px 14px;margin-bottom:8px;text-align:center'>"
             f"<div style='color:{C_GREEN};font-size:0.85rem;font-weight:700;letter-spacing:3px;"
-            f"font-family:{FONT}'>● READY</div></div>",
+            f"font-family:{FONT}'>● READY TO START</div></div>",
             unsafe_allow_html=True,
         )
     else:
