@@ -284,7 +284,7 @@ def run_cycle(cfg: dict, force: bool = False):
         env_id   = bot.get("ppEnvId", "")
         org_url  = bot.get("orgUrl", "")
 
-        lock_path = os.path.join(store_dir, f"eval_active_{bot_id}.lock")
+        lock_path = os.path.join(_agent_dir(store_dir), f"eval_active_{bot_id}.lock")
         try:
             results_by_type = results_by_bot.get(bot_id)
             if not results_by_type:
