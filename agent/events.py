@@ -156,9 +156,9 @@ def scan_start(store_dir: str, n_bots: int):
            detail=f"Watcher began scanning {n_bots} agent(s)")
 
 
-def scan_complete(store_dir: str, n_bots: int, n_stable: int):
+def scan_complete(store_dir: str, n_bots: int, n_stable: int, sweep: int = 0):
     _write(store_dir, "scan_complete",
-           detail=f"Scan complete — {n_bots} agent(s) checked, {n_stable} stable")
+           detail=f"Scan #{sweep} complete — {n_bots} agent(s) checked, {n_stable} stable")
 
 
 def scan_end(store_dir: str):

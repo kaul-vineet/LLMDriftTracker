@@ -509,7 +509,7 @@ def _watch_loop(cfg: dict):
             if n_unknown:
                 status += f", {n_unknown} version unavailable"
             log.info(f"Watching: checked {len(bots)} agent(s), {status} · next check in {interval_s}s")
-            ev.scan_complete(store_dir, len(bots), n_stable)
+            ev.scan_complete(store_dir, len(bots), n_stable, sweep)
 
             # Memory snapshot every 10 sweeps (~20 min at default interval)
             if sweep % 10 == 0:
