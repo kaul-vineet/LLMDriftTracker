@@ -648,7 +648,7 @@ def page_overview(bots, raw_events):
     # non-noise events that can shift agent_start past the [:15] threshold.
     _visible_ts = {e["ts"] for e in live}
     _pinned = []
-    for _etype in ("scan_end", "agent_stop", "agent_start"):
+    for _etype in ("scan_start", "scan_end", "agent_stop", "agent_start"):
         _match = next((e for e in raw_events if e.get("event") == _etype), None)
         if _match and _match.get("ts") not in _visible_ts:
             _pinned.append(_event_to_dict(_match, model_lookup))
