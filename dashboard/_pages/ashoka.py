@@ -470,6 +470,36 @@ def _build_timeline_events(raw, model_lookup: dict | None = None):
 
 
 # ── Header ────────────────────────────────────────────────────────────────────
+def _next_scan_str(raw_events: list) -> str:
+    """Return 'next scan in Xm Ys' or '' if not computable."""
+    import re
+    from datetime import timezone, timedelta
+    interval_s = None
+    last_complete_ts = None
+    for e in raw_events:
+        ev = e.get("event", "")
+        if ev == "agent_start" and interval_s is None:
+            m = re.search(r"poll every (\d+)s", e.get("detail", ""))
+            if m:
+                interval_s = int(m.group(1))
+        if ev == "scan_complete" and last_complete_ts is None:
+            last_complete_ts = e.get("ts")
+        if interval_s and last_complete_ts:
+            break
+    if not interval_s or not last_complete_ts:
+        return ""
+    try:
+        last_dt  = datetime.fromisoformat(last_complete_ts.replace("Z", "+00:00"))
+        next_dt  = last_dt + timedelta(seconds=interval_s)
+        secs     = int((next_dt - datetime.now(timezone.utc)).total_seconds())
+        if secs <= 0:
+            return "scanning…"
+        mins, s  = divmod(secs, 60)
+        return f"next scan in {mins}m {s:02d}s"
+    except Exception:
+        return ""
+
+
 def render_header(bots, raw_events, page="overview"):
     last_scan   = max((b["updatedAt"] for b in bots), default="")
     ts_str      = _fmt_ts(last_scan) if last_scan else "no data yet"
@@ -485,6 +515,8 @@ def render_header(bots, raw_events, page="overview"):
     blink_anim  = "sys-blink 1.4s ease-in-out infinite" if agent_up else "none"
     n_bots      = len(bots)
     n_plural    = "s" if n_bots != 1 else ""
+    next_scan   = _next_scan_str(raw_events) if agent_up else ""
+    next_scan_html = f" &nbsp;·&nbsp; {next_scan}" if next_scan else ""
 
     if page == "overview":
         st.markdown(f"""
@@ -512,7 +544,7 @@ def render_header(bots, raw_events, page="overview"):
                         font-family:{FONT};line-height:1;
                         text-shadow:0 0 20px rgba(0,240,255,.4)'><span style='font-variant:small-caps'>āshokā</span></div>
             <div style='font-size:0.72rem;color:{C_DIM};letter-spacing:1px;margin-top:4px'>
-              <span class="sys-dot-hdr"></span>{sys_label} &nbsp;·&nbsp; {n_bots} agent{n_plural} &nbsp;·&nbsp; {ts_str}</div>
+              <span class="sys-dot-hdr"></span>{sys_label} &nbsp;·&nbsp; {n_bots} agent{n_plural} &nbsp;·&nbsp; {ts_str}{next_scan_html}</div>
           </div>
         </div>
         <div class='stat-bar'>
