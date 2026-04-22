@@ -641,7 +641,7 @@ def page_overview(bots, raw_events):
     st.markdown("<div class='sec-label'>MISSION TIMELINE</div>", unsafe_allow_html=True)
 
     model_lookup = {b["botId"]: b.get("modelVersion","") for b in bots}
-    all_events   = _build_timeline_events(raw_events, model_lookup)[:25]
+    all_events   = _build_timeline_events(raw_events, model_lookup)[:15]
 
     parts = []
     for ev in all_events:
