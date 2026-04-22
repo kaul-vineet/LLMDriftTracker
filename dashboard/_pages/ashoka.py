@@ -547,7 +547,11 @@ def render_header(bots, raw_events, page="overview"):
                         font-family:{FONT};line-height:1;
                         text-shadow:0 0 20px rgba(0,240,255,.4)'><span style='font-variant:small-caps'>āshokā</span></div>
             <div style='font-size:1.05rem;color:{C_DIM};letter-spacing:1px;margin-top:4px;white-space:nowrap'>
-              <span class="sys-dot-hdr"></span>{sys_label} &nbsp;·&nbsp; {n_bots} agent{n_plural} &nbsp;·&nbsp; {ts_str}{next_scan_html}</div>
+              <span class="sys-dot-hdr"></span><span style='color:{sys_color};font-weight:600'>{sys_label}</span>
+              &nbsp;·&nbsp;
+              <span style='color:{C_CYAN}'>{n_bots} agent{n_plural}</span>
+              &nbsp;·&nbsp;
+              <span style='color:{C_GOLD}'>{ts_str}</span>{next_scan_html}</div>
           </div>
         </div>
         <div class='stat-bar'>
