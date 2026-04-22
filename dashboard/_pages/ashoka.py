@@ -543,7 +543,7 @@ def render_header(bots, raw_events, page="overview"):
             <div class='sweep'></div><div class='center-dot'></div>
           </div>
           <div>
-            <div style='font-size:3rem;font-weight:700;letter-spacing:8px;color:{C_CYAN};
+            <div style='font-size:3rem;font-weight:700;letter-spacing:16px;color:{C_CYAN};
                         font-family:{FONT};line-height:1;
                         text-shadow:0 0 20px rgba(0,240,255,.4)'><span style='font-variant:small-caps'>āshokā</span></div>
             <div style='font-size:0.72rem;color:{C_DIM};letter-spacing:1px;margin-top:4px'>
