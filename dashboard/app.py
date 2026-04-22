@@ -1,14 +1,11 @@
 """
-dashboard/app.py — ASHOKA · entry point & router
+dashboard/app.py — āshokā · entry point & router
 Runs on every page load: sets config, applies CSS, renders shared sidebar, then routes.
 """
 import json
 import os
 import time
 from datetime import datetime, timezone
-from dotenv import load_dotenv
-load_dotenv()
-
 import streamlit as st
 
 import sys
@@ -23,7 +20,7 @@ PID_FILE  = os.path.join(STORE_DIR, "agent", "agent.pid")
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="ASHOKA",
+    page_title="ĀSHOKĀ",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -371,9 +368,9 @@ with st.sidebar:
     st.markdown(
         f"<div style='padding:4px 0 14px'>"
         f"<div style='font-size:16px;font-weight:700;letter-spacing:3px;"
-        f"color:{C_CYAN};font-family:{FONT}'>⚡ ASHOKA</div>"
+        f"color:{C_CYAN};font-family:{FONT}'>⚡ <span style='font-variant:small-caps'>āshokā</span></div>"
         f"<div style='font-size:0.6rem;color:{C_DIM};margin-top:2px;letter-spacing:1px'>"
-        f"copilot-eval-agent · v1.1</div></div>",
+        f"v1.0</div></div>",
         unsafe_allow_html=True,
     )
     render_readiness()
@@ -403,9 +400,26 @@ if os.path.exists(_auth_err_path):
   </div>
 </div>""", unsafe_allow_html=True)
 
+# ── Dataverse auth banner (shown on every page when model versions unavailable) ──
+_dv_auth_path = os.path.join(STORE_DIR, "agent", "dv_auth_needed.json")
+if os.path.exists(_dv_auth_path):
+    st.markdown(f"""
+<div style="background:#1a1000;border:2px solid {C_GOLD};border-radius:8px;
+            padding:14px 20px;margin-bottom:16px">
+  <div style="font-size:0.85rem;font-weight:700;color:{C_GOLD};letter-spacing:3px;
+              font-family:{FONT};margin-bottom:6px">⚠ DATAVERSE NOT AUTHENTICATED</div>
+  <div style="font-size:0.8rem;color:#ffdd99;margin-bottom:8px">
+    Model versions are unavailable — the app registration is missing
+    <b>Dynamics CRM → user_impersonation</b> permission, or Dataverse sign-in is needed.
+  </div>
+  <div style="font-size:0.75rem;color:{C_DIM}">
+    Go to <b style="color:{C_CYAN}">Setup</b> → Authentication → Sign In for Dataverse.
+  </div>
+</div>""", unsafe_allow_html=True)
+
 # ── Page routing ──────────────────────────────────────────────────────────────
 pg = st.navigation([
-    st.Page("_pages/ashoka.py", title="ASHOKA", icon="⚡", default=True),
+    st.Page("_pages/ashoka.py", title="ĀSHOKĀ", icon="⚡", default=True),
     st.Page("_pages/setup.py",  title="Setup",  icon="⚙"),
     st.Page("_pages/control.py", title="Control", icon="🗄"),
     st.Page("_pages/logs.py",   title="Logs",   icon="📋"),

@@ -92,22 +92,23 @@ def _metric_section(metric_type: str, verdict: str,
     rows_html  = ""
     failures   = []
 
-    # Sort current cases by worst delta first
     def _delta(cc):
         pc = prev_by_id.get(cc["caseId"], {})
         if isinstance(pc.get("score"), float) and isinstance(cc.get("score"), float):
             return cc["score"] - pc["score"]
-        return 0  # missing score → neutral; sort-by-worst still works correctly
+        return 0
 
     sorted_curr = sorted(curr_cases, key=_delta)
+    cases_detail_html = ""
 
     for i, cc in enumerate(sorted_curr):
-        pc      = prev_by_id.get(cc["caseId"], {})
-        ps      = pc.get("status", "—")
-        cs      = cc.get("status", "—")
-        psc     = pc.get("score")
-        csc     = cc.get("score")
-        reason  = cc.get("reason") or ""
+        pc          = prev_by_id.get(cc["caseId"], {})
+        ps          = pc.get("status", "—")
+        cs          = cc.get("status", "—")
+        psc         = pc.get("score")
+        csc         = cc.get("score")
+        prev_reason = (pc.get("reason") or "") if pc else ""
+        curr_reason = cc.get("reason") or ""
 
         if isinstance(psc, float) and isinstance(csc, float):
             d     = csc - psc
@@ -115,13 +116,11 @@ def _metric_section(metric_type: str, verdict: str,
             dcol  = C_GREEN if d > 2 else (C_RED if d < -2 else C_DIM)
             dcell = (f"<td style='text-align:right;color:{dcol};font-weight:700;"
                      f"font-family:{FONT}'>{sign}{d:.0f}</td>")
+            d_val = d
         else:
             dcell = f"<td style='color:{C_DIM}'>—</td>"
+            d_val = None
 
-        if cs == "Fail":
-            failures.append({"num": i + 1, "score": csc, "reason": reason})
-
-        short = (_esc(reason[:120]) + "…") if len(reason) > 120 else _esc(reason)
         rows_html += (
             f"<tr style='border-bottom:1px solid {C_BORDER}'>"
             f"<td style='color:{C_DIM};padding:6px 8px'>{i+1}</td>"
@@ -130,27 +129,36 @@ def _metric_section(metric_type: str, verdict: str,
             f"<td style='padding:6px 8px'>{_badge(cs) if cs != '—' else '—'}</td>"
             f"<td style='text-align:right;font-family:{FONT};padding:6px 8px'>{_fmt_score(csc)}</td>"
             f"{dcell}"
-            f"<td style='color:{C_DIM};font-size:0.78rem;padding:6px 8px;max-width:300px;word-wrap:break-word'>{short}</td>"
             f"</tr>"
         )
 
+        d_str      = f"{d_val:+.0f}" if d_val is not None else "—"
+        border_col = C_RED if (d_val is not None and d_val < -2) else (
+                     C_GREEN if (d_val is not None and d_val > 2) else C_BORDER)
+        detail_open = " open" if (d_val is not None and d_val < -2) else ""
+        prev_block  = (
+            f"<div style='font-size:0.65rem;color:{C_DIM};letter-spacing:1px;"
+            f"font-family:{FONT};margin-bottom:4px'>BASELINE EVALUATION</div>"
+            f"<div style='font-size:0.82rem;color:{C_DIM};line-height:1.6;"
+            f"margin-bottom:12px'>{_esc(prev_reason)}</div>"
+        ) if prev_reason else ""
+        cases_detail_html += (
+            f"<details{detail_open} style='margin-bottom:6px;background:{C_BG};"
+            f"border-left:2px solid {border_col};border-radius:0 4px 4px 0;overflow:hidden'>"
+            f"<summary style='padding:8px 12px;cursor:pointer;font-family:{FONT};"
+            f"font-size:0.78rem;color:{C_DIM};list-style:none'>"
+            f"Case {i+1} &nbsp;·&nbsp; {_badge(ps)} {_fmt_score(psc)} "
+            f"→ {_badge(cs)} {_fmt_score(csc)} &nbsp;·&nbsp; Δ {d_str}"
+            f"</summary>"
+            f"<div style='padding:12px 16px'>"
+            f"{prev_block}"
+            f"<div style='font-size:0.65rem;color:{C_CYAN};letter-spacing:1px;"
+            f"font-family:{FONT};margin-bottom:4px'>CURRENT EVALUATION</div>"
+            f"<div style='font-size:0.82rem;color:{C_TEXT};line-height:1.6'>{_esc(curr_reason)}</div>"
+            f"</div></details>"
+        )
+
     failures_html = ""
-    if failures:
-        items = "".join(
-            f"<div style='margin-bottom:10px;padding:12px 14px;background:{C_BG};"
-            f"border-left:3px solid {C_RED};border-radius:0 4px 4px 0'>"
-            f"<div style='font-weight:700;color:{C_TEXT};font-family:{FONT};margin-bottom:4px'>"
-            f"Case {f['num']} — Score {_fmt_score(f['score'])}</div>"
-            f"<div style='color:{C_DIM};font-size:0.85rem;line-height:1.6'>{_esc(f['reason'])}</div>"
-            f"</div>"
-            for f in failures
-        )
-        failures_html = (
-            f"<div style='margin-top:16px'>"
-            f"<div style='font-size:0.72rem;font-weight:700;color:{C_RED};"
-            f"letter-spacing:1px;margin-bottom:8px'>FAILING CASES ({len(failures)})</div>"
-            f"{items}</div>"
-        )
 
     v_colors   = {"REGRESSED": C_RED, "IMPROVED": C_GREEN, "STABLE": C_DIM, "NEW": C_GOLD}
     v_color    = v_colors.get(verdict, C_DIM)
@@ -161,16 +169,22 @@ def _metric_section(metric_type: str, verdict: str,
       <thead>
         <tr style='background:{C_BG};color:{C_DIM}'>
           <th style='text-align:left;padding:6px 8px;font-weight:600'>#</th>
-          <th style='padding:6px 8px;font-weight:600'>Prev</th>
+          <th style='padding:6px 8px;font-weight:600'>Baseline</th>
           <th style='text-align:right;padding:6px 8px;font-weight:600'>Score</th>
-          <th style='padding:6px 8px;font-weight:600'>Curr</th>
+          <th style='padding:6px 8px;font-weight:600'>Current</th>
           <th style='text-align:right;padding:6px 8px;font-weight:600'>Score</th>
           <th style='text-align:right;padding:6px 8px;font-weight:600'>Δ</th>
-          <th style='text-align:left;padding:6px 8px;font-weight:600'>AI Reason</th>
         </tr>
       </thead>
       <tbody>{rows_html}</tbody>
     </table>"""
+
+    details_section = (
+        f"<div style='margin-top:14px'>"
+        f"<div style='font-size:0.65rem;font-weight:700;color:{C_DIM};"
+        f"letter-spacing:2px;margin-bottom:8px;font-family:{FONT}'>CASE EVALUATIONS</div>"
+        f"{cases_detail_html}</div>"
+    ) if cases_detail_html else ""
 
     no_prev_note = "" if prev_cases else (
         f"<div style='color:{C_GOLD};font-size:0.75rem;margin-top:8px;font-family:{FONT}'>"
@@ -189,7 +203,7 @@ def _metric_section(metric_type: str, verdict: str,
       <div style='padding:12px 16px'>
         {no_prev_note}
         {table}
-        {failures_html}
+        {details_section}
       </div>
     </div>"""
 
@@ -424,7 +438,7 @@ def generate_report(bot_results: list[dict]) -> str:
 <html lang='en'>
 <head>
   <meta charset='UTF-8'>
-  <title>ASHOKA — Response Variation Report — {ts}</title>
+  <title>āshokā — Response Variation Report — {ts}</title>
   <script src='https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js'></script>
   <style>
     * {{ box-sizing:border-box; margin:0; padding:0 }}
@@ -439,7 +453,7 @@ def generate_report(bot_results: list[dict]) -> str:
   </style>
 </head>
 <body>
-  <h1>⚡ ASHOKA</h1>
+  <h1>⚡ āshokā</h1>
   <div class='sub'>{ts} &nbsp;·&nbsp; {count} agent(s) evaluated &nbsp;·&nbsp;
     <span style='color:{hero_color};font-weight:700'>{total_reg} REGRESSED · {total_imp} IMPROVED</span>
   </div>

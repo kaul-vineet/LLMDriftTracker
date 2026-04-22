@@ -1,5 +1,6 @@
+# -*- coding: utf-8 -*-
 """
-agent/reasoning.py — metric extraction, response variation classification, LLM analysis.
+agent/reasoning.py - metric extraction, response variation classification, LLM analysis.
 
 classify_run() returns verdicts sorted REGRESSED → IMPROVED → STABLE.
 _build_prompt() leads with regressions.
@@ -8,6 +9,7 @@ extract_metrics_for_report() accepts the testSets dict shape:
 """
 import json
 import os
+import time
 from openai import OpenAI
 from . import logger as logger_mod
 
@@ -67,6 +69,37 @@ def extract_metrics_for_report(test_sets: dict) -> dict:
             run_result = wrapper.get("results", wrapper)
             combined.update(_extract_metrics(run_result))
     return combined
+
+
+# ── Tavily web search ─────────────────────────────────────────────────────────
+
+def _search_model_context(old_model: str, new_model: str, cfg: dict) -> str:
+    """Search for model-specific context via Tavily. Returns '' if key not set or search fails."""
+    api_key = (cfg.get("tavily_api_key") or "").strip()
+    if not api_key:
+        return ""
+    queries = [f"{new_model} LLM capabilities instruction following known limitations"]
+    if old_model.strip() and old_model != new_model:
+        queries.append(f"{old_model} vs {new_model} language model quality differences")
+    log = logger_mod.get()
+    try:
+        from tavily import TavilyClient
+        client  = TavilyClient(api_key=api_key)
+        chunks  = []
+        for q in queries:
+            resp = client.search(q, max_results=3, search_depth="basic")
+            for r in resp.get("results", []):
+                content = (r.get("content") or "").strip()
+                url     = r.get("url", "")
+                if content:
+                    chunks.append(f"Source: {url}\n{content[:600]}")
+        if not chunks:
+            return ""
+        log.debug(f"Tavily search returned {len(chunks)} result(s) for {new_model}")
+        return "\n\n".join(chunks)
+    except Exception as e:
+        log.debug(f"Tavily search failed: {e}")
+        return ""
 
 
 # ── Classification ────────────────────────────────────────────────────────────
@@ -131,10 +164,10 @@ def verdict_summary(classifications: list[dict]) -> str:
 
 def _build_client(cfg: dict) -> OpenAI:
     llm = cfg["llm"]
-    api_version = os.environ.get("LLM_API_VERSION") or llm.get("api_version", "")
+    api_version = llm.get("api_version", "")
     kwargs: dict = {
-        "base_url": os.environ.get("LLM_BASE_URL") or llm["base_url"],
-        "api_key":  os.environ.get("LLM_API_KEY")  or llm["api_key"],
+        "base_url": llm["base_url"],
+        "api_key":  llm["api_key"],
     }
     if api_version:
         kwargs["default_query"] = {"api-version": api_version}
@@ -142,11 +175,38 @@ def _build_client(cfg: dict) -> OpenAI:
 
 
 def _model(cfg: dict) -> str:
-    return os.environ.get("LLM_MODEL") or cfg["llm"]["model"]
+    return cfg["llm"]["model"]
+
+
+def _extract_cases_by_type(test_sets: dict) -> dict[str, list[dict]]:
+    """Extract per-case data from test_sets for per-case prompt comparison."""
+    out: dict[str, list[dict]] = {}
+    for metric_type, wrapper in test_sets.items():
+        run_result = wrapper.get("results", wrapper) if isinstance(wrapper, dict) else {}
+        cases = []
+        for case in run_result.get("testCasesResults", []):
+            cid = case.get("testCaseId", "")
+            for m in case.get("metricsResults", []):
+                r   = m.get("result", {})
+                raw = r.get("data", {}).get("score")
+                try:   score = float(raw)
+                except: score = None
+                cases.append({
+                    "caseId": cid,
+                    "status": r.get("status", ""),
+                    "score":  score,
+                    "reason": r.get("aiResultReason", ""),
+                })
+        out[metric_type] = cases
+    return out
 
 
 def _build_prompt(bot_name: str, old_model: str, new_model: str,
-                  classifications: list[dict], ai_reasons: list[str]) -> str:
+                  classifications: list[dict],
+                  instructions: str = "",
+                  prev_cases_by_type: dict | None = None,
+                  curr_cases_by_type: dict | None = None,
+                  extra_context: str = "") -> str:
 
     regressed = [c for c in classifications if c["verdict"] == "REGRESSED"]
     improved  = [c for c in classifications if c["verdict"] == "IMPROVED"]
@@ -164,79 +224,159 @@ def _build_prompt(bot_name: str, old_model: str, new_model: str,
             return ""
         return f"{label}\n" + "\n".join(_row(c) for c in items) + "\n\n"
 
-    table = (
+    metric_table = (
         _section(regressed, "▼ REGRESSED:")
         + _section(improved,  "▲ IMPROVED:")
         + _section(stable,    "● STABLE:")
         + _section(new_,      "★ NEW (no baseline):")
-    ) or "  No metrics available.\n"
+    ) or "  No comparable metrics.\n"
 
-    reasons = "\n".join(f"  - {r}" for r in ai_reasons[:20]) if ai_reasons else "  None available."
+    # Per-case comparison: old reason vs new reason for each test case
+    case_lines: list[str] = []
+    if prev_cases_by_type and curr_cases_by_type:
+        for metric_type, curr_cases in curr_cases_by_type.items():
+            prev_cases = (prev_cases_by_type or {}).get(metric_type, [])
+            prev_by_id = {c["caseId"]: c for c in prev_cases}
+            for i, cc in enumerate(curr_cases):
+                pc     = prev_by_id.get(cc["caseId"], {})
+                old_s  = pc.get("status", "—") if pc else "—"
+                old_sc = pc.get("score") if pc else None
+                new_s  = cc.get("status", "—")
+                new_sc = cc.get("score")
+                old_r  = pc.get("reason", "") if pc else ""
+                new_r  = cc.get("reason", "")
+                if old_sc is not None and new_sc is not None:
+                    d   = new_sc - old_sc
+                    tag = "▼ REGRESSION" if d < -2 else ("▲ IMPROVEMENT" if d > 2 else "● STABLE")
+                elif not pc:
+                    tag = "★ NEW"
+                else:
+                    tag = "?"
+                old_str = (f"{old_s} / score {int(old_sc) if old_sc is not None else '?'}"
+                           if pc else "no baseline")
+                new_str = f"{new_s} / score {int(new_sc) if new_sc is not None else '?'}"
+                case_lines.append(
+                    f"\nCase {i+1}  [{old_str}  →  {new_str}]  {tag}"
+                )
+                if old_r:
+                    case_lines.append(f"  {old_model}: {old_r}")
+                case_lines.append(f"  {new_model}: {new_r}")
 
-    return f"""You are an AI quality analyst measuring response variation after a model swap in a Copilot Studio agent.
+    cases_section = "\n".join(case_lines) if case_lines else "  Per-case data not available."
+    instructions_section = (
+        f"\nAgent system prompt (first 400 chars):\n{instructions[:400]}\n"
+        if instructions else ""
+    )
+    extra_section = (
+        f"\n## Additional context (provided by user)\n{extra_context.strip()}\n"
+        if extra_context and extra_context.strip() else ""
+    )
+    force_eval = old_model == new_model
 
-Agent: {bot_name}
-Model swap: {old_model}  →  {new_model}
+    if force_eval:
+        task_line  = "Same model used in both runs (force evaluation - no model swap). Analyse consistency and variance."
+        model_line = "Model: " + new_model
+        questions  = (
+            "Tell the story of this agent's consistency. Both runs used the same model, "
+            "so any variation is signal about the agent itself - its prompts, its test cases, "
+            "or inherent model variance. Which cases are persistently failing, and what do they "
+            "have in common? Where is the variance acceptable and where is it a warning sign? "
+            "What does the pattern tell an architect about where to invest in improving this agent?"
+        )
+    else:
+        task_line  = "Analyse the quality impact of a model swap from " + old_model + " to " + new_model + "."
+        model_line = "Old model: " + old_model + "\nNew model: " + new_model
+        questions  = (
+            "Using your knowledge of " + old_model + " and " + new_model + " - their documented differences in "
+            "capability, training cutoff, instruction-following behaviour, and factual accuracy - "
+            "tell the story of what happened when this agent moved from one model to the other.\n\n"
+            "Cover: which cases changed and why (ground every claim in the evidence above); "
+            "what the pattern of failures says about the new model's behaviour in this agent's domain; "
+            "what stayed stable and what that reveals about the agent's strengths; "
+            "and what a solution architect should do next - concrete system prompt changes, "
+            "few-shot examples, or a rollback - tied directly to the failure pattern you identified."
+        )
 
-Metric comparison (previous → current):
-{table}
-Sample AI evaluation reasons from failing/notable test cases:
-{reasons}
-
-Focus your analysis on regressions first. Identify:
-1. Which metrics regressed and by how much — is this significant or noise?
-2. Which metrics improved — is this meaningful?
-3. Patterns in the AI reasons (topic clusters, capability gaps)
-4. Root cause hypothesis for any regressions
-5. Recommendation: proceed with new model / investigate further / revert
-
-Be concise. Use plain language. Lead with the most important finding. No bullet lists — short paragraphs."""
+    return (
+        "You are āshokā, an autonomous AI quality sentinel embedded inside a Copilot Studio monitoring platform. "
+        "Your audience is a mixed group: solution architects who care about root cause and technical remediation, "
+        "and business stakeholders who care about impact and decision. "
+        "Write as if you are briefing both in the same room — tell them a story about what happened to this agent, "
+        "not a report. Use a narrative voice: set the scene, build to the finding, land on a clear verdict. "
+        "No bullet lists. No headers. No numbered sections. Flowing prose only, "
+        "organised as: what changed and where, why it happened (grounded in the case evidence), "
+        "what it means for the agent's users, and what to do next.\n\n"
+        "## Task\n" + task_line + "\n\n"
+        "## Agent\n"
+        "Name: " + bot_name + instructions_section + "\n"
+        + model_line + "\n\n"
+        "## Aggregate metric shift\n"
+        + metric_table + extra_section
+        + "## Per-case evaluation comparison\n"
+        "Scores: 0=completely wrong · 25=major mismatch · 50=partial · 75=mostly correct · 100=perfect\n"
+        "For each case: OLD model (" + old_model + ") reason, then NEW model (" + new_model + ") reason.\n"
+        + cases_section + "\n\n"
+        "## Research questions\n"
+        + questions + "\n\n"
+        "Write 3 to 5 paragraphs. Open with what the data revealed the moment runs were compared. "
+        "Build through the evidence to explain why. Close with a single, unambiguous sentence: "
+        "PROCEED, INVESTIGATE, or REVERT - and the one reason that drives that call. "
+        "Speak plainly. Every claim must be traceable to a specific case or metric in the data above."
+    )
 
 
 def analyse_variation(bot_name: str, old_model: str, new_model: str,
-                  test_sets: dict,
-                  prev_run: dict | None,
-                  cfg: dict) -> str:
+                      test_sets: dict,
+                      prev_run: dict | None,
+                      cfg: dict,
+                      instructions: str = "",
+                      extra_context: str = "") -> str:
     curr_metrics = extract_metrics_for_report(test_sets)
     prev_metrics = (
         extract_metrics_for_report(prev_run.get("testSets", {}))
         if prev_run else {}
     )
-
     classifications = classify_run(prev_metrics, curr_metrics)
 
-    ai_reasons = []
-    for _type, wrapper in test_sets.items():
-        if isinstance(wrapper, dict):
-            run_result = wrapper.get("results", wrapper)
-            for case in run_result.get("testCasesResults", []):
-                for m in case.get("metricsResults", []):
-                    r = m.get("result", {}).get("aiResultReason", "")
-                    if r:
-                        ai_reasons.append(r)
+    curr_cases_by_type = _extract_cases_by_type(test_sets)
+    prev_cases_by_type = (
+        _extract_cases_by_type(prev_run.get("testSets", {})) if prev_run else {}
+    )
 
     if not prev_metrics:
         return (f"No previous run available for {bot_name}. "
                 f"Baseline established for model {new_model}. "
                 f"Current metrics: {json.dumps(curr_metrics, indent=2)}")
 
-    prompt = _build_prompt(bot_name, old_model, new_model, classifications, ai_reasons)
+    if not extra_context:
+        extra_context = _search_model_context(old_model, new_model, cfg)
 
-    log = logger_mod.get()
-    log.info(f"Requesting LLM analysis for {bot_name} (model swap: {old_model} → {new_model})")
+    prompt = _build_prompt(
+        bot_name, old_model, new_model, classifications, instructions,
+        prev_cases_by_type, curr_cases_by_type, extra_context,
+    )
+
+    log      = logger_mod.get()
+    model_id = _model(cfg)
+    log.debug(f"LLM request — {bot_name} ({old_model} → {new_model}) model={model_id}",
+              extra={"bot": bot_name, "model": model_id, "prompt": prompt})
     try:
-        client   = _build_client(cfg)
-        model_id = _model(cfg)
-        response = client.chat.completions.create(
+        client = _build_client(cfg)
+        t0     = time.monotonic()
+        resp   = client.chat.completions.create(
             model=model_id,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=1024,
+            max_tokens=1500,
         )
-        text = response.choices[0].message.content
-        log.info(f"LLM analysis complete for {bot_name} ({len(text)} chars)")
+        text        = resp.choices[0].message.content
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        log.debug(f"LLM response — {bot_name} {len(text)} chars {duration_ms}ms",
+                  extra={"bot": bot_name, "model": model_id,
+                         "response": text, "duration_ms": duration_ms})
         return text
     except Exception as e:
-        log.error(f"LLM analysis failed for {bot_name}: {e}")
+        log.error(f"LLM analysis failed for {bot_name}: {e}",
+                  extra={"bot": bot_name, "model": model_id, "error_detail": str(e)})
         summary = verdict_summary(classifications)
         return (f"LLM analysis unavailable ({e}).\n"
                 f"Verdict: {summary}\n"

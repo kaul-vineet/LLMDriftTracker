@@ -1,12 +1,12 @@
 ```
-                    █████╗ ███████╗██╗  ██╗ ██████╗ ██╗  ██╗ █████╗
-                   ██╔══██╗██╔════╝██║  ██║██╔═══██╗██║ ██╔╝██╔══██╗
-                   ███████║███████╗███████║██║   ██║█████╔╝ ███████║
-                   ██╔══██║╚════██║██╔══██║██║   ██║██╔═██╗ ██╔══██║
-                   ██║  ██║███████║██║  ██║╚██████╔╝██║  ██╗██║  ██║
-                   ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝
+              ███████╗ ███████╗██╗  ██╗ ██████╗ ██╗  ██╗ █████╗
+              ██╔═══██╗██╔════╝██║  ██║██╔═══██╗██║ ██╔╝██╔══██╗
+              ███████╔╝███████╗███████║██║   ██║█████╔╝ ███████║
+              ██╔══██║ ╚════██║██╔══██║██║   ██║██╔═██╗ ██╔══██║
+              ██║  ██║ ███████║██║  ██║╚██████╔╝██║  ██╗██║  ██║
+              ╚═╝  ╚═╝ ╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝
 
-                   ⚡  VARION  ·  THE INCORRUPTIBLE JUDGE  ·  v1.1
+              ⚡  āshokā  ·  autonomous eval agent  ·  v1.0
 ```
 
 <div align="center">
@@ -24,10 +24,10 @@
 
 <br/>
 
-> **Autonomous model-swap detection and response variation assessment for Microsoft Copilot Studio bots.**
-> Watches every configured bot across all your Power Platform environments.
-> The moment a model version changes, it evaluates, analyses, and reports —
-> fully headless, after a one-time browser setup.
+> **An autonomous evaluation agent and control plane for Microsoft Copilot Studio.**
+> Watches your bots continuously. Detects model swaps, publish events, or any trigger you configure.
+> Fires evaluations automatically. Uses an LLM to explain what changed and why.
+> Fully headless — one browser setup, then hands-off forever.
 
 </div>
 
@@ -35,193 +35,261 @@
 
 ## ⚡ The Problem
 
-Microsoft updates the large language models powering your Copilot Studio bots **silently and without notice**. When a model is swapped, your bot's behaviour changes — accuracy drops, tone shifts, topics misfire. You have no visibility. You find out from a support ticket, not a dashboard.
+Microsoft updates the large language models powering your Copilot Studio bots **silently and without notice**. A model swap changes your bot's accuracy, tone, and topic coverage overnight. You have no visibility into when it happened, how much changed, or which test cases flipped.
 
-## 🎯 The Solution
+You find out from a support ticket. Not a dashboard.
 
-VARION runs a persistent background agent called **ASHOKA** that watches every bot you care about, around the clock. The moment a model version change is detected in Dataverse, ASHOKA fires the Copilot Studio Eval API, scores every test case, compares the results against the last known-good run, runs an LLM analysis of the delta, and emails you a clean side-by-side report — before your users notice anything.
+---
+
+## 🎯 What āshokā does
+
+**āshokā** is an autonomous agent that sits between your Copilot Studio bots and your team. It watches every bot you care about around the clock. The moment a trigger fires — a model version change, a manual force, or any event you wire in — āshokā:
+
+1. **Fires the Copilot Studio Eval API** — discovers all test sets, triggers every one in parallel
+2. **Scores every test case** — pass/fail, numeric scores, per-case AI reason text
+3. **Compares against the previous run** — classifies each metric as REGRESSED, IMPROVED, or STABLE
+4. **Consults an LLM** — uses web search + your bot's own system prompt to produce a plain-English analysis of what changed and why, distinguishing model effects from persistent agent weaknesses
+5. **Reports** — persists everything locally, generates a self-contained HTML report, and emails it to you
+
+All of this happens before your users notice anything.
 
 ---
 
 ## 🧭 Philosophy
 
-> **ASHOKA observes. Humans decide.**
+> **āshokā observes. Humans decide.**
 
-ASHOKA is a pure observer. It has no ability to roll back a model, modify a bot, or take any corrective action. Its only job is to surface the truth of what changed and when, with enough data for a human to make an informed decision.
+āshokā is a pure observer. It has no ability to roll back a model, modify a bot, or take corrective action. Its job is to surface the truth of what changed, with enough signal for a human to decide.
 
-This is deliberate. Automated rollbacks of AI systems carry their own risks. VARION gives your team the signal about what changed and by how much — the decision is always yours.
+This is deliberate. Automated rollbacks of AI systems carry their own risks. āshokā gives your team the signal — the decision is always yours.
 
-- 🚫 No pass/fail verdicts that auto-trigger action
-- 🚫 No automated rollbacks or model changes
-- 🚫 No writes to Dataverse or Copilot Studio
-- 🔭 Pure, unobtrusive observation and reporting
+- No pass/fail verdicts that auto-trigger action
+- No automated rollbacks or model changes
+- No writes to Dataverse or Copilot Studio
+- Pure, unobtrusive observation and structured reasoning
 
 ---
 
 ## 🔄 How it works
 
-ASHOKA runs two independent threads inside one process. Detection never waits for evaluation to finish.
+āshokā runs two independent threads inside one process. Detection never waits for evaluation to finish.
 
 ```
-  ┌─────────────────────────────────────────────────────────────────────┐
-  │  THREAD 1 · WATCHER  (every 2 min)                                  │
-  │                                                                     │
-  │   Poll Dataverse ──► model version changed?                         │
-  │                              │                                      │
-  │               ┌──── No ──────┴───── Yes ────┐                      │
-  │               ▼                             ▼                       │
-  │         log STABLE                 log MODEL_CHANGE                 │
-  │           · sleep                  write trigger file  ──────────┐  │
-  └──────────────────────────────────────────────────────────────────┼──┘
-                                                                     │
-                                              trigger file on disk   │
-                                                                     │
-  ┌──────────────────────────────────────────────────────────────────┼──┐
-  │  THREAD 2 · EVALUATOR  (checks every 30 s)                       │  │
-  │                                                                  ▼  │
-  │   any trigger files? ──► pick up all pending bots                   │
-  │          │                                                          │
-  │          ▼                                                          │
-  │   trigger Eval API  (all bots fired at once)                        │
-  │          │                                                          │
-  │          ▼                                                          │
-  │   poll until complete  (round-robin, single thread)                 │
-  │          │                                                          │
-  │          ▼                                                          │
-  │   compare metrics vs previous run                                   │
-  │          │                                                          │
-  │          ▼                                                          │
-  │   LLM response variation analysis                                   │
-  │          │                                                          │
-  │          ├──► HTML report saved to  data/                           │
-  │          └──► email to admin                                        │
-  └─────────────────────────────────────────────────────────────────────┘
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │  THREAD 1 · WATCHER  (every N minutes)                               │
+  │                                                                      │
+  │   Poll Dataverse ──► model version changed?                          │
+  │                              │                                       │
+  │               ┌──── No ──────┴───── Yes ────┐                       │
+  │               ▼                             ▼                        │
+  │         log STABLE                 log MODEL_CHANGE                  │
+  │           · sleep                  write trigger file  ───────────┐  │
+  └─────────────────────────────────────────────────────────────────┬─┘  │
+                                                                    │    │
+                                              trigger file on disk ─┘    │
+                                                                         │
+  ┌──────────────────────────────────────────────────────────────────────┤
+  │  THREAD 2 · EVALUATOR  (checks every 30 s)                           │
+  │                                                                      │
+  │   any trigger files? ──► pick up all pending bots                    │
+  │          │                                                           │
+  │          ▼                                                           │
+  │   fire Eval API for all pending bots simultaneously                  │
+  │          │                                                           │
+  │          ▼                                                           │
+  │   poll for completion  (round-robin, respects per-bot lock files)    │
+  │          │                                                           │
+  │          ▼                                                           │
+  │   compare metrics vs last run  →  REGRESSED / IMPROVED / STABLE      │
+  │          │                                                           │
+  │          ▼                                                           │
+  │   web search for model context  +  LLM reasoning analysis            │
+  │          │                                                           │
+  │          ├──► run.json saved   (raw eval + LLM analysis)             │
+  │          ├──► HTML report saved                                      │
+  │          └──► email to admin                                         │
+  └──────────────────────────────────────────────────────────────────────┘
 
-  Bot 4 model change detected in < 2 min even while bots 1, 2, 3
-  are mid-eval — the watcher never waits for the evaluator.
+  A model change on bot 4 is detected within N minutes even while
+  bots 1, 2, 3 are mid-eval — the watcher never waits.
 ```
+
+---
+
+## 🧠 LLM Reasoning — āshokā as a guide
+
+āshokā doesn't just score test cases. It consults an LLM to explain the delta in plain language — acting as an intelligent guide, not just a metrics dashboard.
+
+Before calling the LLM, āshokā:
+- **Searches the web** (via Tavily, if configured) for release notes and known capability differences between the old and new model
+- **Injects the bot's own system prompt** so the LLM understands the bot's purpose and instructions
+- **Sends the full per-case comparison** — old model reason vs new model reason for every test case
+
+The LLM is asked to distinguish:
+- **Model effects** — cases where the old model passed and the new model failed (or vice versa) → these point to model capability changes
+- **Persistent weaknesses** — cases where both models fail → these are agent/prompt issues, not model issues
+
+The output is a dense analytical narrative: root cause, failure pattern, concrete remediation steps, strengths to note, and a PROCEED / INVESTIGATE / REVERT verdict — grounded in the actual case evidence.
+
+You can use any OpenAI-compatible endpoint: OpenAI, Azure OpenAI, Azure AI Foundry, or a local model.
+
+---
+
+## ⚙️ āshokā as a general evaluation platform
+
+āshokā is built around a simple concept: **any event can trigger a structured evaluation**. The model-swap detector is the default event source, but the architecture is designed to be extended.
+
+```
+  EVENT SOURCE                TRIGGER                   āshokā
+  ─────────────               ───────                   ───────
+  Model swap detected    →    trigger file    →    run eval, analyse, report
+  Force eval (dashboard) →    trigger file    →    run eval, analyse, report
+  External webhook       →    trigger file    →    run eval, analyse, report  ← extend here
+  Publish event          →    trigger file    →    run eval, analyse, report  ← extend here
+  Scheduled cron         →    trigger file    →    run eval, analyse, report  ← extend here
+```
+
+To wire a new event source, write a `force_eval_{botId}.trigger` file to the `data/agent/` directory. The evaluator picks it up within 30 seconds. No code changes needed inside the core agent.
+
+**Examples of what you can build on top of āshokā:**
+- Run evals automatically on every Copilot Studio **publish** event (via Power Automate webhook → trigger file)
+- Run evals on a **weekly schedule** (cron → trigger file per bot)
+- Run evals when a **support ticket volume spikes** (alert webhook → trigger file)
+- Run evals as a **pre-deploy check** in a CI/CD pipeline
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-  ┌─────────────────────────────────────────────────────────────┐
-  │  Browser Setup  (one time)                                   │
+  ┌──────────────────────────────────────────────────────────────┐
+  │  CONTROL PLANE  ─  Streamlit dashboard  (port 8501)          │
   │                                                              │
-  │   http://localhost:8501 → Setup page                        │
-  │        sign in · pick environments · pick bots · save       │
-  │        writes ──► config.json   caches ──► msal_cache       │
-  └──────────────────────────┬──────────────────────────────────┘
-                             │  shared  data/  volume
-                             ▼
-  ┌─────────────────────────────────────────────────────────────┐
-  │  ASHOKA  —  autonomous agent  (python -m agent.main)        │
-  │                                                             │
-  │  ┌─ Watcher thread (every 2 min) ──────────────────────┐   │
-  │  │  dataverse.py   poll bot model versions             │───┼──► Dataverse
-  │  │  → writes force_eval_{botId}.trigger on change      │   │
-  │  └─────────────────────────────────────────────────────┘   │
-  │                                                             │
-  │  ┌─ Evaluator thread (checks every 30 s) ──────────────┐   │
-  │  │  eval_client.py  trigger + poll Eval API            │───┼──► Copilot Studio Eval API
-  │  │  reasoning.py    classify · response variation      │───┼──► LLM endpoint (OpenAI-compat)
-  │  │  store.py        write run.json per eval run        │   │
-  │  │  report.py       generate self-contained HTML       │   │
-  │  │  notifier.py     email report via SMTP              │───┼──► email
-  │  └─────────────────────────────────────────────────────┘   │
-  │                                                             │
-  │   auth.py        unified MSAL — one cache, three APIs      │──► Microsoft Identity
-  │   events.py      append-only JSONL event log               │
-  │   logger.py      rotating JSON file logger                  │
-  └──────────────────────────┬──────────────────────────────────┘
-                             │
-                    data/agent/
-                         agent.log       ← rotating operational log (5 MB × 3)
-                         events.jsonl    ← every agent action
-                    data/{botId}/
-                         runs/tracking.json     ← current model version
-                         transactions/{timestamp}_{modelVersion}/
-                              run.json   ← full raw Eval API results
-                             │
-  ┌──────────────────────────▼──────────────────────────────────┐
-  │  Dashboard  —  Streamlit  (port 8501)                       │
-  │                                                             │
-  │   ASHOKA    fleet view · bot detail · run comparison       │
-  │   Setup     browser-based config — no terminal needed      │
-  │   Data      browse · delete runs, events, reports          │
-  │   Logs      live log viewer · level filter · auto-refresh  │
-  └─────────────────────────────────────────────────────────────┘
+  │   ⚡ āshokā    fleet view · bot detail · run comparison     │
+  │   ⚙ Setup      browser-based config — no terminal needed    │
+  │   ⊞ Control    browse · delete runs, events, reports        │
+  │   ≡ Logs        live log viewer · level filter · auto-refresh│
+  │                                                              │
+  │   ▶ Start Agent / ■ Stop Agent                              │
+  └───────────────────────┬──────────────────────────────────────┘
+                          │  shared  data/  volume
+                          ▼
+  ┌──────────────────────────────────────────────────────────────┐
+  │  AGENT  ─  python -m agent.main                              │
+  │                                                              │
+  │  ┌─ Watcher thread ──────────────────────────────────────┐  │
+  │  │  dataverse.py   poll bot model versions               │──┼──► Dataverse
+  │  │  → writes force_eval_{botId}.trigger on change        │  │
+  │  └───────────────────────────────────────────────────────┘  │
+  │                                                              │
+  │  ┌─ Evaluator thread ────────────────────────────────────┐  │
+  │  │  eval_client.py  trigger + poll Eval API              │──┼──► Copilot Studio Eval API
+  │  │  reasoning.py    classify + LLM analysis              │──┼──► LLM endpoint + Tavily
+  │  │  store.py        write run.json                       │  │
+  │  │  report.py       generate HTML report                 │  │
+  │  │  notifier.py     email report via SMTP                │──┼──► email
+  │  └───────────────────────────────────────────────────────┘  │
+  │                                                              │
+  │  auth.py      unified MSAL — one cache, three APIs          │──► Microsoft Identity
+  │  events.py    append-only JSONL event log                   │
+  │  logger.py    rotating JSON file logger                     │
+  └──────────────────────────────────────────────────────────────┘
+
+  data/agent/
+      agent.log            rotating operational log (5 MB × 3)
+      events.jsonl         every agent action timestamped
+      auth_state.json      auth status for dashboard display
+      msal_token_cache.json
+      force_eval_{botId}.trigger   ← any event source writes here
+
+  data/{botId}/
+      runs/tracking.json              current model version
+      transactions/{ts}_{model}/
+          run.json                    raw eval results + LLM analysis
 ```
 
 ---
 
-## ✨ Features
+## ✨ Features at a glance
 
 | | Feature | Detail |
 |---|---|---|
-| 🌐 | **Multi-environment** | Watches bots across unlimited Power Platform environments |
-| 📋 | **Opt-in per bot** | Choose which bots to monitor — empty list = watch all active bots |
-| 🤖 | **Zero-touch eval** | Discovers all test sets, triggers the Eval API, polls to completion automatically |
+| 🌐 | **Multi-environment** | Scans all Power Platform environments; one thread per environment |
+| 📋 | **Opt-in per bot** | Choose which bots to monitor — empty = watch all |
+| 🤖 | **Zero-touch eval** | Discovers all test sets, triggers Eval API, polls to completion automatically |
+| 🧠 | **LLM analysis** | Any OpenAI-compatible endpoint explains the delta with web search, system prompt context, and per-case reason comparison |
+| 📡 | **Event-driven** | File-based trigger system — any external event source can queue an eval in 30 seconds |
 | 📊 | **Any-run comparison** | Compare any two historical runs — not just the latest pair |
-| 🧠 | **LLM narrative** | Any OpenAI-compatible endpoint explains the response variation in plain English |
-| 🔐 | **Unified MSAL auth** | Single token cache shared across Eval API, Power Platform Inventory, and environmentmanagement |
-| 📋 | **Event log** | Append-only `data/agent/events.jsonl` — every agent action timestamped and queryable |
-| ⚡ | **Force eval** | Trigger an eval now — globally or per-bot — without restarting the agent |
-| 🧵 | **Non-blocking detection** | Watcher and evaluator run as separate threads — a model change is detected within 2 min even while a long eval cycle is running for other bots |
-| 📋 | **Operational log** | Rotating JSON log (`data/agent/agent.log`, 5 MB × 3 files) — errors, model changes, eval timing, memory snapshots |
-| 🩺 | **Memory monitoring** | Agent tracks its own RSS every ~20 min via psutil and warns in the log if growth exceeds 50% of baseline |
-| ⚙️ | **Browser setup** | Full configuration in the dashboard — no terminal, no YAML editing |
-| 📧 | **HTML reports** | Self-contained, email-ready, archived locally with full raw data |
-| 🗄️ | **Data management** | Browse, inspect, and delete runs, events, and reports from the dashboard |
+| 🔐 | **Unified MSAL auth** | Single device-flow sign-in covers Eval API, Power Platform Inventory, and all Dataverse org URLs |
+| 📋 | **Event log** | Append-only `events.jsonl` — every agent action timestamped |
+| ⚡ | **Force eval** | Trigger an immediate eval from the dashboard — globally or per-bot |
+| 🧵 | **Non-blocking detection** | Watcher and evaluator are separate threads — new model changes are caught within N minutes even during a long eval cycle |
+| 🩺 | **Memory monitoring** | Tracks agent RSS, warns at 50% growth above baseline |
+| ⚙️ | **Browser setup** | Full configuration in the dashboard — no terminal, no YAML editing, no `.env` files |
+| 📧 | **HTML reports** | Self-contained, email-ready, archived locally |
+| ⊞ | **Storage management** | Browse, inspect, and delete runs, events, reports from the dashboard |
 | 🐳 | **Docker Compose** | `docker compose up` starts agent + dashboard with a shared volume |
 | 💾 | **No cloud storage** | All state is local JSON — no Dataverse writes, no blob storage |
 
 ---
 
-## 🚀 Quick start
+## 🚀 Step-by-step setup
 
 ### Step 1 — Prerequisites
 
 | | What | Notes |
 |---|---|---|
 | 🐍 | Python 3.12+ | [python.org](https://python.org) |
-| 🔑 | Power Platform admin | For app registration + admin consent |
+| 🔑 | Entra ID access | To create an app registration |
 | 🤖 | Copilot Studio Maker | To create test sets on your bots |
+| 🤖 | LLM endpoint | Any OpenAI-compatible API — OpenAI, Azure OpenAI, Azure AI Foundry |
 | 🐳 | Docker Desktop | Optional — for containerised deployment |
 
-### Step 2 — App registration
+---
 
-The agent uses **delegated auth** — it calls the Eval API as you, not as a service principal. This is a Microsoft requirement for the Eval API.
+### Step 2 — Create an Entra ID app registration
+
+The agent uses **delegated auth** — it calls APIs as you, not as a service principal. Microsoft requires this for the Copilot Studio Eval API.
 
 1. [portal.azure.com](https://portal.azure.com) → **Microsoft Entra ID** → **App registrations** → **New registration**
 2. Name: `copilot-eval-agent` · Account type: **Single tenant** → **Register**
-3. Note the **Application (client) ID** and **Directory (tenant) ID**
-4. **Authentication** → **Add a platform** → **Mobile and desktop applications** → tick `https://login.microsoftonline.com/common/oauth2/nativeclient` → **Configure**
-5. **API permissions** → **Add a permission** → **APIs my organization uses** → search `Power Platform API` (GUID `8578e004-a5c6-46e7-913e-12f58912df43`)
-6. **Delegated permissions** → tick:
+3. Copy the **Application (client) ID** and **Directory (tenant) ID** — you'll enter these in Setup
+4. **Authentication** → **Add a platform** → **Mobile and desktop applications**
+   → tick `https://login.microsoftonline.com/common/oauth2/nativeclient` → **Configure**
+5. **API permissions** → **Add a permission** → **APIs my organization uses**
+   → search `Power Platform API` (GUID `8578e004-a5c6-46e7-913e-12f58912df43`)
+6. **Delegated permissions** → tick all three:
 
 | Permission | Purpose |
 |---|---|
-| `CopilotStudio.MakerOperations.Read` | List test sets and retrieve evaluation run results |
-| `CopilotStudio.MakerOperations.ReadWrite` | Trigger a new evaluation run (`POST .../run`) |
+| `CopilotStudio.MakerOperations.Read` | List test sets, retrieve eval results |
+| `CopilotStudio.MakerOperations.ReadWrite` | Trigger a new evaluation run |
 | `EnvironmentManagement.Environments.Read` | Auto-discover Power Platform environments |
 
-7. **Grant admin consent for [tenant]** → confirm
+7. **Add a permission** → **APIs my organization uses** → search `Dynamics CRM`
+   (GUID `00000007-0000-0000-c000-000000000000`)
+8. **Delegated permissions** → tick `user_impersonation` → **Add permissions**
+9. **Grant admin consent for [tenant]** → confirm
 
-> All three permissions are on the same `Power Platform API` resource — a single sign-in covers everything.
-> Without `EnvironmentManagement.Environments.Read`, Load Environments will fail — manual environment entry still works.
-> Without `ReadWrite`, ASHOKA can list test sets but cannot trigger evaluation runs.
+| Permission | Purpose |
+|---|---|
+| `Dynamics CRM — user_impersonation` | Read bot model version from Dataverse — required for model-swap detection |
 
-### Step 3 — Create test sets
+> **Note:** Without `user_impersonation`, model version shows as `unknown` and change detection is skipped. Without `ReadWrite`, āshokā can read test sets but cannot trigger eval runs. Without `EnvironmentManagement.Environments.Read`, use manual environment entry in Setup.
 
-> Without test sets, ASHOKA has nothing to evaluate and will skip the bot.
+---
+
+### Step 3 — Create test sets in Copilot Studio
+
+Without test sets, āshokā has nothing to evaluate and will skip the bot.
 
 ```
 Copilot Studio → your bot → Evaluation tab → New test set
 ```
 
-Add 10–20 utterances covering your bot's main topics. ASHOKA discovers and runs all test sets automatically.
+Add 10–20 utterances covering your bot's main topics — especially edge cases and known weak spots. āshokā discovers and runs **all** test sets automatically on every trigger.
+
+---
 
 ### Step 4 — Install
 
@@ -231,12 +299,9 @@ cd ModelSwapTracker
 pip install -r requirements.txt
 ```
 
-Create `.env` for secrets:
+No `.env` file needed. All configuration — including API keys and passwords — lives in `config.json`, written by the Setup page.
 
-```env
-LLM_API_KEY=your-llm-key-here
-SMTP_PASSWORD=your-smtp-password   # optional
-```
+---
 
 ### Step 5 — Launch the dashboard
 
@@ -244,123 +309,143 @@ SMTP_PASSWORD=your-smtp-password   # optional
 streamlit run dashboard/app.py
 ```
 
-Open `http://localhost:8501` → **Setup** page in the sidebar. Each section shows a ✓ or ✗ status. The sidebar shows **● READY** when all prerequisites are met.
+Open `http://localhost:8501` → **Setup** in the sidebar.
 
-| Section | What it configures |
+Each section shows a ✓ or ✗. Fill them top to bottom:
+
+| Section | What to do |
 |---|---|
-| App Registration | Client ID + Tenant ID |
-| Authentication | MSAL device flow — one-time browser sign-in, token cached |
-| Environments | Auto-discovers environments via Power Platform environmentmanagement API — or add manually |
-| Agents | Lists Copilot Studio agents per environment via Power Platform Inventory API — no Dataverse or second sign-in needed; manual entry always available |
-| LLM Endpoint | Base URL + model + optional API Version — **Test** button validates live before saving. Azure AI / Azure OpenAI endpoints require the API Version field (e.g. `2024-12-01-preview`) |
-| Notifications | SMTP config (optional) |
+| **1 · App Registration** | Paste Client ID + Tenant ID from Step 2 |
+| **2 · Authentication** | Click **Sign In** — complete the device flow in your browser once. Token is cached. |
+| **3 · Environments** | Click **Load Environments** to auto-discover, or add manually |
+| **4 · Agents** | Click **Load Bots** per environment, select which to monitor (empty = all) |
+| **5 · LLM** | Paste Base URL + model name + API key. Click **Test LLM** to validate live. |
+| **6 · Web Search** | Optional — paste a Tavily API key to enable pre-analysis model context search |
+| **7 · Notifications** | Optional — SMTP host, port, user, password, recipient for email reports |
 
-Click **Save config.json** when all sections show ✓.
+Click **Save config.json** when all sections show ✓. Everything is saved to `config.json` — including keys.
 
-### Step 6 — Start ASHOKA
+---
 
-Click **▶ Start Agent** in the sidebar (enabled only when ● READY). The agent runs in the background — the dashboard stays open as your control panel. Click **■ Stop Agent** to stop it gracefully.
+### Step 6 — Start the agent
+
+Click **▶ Start Agent** in the sidebar (only enabled when the config is complete and the Setup check passes). The agent runs as a background process. The dashboard stays open as your **control plane**.
+
+```
+● SYSTEM ONLINE · ALL STABLE
+```
+
+Click **■ Stop Agent** to stop it gracefully.
+
+---
+
+### Step 7 — Run your first evaluation
+
+Don't wait for a model swap. On the **āshokā** page, open any bot and click **▶ Force Eval**. This queues an immediate evaluation — you'll see results within a few minutes depending on your test set size.
 
 ---
 
 ## 🐳 Docker Compose
 
 ```bash
-cp config.example.json config.json   # fill in your values, or use the Setup page
-cp .env.example .env                 # add LLM_API_KEY
+# Copy the example config and fill in your values — or run Setup after launch
+cp config.example.json config.json
 
 docker compose -f docker/docker-compose.yml up --build -d
 
-docker compose -f docker/docker-compose.yml logs -f varion-agent
-# open http://localhost:8501
+# Follow agent logs
+docker compose -f docker/docker-compose.yml logs -f ashoka-agent
+
+# Open dashboard
+open http://localhost:8501
 ```
 
 Two containers, one image, shared `./data` volume:
 
 | Container | Command | Port |
 |---|---|---|
-| `varion-agent` | `python -m agent.main` | — |
-| `varion-dashboard` | `streamlit run dashboard/app.py` | 8501 |
+| `ashoka-agent` | `python -m agent.main` | — |
+| `ashoka-dashboard` | `streamlit run dashboard/app.py` | 8501 |
+
+The MSAL token cache is stored in `./data/agent/msal_token_cache.json` on the shared volume — both containers use the same authenticated session.
 
 ---
 
-## ☁️ Azure Container Apps (production)
+## ☁️ Azure Container Apps — production deployment
 
-1. `az acr build --registry <acr> --image varion .`
+1. Build and push: `az acr build --registry <acr> --image ashoka .`
 2. Deploy **two** Container Apps from the same image
-3. Mount an **Azure Files share** at `/app/data` on both
-4. Set secrets as env vars: `LLM_API_KEY`, `SMTP_PASSWORD`, etc.
-5. Override the startup command per container (see `docker-compose.yml`)
-6. Run Setup locally first to populate `msal_token_cache.json`, then upload it to the Azure Files share
+3. Mount an **Azure Files share** at `/app/data` on both containers — this is the shared state volume
+4. Deploy secrets as Container App secrets, not env vars — reference them in `config.json` or pass via the Setup page
+5. Run Setup locally first to populate `data/agent/msal_token_cache.json`, then upload it to the Azure Files share before starting the agent container
+6. Set `STORE_DIR` as an env var on both containers if you mount the volume at a non-default path
 
 ---
 
 ## 📊 Dashboard pages
 
-### ⚡ ASHOKA — Fleet · Detail · Timeline
+### ⚡ āshokā — Fleet · Detail · Timeline
 
-The main view. ASHOKA is the agent's identity — named for the incorruptible Mauryan emperor who chose observation and restraint over aggression.
+The main view. Your eval control panel.
 
 ```
 ● SYSTEM ONLINE · ALL STABLE
 
-        A S H O K A
-     THE INCORRUPTIBLE JUDGE
+       Ā S H O K Ā
+    THE INCORRUPTIBLE JUDGE
   copilot-eval-agent · N agents monitored
 
-[ MONITORED ]  [ EVAL RUNS ]  [ IMPROVED ]  [ REGRESSIONS ]  [ ALERT NOW ]
+[ MONITORED ]  [ EVAL RUNS ]  [ IMPROVED ]  [ REGRESSIONS ]  [ ALERTS ]
 
-── MONITORED AGENTS ──────────────────────────────
-  🟢 Safe Travels  gpt-4o  Apr 18 · 4 runs   →
-  🔴 HR Bot        gpt-4o  Apr 17 · 2 runs   →
+── MONITORED AGENTS ───────────────────────────────────────────────
+  🟢 Safe Travels  gpt-4o   Apr 18 · 4 runs   →
+  🔴 HR Bot        gpt-4o   Apr 17 · 2 runs   →
 
-── WHO I AM ──────────────────────────────────────
-  I am ASHOKA. I watch. I do not interfere.
-
-── MISSION TIMELINE ──────────────────────────────
-  Apr 18  ⚡ FORCE EVAL   Safe Travels  triggered by dashboard
-  Apr 18  ✓ EVAL DONE    Safe Travels  pass 90%  avg 67.5  IMPROVED
-  Apr 14  ✓ IMPROVED     Safe Travels  CompareMeaning.passRate
-  Apr 10  ✗ REGRESSION   Safe Travels  CompareMeaning.passRate
-  Apr 10  ⚠ MODEL SHIFT  Safe Travels  gpt-4o → gpt.default
+── MISSION TIMELINE ───────────────────────────────────────────────
+  Apr 18  ⚡ FORCE EVAL    Safe Travels  triggered from dashboard
+  Apr 18  ✓ EVAL DONE     Safe Travels  pass 90%  avg 67.5  IMPROVED
+  Apr 14  ✓ IMPROVED      Safe Travels  CompareMeaning.passRate
+  Apr 10  ✗ REGRESSION    Safe Travels  CompareMeaning.passRate  Δ -0.12
+  Apr 10  ⚠ MODEL SHIFT   Safe Travels  gpt-4o → gpt.default
 ```
 
-Click any bot tile to open the **detail view**:
+Click any bot to open the **detail view**:
 
-- **Run A / Run B** — select any two historical runs to compare
-- **Radar chart** — both runs overlaid on a polar chart
-- **Metric table** — Pass/Fail highlighted green/red, Δ column colour-coded
-- **Per-metric breakdown** — delta bar, status grid, case-by-case results
-- **Trend chart** — metric trajectory across all runs
-- **▶ Force Eval** — queue an immediate eval for this bot only
+- **METRIC TRENDS** — metric trajectory across all runs at a glance
+- **Baseline selector** — pick any previous run as the comparison baseline
+- **Radar chart** — current vs baseline overlaid on a polar chart
+- **Metric table** — Pass/Fail highlighted, Δ column colour-coded
+- **ask āshokā** — LLM analysis of the delta, auto-generated and cached
+- **Per-metric breakdown** — delta bar, status grid, per-case cards (expand to read AI reason text)
+- **▶ Force Eval** — queue an immediate eval for this bot
 
-### ⚙️ Setup — Browser configuration
+### ⚙️ Setup — Control plane configuration
 
-Full configuration without touching the terminal. Writes `config.json`. The sidebar shows ● READY / ○ SETUP NOT COMPLETE with a bullet list of what's missing. The Start Agent button is gated on ● READY.
+Full configuration without touching the terminal. Writes `config.json`. The sidebar shows ● READY when all prerequisites are met, with a checklist of what's missing. Start Agent is gated on ● READY.
 
-### 🗄️ Data — Storage management
+### ⊞ Control — Storage management
 
-Browse and clean up stored data. Two-click safety on all deletes.
+Browse and clean up stored data. Two-click confirmation on all deletes.
 
 - Per-run delete or bulk delete per bot
 - Clear the event log
 - Delete individual or all HTML reports
-- Storage size summary at a glance
+- Storage size summary
 
-### 📋 Logs — Live log viewer
+### ≡ Logs — Live log viewer
 
-Real-time view into `data/agent/agent.log` — the agent's operational log.
+Real-time view into `data/agent/agent.log`.
 
 - **Level filter** — ALL / ERROR / WARNING / INFO / DEBUG
-- **Free-text search** — filter by message or thread name (`watcher` / `evaluator`)
+- **Free-text search** — filter by message or thread (`watcher` / `evaluator`)
 - **Auto-refresh** — polls every 5 s when toggled on
 - **Newest first** — last 500 lines, colour-coded by severity
 
 ```
 10:14:02  INFO   watcher    model change detected — Safe Travels: gpt-4o → gpt-4o-mini
 10:14:03  INFO   evaluator  eval cycle starting (force=False)
+10:14:05  INFO   evaluator  LLM request — Safe Travels (gpt-4o → gpt-4o-mini) model=gpt-4o
 10:34:11  INFO   evaluator  eval cycle complete
-10:34:11  INFO   watcher    memory rss=52.3MB delta=+4.1MB
 10:52:00  ERROR  watcher    watcher sweep failed: ConnectionError(...)
 ```
 
@@ -368,7 +453,7 @@ Real-time view into `data/agent/agent.log` — the agent's operational log.
 
 ## 📋 Event log
 
-Every agent action is appended to `data/agent/events.jsonl`:
+Every agent action is appended to `data/agent/events.jsonl` — an append-only audit trail:
 
 ```jsonl
 {"ts":"2026-04-18T14:14:32+00:00","event":"model_change","botName":"Safe Travels","detail":"gpt-4o → gpt.default"}
@@ -385,10 +470,10 @@ Every agent action is appended to `data/agent/events.jsonl`:
 | `eval_complete` | Eval finished — includes pass rate, avg score, verdict |
 | `eval_timeout` | Eval polling timed out |
 | `eval_no_sets` | No test sets found — bot skipped |
-| `regression` | One or more metrics regressed |
-| `improvement` | One or more metrics improved |
-| `stable` | No change detected |
-| `force_eval` | Triggered manually from dashboard |
+| `regression` | One or more metrics regressed vs baseline |
+| `improvement` | One or more metrics improved vs baseline |
+| `stable` | No measurable change |
+| `force_eval` | Manually triggered from dashboard |
 | `error` | Unhandled exception |
 
 ---
@@ -401,100 +486,118 @@ data/
 │   ├── agent.log                      ← rotating operational log (JSON lines, 5 MB × 3 files)
 │   ├── agent.log.1 / .2 / .3         ← rotated backups
 │   ├── agent.pid                      ← agent process ID (deleted on stop)
-│   ├── auth_state.json                ← auth state (re-auth tracking)
+│   ├── auth_state.json                ← current auth state for dashboard display
 │   ├── events.jsonl                   ← append-only business event log
-│   ├── llm_status.json                ← result of last LLM validation (Setup → Test)
-│   ├── msal_token_cache.json          ← MSAL token cache (delegated auth)
-│   ├── force_eval_{botId}.trigger     ← written on model change or dashboard Force Eval
-│   └── eval_active_{botId}.lock       ← written while a bot's eval is running
+│   ├── llm_status.json                ← result of last LLM test (Setup → Test LLM)
+│   ├── msal_token_cache.json          ← MSAL token cache (shared between agent + dashboard)
+│   ├── force_eval_{botId}.trigger     ← written on model change or Force Eval — evaluator picks up within 30 s
+│   └── eval_active_{botId}.lock       ← present while a bot's eval is in flight
 │
 └── {botId}/
     ├── runs/
-    │   └── tracking.json              ← current model version + last run pointer
+    │   └── tracking.json              ← current model version + last run folder name
     └── transactions/
         └── {timestamp}_{modelVersion}/
-            └── run.json               ← full raw Eval API results for all test sets
+            ├── run.json               ← raw Eval API results for all test sets + cached LLM analysis
+            └── report.html            ← self-contained HTML report
 ```
 
-All comparisons, classifications, and LLM analysis are computed fresh on demand. `run.json` stores only the raw Eval API output — nothing derived.
+All comparisons, classifications, and LLM analyses are stored in `run.json["analyses"]` keyed by the baseline folder name. No derived files are created — everything recomputes from the raw eval results on demand.
 
 ---
 
 ## 📁 Project structure
 
 ```
-ModelSwapTracker/
+āshokā/
 │
 ├── agent/                    autonomous monitoring agent
-│   ├── main.py               watcher thread · evaluator thread · PID management
-│   ├── auth.py               unified MSAL — one cache for all three APIs
+│   ├── main.py               watcher thread · evaluator thread · force-eval trigger · PID
+│   ├── auth.py               unified MSAL — one cache for Eval API, Inventory, Dataverse
 │   ├── dataverse.py          fetch bots + model versions from Dataverse
-│   ├── eval_client.py        Copilot Studio Eval API — trigger + poll
-│   ├── reasoning.py          metric extraction · classify · response variation analysis
-│   ├── events.py             append-only JSONL event logger
-│   ├── logger.py             rotating JSON file logger → data/agent/agent.log
-│   ├── store.py              run storage — transactions/{timestamp}_{modelVersion}/run.json
+│   ├── eval_client.py        Copilot Studio Eval API — trigger + poll to completion
+│   ├── reasoning.py          metric extraction · classify · web search · LLM analysis
+│   ├── events.py             append-only JSONL event log
+│   ├── logger.py             rotating JSON file logger with LLM prompt/response capture
+│   ├── store.py              run storage — transactions/{timestamp}_{model}/run.json
 │   ├── report.py             self-contained HTML report generator
 │   └── notifier.py           SMTP email sender
 │
-├── dashboard/                Streamlit web UI
-│   ├── app.py                entry point — router · sidebar · agent controls
+├── dashboard/                Streamlit control plane
+│   ├── app.py                router · sidebar · agent start/stop controls
 │   ├── theme.py              colour palette + font constants
 │   └── _pages/
-│       ├── ashoka.py         fleet · bot detail · run comparison · timeline
-│       ├── setup.py          browser-based configuration form
-│       ├── data.py           storage browser and cleanup
+│       ├── ashoka.py         fleet view · bot detail · run comparison · LLM analysis · timeline
+│       ├── setup.py          browser-based configuration — writes config.json
+│       ├── control.py        storage browser and cleanup
 │       └── logs.py           live log viewer — level filter · search · auto-refresh
 │
-├── config.example.json       template — copy to config.json and fill in
+├── config.example.json       template — copy to config.json, or fill via Setup
+├── config.json               all configuration including secrets (gitignored)
 ├── docker/
 │   ├── Dockerfile
 │   └── docker-compose.yml    two-service local stack
 ├── requirements.txt
-└── .streamlit/config.toml   dark theme + server config
+└── .streamlit/config.toml   dark theme + server settings
 ```
 
 ---
 
-## 🔐 Auth
+## 🔐 Auth model
 
-All API calls (Eval API, Power Platform environmentmanagement, Power Platform Inventory) share one MSAL `PublicClientApplication` and one `SerializableTokenCache` file (`data/agent/msal_token_cache.json`). Device flow runs once via the Setup page; all subsequent calls acquire silently via the cached refresh token.
+All API calls — Copilot Studio Eval API, Power Platform environmentmanagement, Power Platform Inventory, Dataverse — share one MSAL `PublicClientApplication` and one `SerializableTokenCache` file. Device flow runs once via the Setup page; all subsequent calls acquire silently via the cached refresh token.
 
 | Scenario | Behaviour |
 |---|---|
-| First run | MSAL device code flow — browser sign-in via Setup page, token cached |
-| Subsequent runs | Silent refresh — no user interaction |
-| Token expired | Agent emails admin a new device code, polls for 15 min |
-| Docker / Azure | Mount `data/agent/msal_token_cache.json` on the shared volume |
+| First run | MSAL device flow — sign in once via the Setup page; token cached to disk |
+| Subsequent runs | Silent refresh via cached token — no user interaction |
+| Token expires | Agent emails a new device code to the configured recipient; polls for 15 min |
+| Docker / Azure | Mount `data/agent/msal_token_cache.json` on the shared volume — both containers share the same session |
+
+No secrets in environment variables. All credentials — LLM API key, SMTP password, Tavily key — are stored in `config.json` and written exclusively by the Setup page.
+
+---
+
+## 🛠️ Configuration reference
+
+`config.json` is written by the Setup page. You can also edit it directly.
+
+| Key | Default | Description |
+|---|---|---|
+| `watch_interval_seconds` | `120` | How often the watcher polls Dataverse for model changes |
+| `eval_poll_timeout_seconds` | `1200` | Max wait time for eval completion |
+| `eval_poll_interval_seconds` | `20` | How often to ping the Eval API while polling |
+| `max_runs_per_bot` | `6` | Number of run folders to keep per bot — oldest pruned when limit exceeded |
+| `log_level` | `"INFO"` | Log verbosity — `"DEBUG"` for full detail, `"ERROR"` for quiet |
+| `llm.base_url` | — | OpenAI-compatible endpoint base URL |
+| `llm.model` | — | Model or deployment name |
+| `llm.api_key` | — | API key — written by Setup |
+| `llm.api_version` | — | API version string — required for Azure OpenAI and Azure AI Foundry |
+| `tavily_api_key` | — | Optional — enables pre-analysis web search for model context |
+| `smtp.host` / `port` / `user` / `password` / `recipient` | — | Optional SMTP config for email reports |
 
 ---
 
 ## 🩺 Troubleshooting
 
-**Tuning via `config.json`:**
-
-| Key | Default | What it controls |
-|---|---|---|
-| `watch_interval_seconds` | `120` | How often the watcher polls Dataverse for model changes |
-| `eval_poll_timeout_seconds` | `1200` | Max time to wait for Power Platform to finish running evals |
-| `eval_poll_interval_seconds` | `20` | How often to ping the Eval API during polling |
-| `log_level` | `"INFO"` | Log verbosity — `"DEBUG"` for full detail, `"ERROR"` for quiet |
-
 | Symptom | Fix |
 |---|---|
-| `0 bots found` | Check `monitoredBots` in `config.json` — or rerun Setup to re-pick |
-| `no test sets found` | Create a test set in Copilot Studio → bot → Evaluation tab |
-| Nothing in dashboard | Use **▶ Force Eval** on the bot detail page |
-| LLM 401 error | Check `LLM_API_KEY` in `.env` — key must match the endpoint |
+| `0 bots found` | Rerun Setup → Agents → Load Bots — or check `monitoredBots` in `config.json` |
+| `no test sets found` | Create a test set in Copilot Studio → your bot → Evaluation tab |
+| Nothing in dashboard after setup | Use **▶ Force Eval** on the bot detail page to queue an immediate run |
+| Model version shows `unknown` | App registration is missing `Dynamics CRM — user_impersonation` delegated permission with admin consent |
+| `model swap: unknown → unknown` in LLM analysis | Same root cause — MSAL cannot exchange the refresh token for a Dataverse access token |
+| M365 Copilot Agent Builder agents show `default` | Correct — these agents have no selectable model; āshokā skips Dataverse lookup |
+| LLM 401 / 403 error | Check `llm.api_key` in `config.json` via the Setup page — key must match the endpoint |
 | `MSAL auth failed` | Re-authenticate via Setup → Authentication → Sign In |
-| 403 on Load Environments | App registration needs `EnvironmentManagement.Environments.Read` with admin consent — sign out and back in after granting |
-| SMTP failed | Office 365: `smtp.office365.com:587` — password in `.env` as `SMTP_PASSWORD` |
-| Container exits immediately | `docker compose logs varion-agent` — likely missing volume or env var |
-| Timeline empty | Run a force eval from the bot detail page — it will write the first events to `data/agent/events.jsonl` |
+| 403 on Load Environments | App registration needs `EnvironmentManagement.Environments.Read` with admin consent |
+| SMTP failed | Office 365: host `smtp.office365.com`, port `587`, TLS — check password in Setup → Notifications |
+| Container exits immediately | `docker compose logs ashoka-agent` — check for missing volume mount or invalid `config.json` |
+| Timeline empty | Run a force eval from the bot detail page — it writes the first events to `data/agent/events.jsonl` |
 | Logs tab empty | Start the agent — `data/agent/agent.log` is created on first run |
-| Memory warning in log | Agent RSS grew >50% from baseline — check for large Dataverse or eval API responses being held in memory across cycles |
-| Log file missing after restart | File rotates at 5 MB; check `data/agent/agent.log.1` for previous session |
-| Eval quota reached | Copilot Studio Eval API caps at ~20 evaluations per bot per 24 h — `eval_error` is logged and the run is skipped; the next scheduled eval after reset will succeed |
+| Memory warning in log | Agent RSS grew >50% from baseline — check for large Dataverse or eval API payloads |
+| Eval quota reached | Copilot Studio Eval API caps at ~20 evals per bot per 24 h — `eval_error` is logged, next cycle retries |
+| `ask āshokā` shows no output | LLM endpoint not configured — go to Setup → LLM and test the connection |
 
 ---
 
@@ -506,7 +609,7 @@ All API calls (Eval API, Power Platform environmentmanagement, Power Platform In
   ·  ✦   ·  ✸  ·   ✦   ★   ·  ✶   ✦  ·  ★  ·
 ```
 
-Python &nbsp;·&nbsp; MSAL &nbsp;·&nbsp; Copilot Studio Eval API &nbsp;·&nbsp; Power Platform Inventory API &nbsp;·&nbsp; Dataverse &nbsp;·&nbsp; Streamlit
+Python · MSAL · Copilot Studio Eval API · Power Platform Inventory API · Dataverse · Streamlit
 
 *Configure it. Forget it. Know when things change.*
 

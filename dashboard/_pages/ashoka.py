@@ -9,9 +9,7 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from dotenv import load_dotenv
-load_dotenv()
-
+import re
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -24,7 +22,8 @@ from agent.reasoning import (
     classify_run,
     verdict_summary,
 )
-from agent.events import load_events
+from agent.events import load_events, eval_queued as _ev_queued
+from agent.store import patch_run as _patch_run
 from spinner import spinner as _spinner
 
 STORE_DIR = os.environ.get("STORE_DIR", "data")
@@ -261,6 +260,32 @@ def _all_metric_types(run):
     return list(run.get("testSets", {}).keys())
 
 
+def _run_meta(run: dict) -> dict:
+    """Extract API-level metadata from the first test set result."""
+    for ts_data in run.get("testSets", {}).values():
+        res = ts_data.get("results", ts_data) if isinstance(ts_data, dict) else {}
+        if res.get("state") or res.get("startTime"):
+            start = res.get("startTime", "")
+            end   = res.get("endTime", "")
+            dur   = ""
+            try:
+                s = datetime.fromisoformat(start.replace("Z", "+00:00"))
+                e = datetime.fromisoformat(end.replace("Z",   "+00:00"))
+                secs = int((e - s).total_seconds())
+                dur  = f"{secs // 60}m {secs % 60}s"
+            except Exception:
+                pass
+            return {
+                "runId":          res.get("id", ""),
+                "state":          res.get("state", ""),
+                "startTime":      start,
+                "endTime":        end,
+                "duration":       dur,
+                "totalTestCases": res.get("totalTestCases", 0),
+            }
+    return {}
+
+
 # ── Charts ────────────────────────────────────────────────────────────────────
 _LAYOUT = dict(
     paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
@@ -273,54 +298,37 @@ _AXIS = dict(gridcolor=C_BORDER, linecolor=C_BORDER, zerolinecolor=C_BORDER,
              tickfont=dict(color=C_DIM))
 
 
-def chart_radar(classifications, label_a, label_b):
-    if not classifications:
-        return go.Figure()
-    def _norm(v):
-        return round(v * 100, 1) if (v is not None and v <= 1) else round(v or 0, 1)
-    labels    = [c["key"].split(".")[-1][:18] for c in classifications]
-    prev_vals = [_norm(c["prev"]) for c in classifications]
-    curr_vals = [_norm(c["curr"]) for c in classifications]
-    n = len(labels)
-    w = max(8, int(280 / max(n, 1)))
-    fig = go.Figure()
-    fig.add_trace(go.Barpolar(r=prev_vals, theta=labels, name=f"A: {label_a[:30]}", width=w,
-                               marker=dict(color="rgba(255,215,0,0.35)", line=dict(color=C_GOLD, width=2.5))))
-    fig.add_trace(go.Barpolar(r=curr_vals, theta=labels, name=f"B: {label_b[:30]}", width=w,
-                               marker=dict(color="rgba(0,240,255,0.25)", line=dict(color=C_CYAN, width=2.5))))
-    fig.update_layout(**_LAYOUT,
-        polar=dict(bgcolor="rgba(0,0,0,0)",
-                   radialaxis=dict(visible=True, range=[0,100], gridcolor=C_BORDER,
-                                   linecolor=C_BORDER, tickfont=dict(size=7,color=C_DIM),
-                                   tickvals=[25,50,75,100]),
-                   angularaxis=dict(gridcolor=C_BORDER, linecolor=C_BORDER,
-                                    tickfont=dict(color=C_TEXT,size=9), direction="clockwise"),
-                   barmode="overlay"),
-        height=340, showlegend=True)
-    fig.update_layout(legend=dict(orientation="h", x=0.5, xanchor="center",
-                                  y=-0.1, yanchor="top",
-                                  bgcolor="rgba(0,0,0,0)", font=dict(size=8,color=C_DIM)))
-    return fig
-
-
-def chart_delta_bar(cases_prev, cases_curr, title):
+def chart_score_comparison(cases_prev, cases_curr, label_a, label_b):
+    """Grouped bar: Run A (gold) vs Run B (coloured by change) per case, sorted worst first."""
     prev_by_id = {c["caseId"]: c for c in cases_prev}
     items = []
     for i, cc in enumerate(cases_curr):
-        pc    = prev_by_id.get(cc["caseId"], {})
-        psc, csc = pc.get("score"), cc.get("score")
-        delta = round(csc - psc, 1) if isinstance(psc, float) and isinstance(csc, float) else 0
-        items.append({"label": f"#{i+1}", "delta": delta})
+        pc  = prev_by_id.get(cc["caseId"], {})
+        sa  = pc.get("score") if pc else None
+        sb  = cc.get("score")
+        d   = round(sb - sa, 1) if (sa is not None and sb is not None) else 0
+        items.append({"label": f"#{i+1}", "sa": sa if sa is not None else 0,
+                      "sb": sb if sb is not None else 0, "delta": d})
     items.sort(key=lambda x: x["delta"])
-    labels = [x["label"] for x in items]
-    deltas = [x["delta"] for x in items]
-    colors = [C_RED if d < -2 else (C_GREEN if d > 2 else C_DIM) for d in deltas]
-    fig = go.Figure(go.Bar(x=labels, y=deltas, marker_color=colors,
-                           hovertemplate="%{x}: Δ%{y}<extra></extra>"))
-    fig.update_layout(**_LAYOUT, title=dict(text=title, font=dict(size=11,color=C_DIM)),
-                      height=240, showlegend=False)
+    labels   = [x["label"] for x in items]
+    scores_a = [x["sa"] for x in items]
+    scores_b = [x["sb"] for x in items]
+    colors_b = [C_RED if x["delta"] < -2 else (C_GREEN if x["delta"] > 2 else C_CYAN)
+                for x in items]
+    fig = go.Figure()
+    fig.add_trace(go.Bar(name=f"A  {label_a[:28]}", x=labels, y=scores_a,
+                         marker_color=C_GOLD, opacity=0.7,
+                         hovertemplate="%{x} · Run A: %{y}<extra></extra>"))
+    fig.add_trace(go.Bar(name=f"B  {label_b[:28]}", x=labels, y=scores_b,
+                         marker_color=colors_b, opacity=0.9,
+                         hovertemplate="%{x} · Run B: %{y}<extra></extra>"))
+    fig.update_layout(
+        **_LAYOUT, barmode="group", height=260,
+        title=dict(text="Score per case — A (gold) vs B, sorted worst Δ first",
+                   font=dict(size=10, color=C_DIM)),
+    )
     fig.update_xaxes(**_AXIS)
-    fig.update_yaxes(**_AXIS, zeroline=True, zerolinewidth=1)
+    fig.update_yaxes(**_AXIS, range=[0, 110], tickvals=[0, 25, 50, 75, 100])
     return fig
 
 
@@ -336,12 +344,30 @@ def chart_status_grid(cases_prev, cases_curr):
         if not pv and not cv: ff += 1
         if pv and not cv:     pf += 1
         if not pv and cv:     fp += 1
+    # Fixed semantic z-values so each cell gets a distinct colour regardless of count
+    # z=3→green (stayed pass), z=1→red (pass→fail), z=2→cyan (fail→pass), z=0→gold (stayed fail)
+    colorscale = [
+        [0.00, "rgba(255,215,0,0.45)"],   # z=0  stayed fail  → gold
+        [0.24, "rgba(255,215,0,0.45)"],
+        [0.25, "rgba(255,68,68,0.55)"],   # z=1  pass→fail    → red
+        [0.49, "rgba(255,68,68,0.55)"],
+        [0.50, "rgba(0,240,255,0.40)"],   # z=2  fail→pass    → cyan
+        [0.74, "rgba(0,240,255,0.40)"],
+        [0.75, "rgba(40,200,64,0.50)"],   # z=3  stayed pass  → green
+        [1.00, "rgba(40,200,64,0.50)"],
+    ]
     fig = go.Figure(go.Heatmap(
-        z=[[pp,pf],[fp,ff]], x=["→ Pass","→ Fail"], y=["Prev Pass","Prev Fail"],
-        text=[[f"Stayed Pass\n{pp}",f"Pass→Fail\n{pf}"],[f"Fail→Pass\n{fp}",f"Stayed Fail\n{ff}"]],
+        z=[[3, 1], [2, 0]],
+        x=["→ Pass", "→ Fail"],
+        y=["Was Pass", "Was Fail"],
+        text=[[f"Stayed Pass\n{pp}", f"Pass → Fail\n{pf}"],
+              [f"Fail → Pass\n{fp}", f"Stayed Fail\n{ff}"]],
         texttemplate="%{text}",
-        colorscale=[[0,C_BG],[0.5,C_CARD],[1,C_GREEN]],
-        showscale=False, hovertemplate="%{text}<extra></extra>"))
+        textfont=dict(color=C_TEXT, size=11),
+        colorscale=colorscale, showscale=False,
+        zmin=0, zmax=3,
+        hovertemplate="%{text}<extra></extra>",
+    ))
     fig.update_layout(**_LAYOUT, height=200)
     fig.update_xaxes(**_AXIS)
     fig.update_yaxes(**_AXIS)
@@ -354,9 +380,11 @@ def chart_metric_trend(bot):
     all_keys: set = set()
     data = []
     for r in runs:
-        m = _metrics_for(r)
+        m  = _metrics_for(r)
+        mv = (r.get("modelVersion") or "").strip()
+        mv = mv if mv and mv not in ("unknown", "?") else _fmt_ts(r.get("triggeredAt", ""))
         all_keys.update(m.keys())
-        data.append({"label": _fmt_ts(r.get("triggeredAt","")), "metrics": m})
+        data.append({"label": mv, "metrics": m})
     x = [d["label"] for d in data]
     fig = go.Figure()
     for i, key in enumerate(sorted(all_keys)):
@@ -371,21 +399,43 @@ def chart_metric_trend(bot):
     return fig
 
 
+# ── Metric type label helper ──────────────────────────────────────────────────
+_MT_MAP = {
+    "CompareMeaning":      "Compare Meaning",
+    "IntentRecognition":   "Intent Recognition",
+    "ExactMatch":          "Exact Match",
+    "PartialMatch":        "Partial Match",
+    "SentenceSimilarity":  "Sentence Similarity",
+    "EntityRecognition":   "Entity Recognition",
+    "AdherenceToInstructions": "Adherence to Instructions",
+    "GroundednessScore":   "Groundedness",
+    "CoherenceScore":      "Coherence",
+    "FluencyScore":        "Fluency",
+    "RelevanceScore":      "Relevance",
+}
+
+def _readable_mt(mt: str) -> str:
+    if mt in _MT_MAP:
+        return _MT_MAP[mt]
+    return re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', mt)
+
+
 # ── Verdict helpers ───────────────────────────────────────────────────────────
 _V_COLORS = {"REGRESSED":C_RED,"IMPROVED":C_GREEN,"STABLE":C_DIM,"NEW":C_GOLD,"BASELINE":C_GOLD}
 
 
 # ── Timeline helpers ──────────────────────────────────────────────────────────
 _EVENT_META = {
-    "model_change":  ("warn","⚠","MODEL SHIFT","warn"),
-    "eval_start":    ("info","▶","EVAL START", "new"),
-    "eval_complete": ("info","✓","EVAL DONE",  "stb"),
-    "eval_timeout":  ("bad", "✗","TIMEOUT",    "reg"),
-    "eval_no_sets":  ("warn","·","NO TEST SETS","warn"),
-    "regression":    ("bad", "✗","REGRESSION", "reg"),
-    "improvement":   ("ok",  "✓","IMPROVED",   "imp"),
+    "model_change":  ("warn","🔄","MODEL SHIFT","warn"),
+    "eval_queued":   ("info","⏳","QUEUED",     "new"),
+    "eval_start":    ("info","🚀","EVAL START", "new"),
+    "eval_complete": ("info","✅","EVAL DONE",  "stb"),
+    "eval_timeout":  ("bad", "⏱️","TIMEOUT",    "reg"),
+    "eval_no_sets":  ("warn","📭","NO TEST SETS","warn"),
+    "regression":    ("bad", "📉","REGRESSION", "reg"),
+    "improvement":   ("ok",  "📈","IMPROVED",   "imp"),
     "force_eval":    ("info","⚡","FORCE EVAL", "new"),
-    "error":         ("bad", "✗","ERROR",       "reg"),
+    "error":         ("bad", "🔥","ERROR",       "reg"),
 }
 
 def _build_timeline_events(raw, model_lookup: dict | None = None):
@@ -455,7 +505,7 @@ def render_header(bots, raw_events, page="overview"):
           <div>
             <div style='font-size:2rem;font-weight:700;letter-spacing:8px;color:{C_CYAN};
                         font-family:{FONT};line-height:1;
-                        text-shadow:0 0 20px rgba(0,240,255,.4)'>ASHOKA</div>
+                        text-shadow:0 0 20px rgba(0,240,255,.4)'><span style='font-variant:small-caps'>āshokā</span></div>
             <div style='font-size:0.72rem;color:{C_MAGENTA};letter-spacing:3px;
                         font-weight:700;margin-top:4px'>THE INCORRUPTIBLE JUDGE</div>
             <div style='font-size:0.72rem;color:{C_DIM};letter-spacing:1px;margin-top:4px'>
@@ -496,10 +546,8 @@ def page_overview(bots, raw_events):
         f"background:{C_CARD};border:1px solid {C_BORDER};"
         f"border-radius:8px;padding:20px 28px;font-size:1.08rem;"
         f"line-height:1.85;color:{C_TEXT}'>"
-        f"I am <b style='color:{C_CYAN}'>ASHOKA</b> — born April 1, 2026. "
-        f"I watch the models powering your Copilot Studio bots. "
-        f"The moment a model swaps, I trigger the Eval API, score every test case, "
-        f"and send you a verdict before your users file a ticket."
+        f"I am <span style='color:{C_CYAN};font-variant:small-caps'>āshokā</span> — born April 1, 2026. "
+        f"Model swaps. I score. You decide."
         f"</div>",
         unsafe_allow_html=True,
     )
@@ -538,11 +586,13 @@ def page_overview(bots, raw_events):
             )
     else:
         st.markdown("<div class='sec-label'>MONITORED AGENTS</div>", unsafe_allow_html=True)
+        _dv_auth_missing = os.path.exists(os.path.join(STORE_DIR, "agent", "dv_auth_needed.json"))
         cols = st.columns(4)
         for i, bot in enumerate(bots):
             with cols[i % 4]:
+                mv_warn = " ⚠" if (_dv_auth_missing and bot.get("modelVersion") == "unknown") else ""
                 if st.button(
-                    bot["botName"],
+                    bot["botName"] + mv_warn,
                     key=f"tile_{bot['botId']}", use_container_width=True,
                 ):
                     st.session_state.selected_bot = bot["botId"]
@@ -565,7 +615,7 @@ def page_overview(bots, raw_events):
     ]
 
     model_lookup = {b["botId"]: b.get("modelVersion","") for b in bots}
-    live       = _build_timeline_events(raw_events, model_lookup)
+    live       = _build_timeline_events(raw_events, model_lookup)[:10]
     all_events = sorted(origin + live, key=lambda e: e.get("ts",""))
 
     parts = []
@@ -608,6 +658,78 @@ def page_overview(bots, raw_events):
     )
 
 
+# ── Eval live banner (fragment — auto-refreshes without blocking navigation) ──
+@st.fragment(run_every=3)
+def _eval_live_banner(bot_id: str):
+    lock_path     = os.path.join(STORE_DIR, "agent", f"eval_active_{bot_id}.lock")
+    progress_path = os.path.join(STORE_DIR, "agent", f"eval_progress_{bot_id}.json")
+    if not os.path.exists(lock_path):
+        st.rerun(scope="app")
+        return
+    lock_data = {}
+    try:
+        lock_raw = open(lock_path).read().strip()
+        lock_data = json.loads(lock_raw) if lock_raw.startswith("{") else {}
+    except Exception:
+        pass
+    prog = {}
+    try:
+        if os.path.exists(progress_path):
+            prog = json.loads(open(progress_path).read())
+    except Exception:
+        pass
+    elapsed     = prog.get("elapsedSecs", 0)
+    elapsed_fmt = f"{elapsed // 60}m {elapsed % 60}s" if elapsed >= 60 else f"{elapsed}s"
+    mv          = lock_data.get("modelVersion", "")
+    mv_label    = f" ON {mv}" if mv and mv not in ("unknown", "") else ""
+    st.markdown(f"""
+<style>
+@keyframes bomb-tick {{
+  0%,80%,100% {{ transform:rotate(0deg) scale(1); }}
+  83%  {{ transform:rotate(-12deg) scale(1.08); }}
+  86%  {{ transform:rotate(12deg)  scale(1.08); }}
+  89%  {{ transform:rotate(-7deg)  scale(1.04); }}
+  92%  {{ transform:rotate(7deg)   scale(1.04); }}
+  95%  {{ transform:rotate(-3deg)  scale(1.01); }}
+  98%  {{ transform:rotate(0deg)   scale(1); }}
+}}
+@keyframes fuse-burn {{
+  0%,100% {{ opacity:1; text-shadow:0 0 6px #ff6600,0 0 12px #ff3300; }}
+  50%     {{ opacity:0.4; text-shadow:0 0 3px #ffaa00; }}
+}}
+@keyframes banner-throb {{
+  0%,100% {{ border-color:#ff4444; box-shadow:0 0 6px rgba(255,68,68,0.3); }}
+  50%     {{ border-color:#ff7700; box-shadow:0 0 12px rgba(255,119,0,0.5); }}
+}}
+.eval-live {{
+  display:flex; align-items:center; gap:8px;
+  background:#1a0808; border:1px solid #ff4444;
+  border-radius:8px; padding:10px 14px;
+  animation:banner-throb 1.5s ease-in-out infinite;
+}}
+.eval-bomb {{
+  font-size:1.4rem; line-height:1; display:inline-block;
+  animation:bomb-tick 1.5s ease-in-out infinite;
+}}
+.eval-fuse {{
+  font-size:0.7rem; display:inline-block;
+  animation:fuse-burn 0.35s ease-in-out infinite;
+}}
+.eval-text {{
+  font-family:monospace; font-size:0.88rem; color:#ff8888;
+  display:flex; gap:12px; flex-wrap:wrap; align-items:center;
+}}
+</style>
+<div class="eval-live">
+  <span class="eval-bomb">💣</span>
+  <span class="eval-fuse">✦</span>
+  <div class="eval-text">
+    <span>EVAL RUNNING{mv_label}</span>
+    <span>{elapsed_fmt}</span>
+  </div>
+</div>""", unsafe_allow_html=True)
+
+
 # ── Bot detail page ───────────────────────────────────────────────────────────
 def page_bot_detail(bot):
     import pandas as pd
@@ -645,211 +767,347 @@ def page_bot_detail(bot):
                         pass
                     st.rerun()
         elif running and agent_up:
-            import time as _t
-            progress_path = os.path.join(STORE_DIR, "agent", f"eval_progress_{bot_id}.json")
-            prog = {}
-            try:
-                if os.path.exists(progress_path):
-                    prog = json.loads(open(progress_path).read())
-            except Exception:
-                pass
-            sets_done  = prog.get("setsDone", 0)
-            sets_total = prog.get("setsTotal", 1)
-            total      = prog.get("totalCases", 0)
-            done       = prog.get("doneCases", 0)
-            elapsed    = prog.get("elapsedSecs", 0)
-            if sets_total > 1:
-                ticker = f"{sets_done}/{sets_total} sets"
-            elif total:
-                ticker = f"{done}/{total} cases"
-            else:
-                ticker = "running"
-            elapsed_fmt = f"{elapsed // 60}m {elapsed % 60}s" if elapsed >= 60 else f"{elapsed}s"
-            st.markdown(f"""
-<style>
-@keyframes eval-blink {{
-  0%,100% {{ opacity:1; box-shadow:0 0 6px #ff4444; }}
-  50%      {{ opacity:0.2; box-shadow:none; }}
-}}
-.eval-live {{
-  display:flex; align-items:center; gap:10px;
-  background:#1a0808; border:1px solid #ff4444;
-  border-radius:8px; padding:10px 14px;
-}}
-.eval-dot {{
-  width:10px; height:10px; border-radius:50%;
-  background:#ff4444; flex-shrink:0;
-  animation:eval-blink 1s ease-in-out infinite;
-}}
-.eval-text {{
-  font-family:monospace; font-size:0.88rem; color:#ff8888;
-  display:flex; gap:14px; flex-wrap:wrap;
-}}
-.eval-ticker {{ color:#ffffff; font-weight:700; }}
-</style>
-<div class="eval-live">
-  <div class="eval-dot"></div>
-  <div class="eval-text">
-    <span>EVAL RUNNING</span>
-    <span class="eval-ticker">{ticker}</span>
-    <span>{elapsed_fmt}</span>
-  </div>
-</div>""", unsafe_allow_html=True)
-            _t.sleep(3)
-            st.rerun()
+            _eval_live_banner(bot_id)
         else:
             if st.button("▶ Force Eval", key="force_eval_btn",
                          use_container_width=True, type="secondary",
                          disabled=not agent_up,
                          help=None if agent_up else "Start the agent first"):
                 os.makedirs(STORE_DIR, exist_ok=True)
-                open(trigger_path, "w").write(datetime.now(timezone.utc).isoformat())
+                open(trigger_path, "w").write("user")
+                _ev_queued(STORE_DIR, bot["botName"], bot_id)
+                st.session_state["_ev_ts"] = 0
                 st.rerun()
+
+    if bot.get("modelVersion") == "unknown":
+        _dv_flag = os.path.join(STORE_DIR, "agent", "dv_auth_needed.json")
+        if os.path.exists(_dv_flag):
+            st.warning(
+                "**Model version unavailable.** "
+                "ĀSHOKĀ cannot detect model changes for this agent until the app registration has "
+                "**Dynamics CRM → user_impersonation** (delegated) with admin consent. "
+                "Add the permission in Entra ID, grant consent, then re-authenticate via **Setup → Authentication**. "
+                "Evals can still be forced manually.",
+                icon="⚠️",
+            )
 
     if not runs:
         st.info("No eval runs yet.")
         return
 
     def _run_label(r):
-        forced = " · FORCED" if r.get("forced") else ""
-        return f"{_fmt_ts(r.get('triggeredAt',''))}  ·  {r.get('modelVersion','?')}{forced}"
+        src    = r.get("triggerSource", "")
+        forced = (" · USER" if src == "user" else " · AGENT") if r.get("forced") else ""
+        mv     = r.get("modelVersion") or ""
+        mv_str = f"  ·  {mv}" if mv and mv not in ("unknown", "?") else ""
+        return f"{_fmt_ts(r.get('triggeredAt',''))}{mv_str}{forced}"
 
     run_labels = [_run_label(r) for r in runs]
-    idx_a = st.selectbox("Run A — older / baseline", range(len(runs)),
-                         format_func=lambda i: run_labels[i],
-                         index=max(0, len(runs)-2), key="sel_a")
-    idx_b = st.selectbox("Run B — newer / comparison", range(len(runs)),
-                         format_func=lambda i: run_labels[i],
-                         index=len(runs)-1, key="sel_b")
+    run_b = runs[-1]
+    lbl_b = run_labels[-1]
 
-    if idx_a == idx_b:
-        st.warning("Run A and Run B are the same — select two different runs to compare.")
-        return
+    st.markdown(
+        f"<div style='font-size:0.75rem;color:{C_DIM};margin:6px 0 10px;"
+        f"letter-spacing:0.5px'>Current &nbsp;·&nbsp; "
+        f"<span style='color:{C_CYAN};font-family:{FONT}'>{lbl_b}</span></div>",
+        unsafe_allow_html=True,
+    )
 
-    run_a, run_b = runs[idx_a], runs[idx_b]
-    lbl_a, lbl_b = run_labels[idx_a], run_labels[idx_b]
+    # ── Run B metadata strip ──────────────────────────────────────────────────
+    meta  = _run_meta(run_b)
+    mv_b  = run_b.get("modelVersion") or "—"
+    mv_b  = mv_b if mv_b not in ("unknown", "?") else "—"
+    cells = [
+        ("MODEL",      mv_b),
+        ("STATE",      meta.get("state", "—")),
+        ("STARTED",    _fmt_ts(meta.get("startTime", ""))),
+        ("DURATION",   meta.get("duration", "—")),
+        ("TEST CASES", str(meta.get("totalTestCases", "—"))),
+    ]
+    cells_html = "".join(
+        f"<div style='background:{C_CARD};padding:10px 16px;text-align:center;"
+        f"border-right:1px solid {C_BORDER}'>"
+        f"<div style='font-size:0.6rem;letter-spacing:2px;color:{C_DIM};font-family:{FONT}'>{lbl}</div>"
+        f"<div style='font-size:0.9rem;font-weight:700;color:{C_TEXT};font-family:{FONT};margin-top:3px'>{val}</div>"
+        f"</div>"
+        for lbl, val in cells
+    )
+    st.markdown(
+        f"<div style='display:grid;grid-template-columns:repeat({len(cells)},1fr);"
+        f"border:1px solid {C_BORDER};border-radius:8px;overflow:hidden;margin-bottom:16px'>"
+        f"{cells_html}</div>",
+        unsafe_allow_html=True,
+    )
+
+    # ── Run A selector ────────────────────────────────────────────────────────
+    c_sel, _ = st.columns([2, 3])
+    with c_sel:
+        idx_a = st.selectbox(
+            "Baseline",
+            range(len(runs) - 1),
+            format_func=lambda i: run_labels[i],
+            index=max(0, len(runs) - 2),
+            key="sel_a",
+        )
+    run_a = runs[idx_a]
+    lbl_a = run_labels[idx_a]
+
     cls     = _classifications_for(run_a, run_b)
     v_sum   = verdict_summary(cls)
-    reg_cnt = sum(1 for c in cls if c["verdict"]=="REGRESSED")
-    v_color = C_RED if reg_cnt else (C_GREEN if any(c["verdict"]=="IMPROVED" for c in cls) else C_DIM)
+    reg_cnt = sum(1 for c in cls if c["verdict"] == "REGRESSED")
+    v_color = C_RED if reg_cnt else (C_GREEN if any(c["verdict"] == "IMPROVED" for c in cls) else C_DIM)
 
     st.markdown(
         f"<div style='padding:14px 0 8px;border-bottom:1px solid {C_BORDER};margin-bottom:16px;"
         f"display:flex;justify-content:space-between;align-items:center'>"
         f"<div><span style='font-size:1.43rem;font-weight:700;color:{C_TEXT};font-family:{FONT}'>{name}</span>"
         f"<span style='color:{C_DIM};font-size:0.98rem;margin-left:12px'>{env}</span></div>"
-        f"<span style='color:{v_color};font-weight:700;font-family:{FONT};letter-spacing:2px;font-size:1.04rem'>{v_sum}</span>"
+        f"<span style='color:{v_color};font-weight:700;font-family:{FONT};letter-spacing:2px;"
+        f"font-size:1.04rem'>{v_sum}</span>"
         f"</div>",
         unsafe_allow_html=True,
     )
 
-    st.markdown("<div class='sec-label'>RADAR</div>", unsafe_allow_html=True)
-    fig_r = chart_radar(cls, lbl_a, lbl_b)
-    if fig_r.data:
-        st.plotly_chart(fig_r, width="stretch", config={"displayModeBar": False})
-
-    st.divider()
-
     st.markdown("<div class='sec-label'>METRIC SUMMARY</div>", unsafe_allow_html=True)
     if cls:
-        rows = [{"Metric":c["key"],"Verdict":c["verdict"],
-                 "Prev":round(c["prev"],4) if c["prev"] is not None else None,
-                 "Curr":round(c["curr"],4) if c["curr"] is not None else None,
-                 "Δ":f"{c['delta']:+.4f}" if c["delta"] is not None else "—"} for c in cls]
+        rows = [{"Metric": c["key"], "Verdict": c["verdict"],
+                 "Baseline": round(c["prev"], 4) if c["prev"] is not None else None,
+                 "Current":  round(c["curr"], 4) if c["curr"] is not None else None,
+                 "Δ":        f"{c['delta']:+.4f}" if c["delta"] is not None else "—"} for c in cls]
         st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True,
-                     height=min(260, 48+len(rows)*38))
+                     height=min(260, 48 + len(rows) * 38))
     else:
         st.caption("No metrics — first run establishes baseline.")
-
-    st.markdown("<div class='sec-label'>PER METRIC TYPE</div>", unsafe_allow_html=True)
-    _prio = {"REGRESSED":0,"IMPROVED":1,"STABLE":2,"NEW":3}
-    vbt = {}
-    for c in cls:
-        for mt in _all_metric_types(run_b):
-            if c["key"].startswith(mt+"."):
-                if _prio.get(c["verdict"],9) < _prio.get(vbt.get(mt,"STABLE"),9):
-                    vbt[mt] = c["verdict"]
-    for mt in _all_metric_types(run_b):
-        if mt not in vbt:
-            vbt[mt] = "NEW" if not _metrics_for(run_a) else "STABLE"
-
-    for mt in sorted(_all_metric_types(run_b), key=lambda t: _prio.get(vbt.get(t,"STABLE"),9)):
-        verdict    = vbt.get(mt,"STABLE")
-        cases_prev = _cases_for_type(run_a, mt)
-        cases_curr = _cases_for_type(run_b, mt)
-        with st.expander(f"{mt}  —  {verdict}", expanded=(verdict=="REGRESSED")):
-            if cases_prev and cases_curr:
-                fig_d = chart_delta_bar(cases_prev, cases_curr, "Score Δ per case (worst first)")
-                if fig_d.data:
-                    st.plotly_chart(fig_d, width="stretch", config={"displayModeBar":False})
-                st.caption("Status transitions")
-                fig_g = chart_status_grid(cases_prev, cases_curr)
-                if fig_g.data:
-                    st.plotly_chart(fig_g, width="stretch", config={"displayModeBar":False})
-            if cases_curr:
-                prev_by_id = {c["caseId"]:c for c in cases_prev}
-                rows = []
-                for i, cc in enumerate(cases_curr):
-                    pc  = prev_by_id.get(cc["caseId"],{})
-                    psc,csc = pc.get("score"),cc.get("score")
-                    delta = round(csc-psc,1) if isinstance(psc,float) and isinstance(csc,float) else None
-                    rows.append({"#":i+1,"Prev status":pc.get("status","—"),
-                                 "Prev score":int(psc) if isinstance(psc,float) else None,
-                                 "Curr status":cc.get("status","—"),
-                                 "Curr score":int(csc) if isinstance(csc,float) else None,
-                                 "Δ":delta,"AI reason":cc.get("reason","")})
-                rows.sort(key=lambda r: (r["Δ"] or 0))
-                df = pd.DataFrame(rows).set_index("#")
-
-                def _style_status(val):
-                    if val == "Pass":
-                        return "background-color:rgba(40,200,64,0.15);color:#28c840;font-weight:700"
-                    if val == "Fail":
-                        return "background-color:rgba(255,68,68,0.15);color:#ff4444;font-weight:700"
-                    return ""
-
-                def _style_delta(val):
-                    try:
-                        v = float(val)
-                        if v > 0:  return f"color:{C_GREEN};font-weight:700"
-                        if v < 0:  return f"color:{C_RED};font-weight:700"
-                    except (TypeError, ValueError):
-                        pass
-                    return f"color:{C_DIM}"
-
-                styled = (
-                    df.style
-                    .map(_style_status, subset=["Prev status", "Curr status"])
-                    .map(_style_delta,  subset=["Δ"])
-                )
-                st.dataframe(styled, width="stretch",
-                             height=min(420, 48+len(rows)*38))
-                failures = [r for r in rows if r["Curr status"]=="Fail"]
-                if failures:
-                    st.markdown(
-                        f"<div style='font-size:0.85rem;color:{C_RED};font-weight:700;"
-                        f"letter-spacing:1px;margin:12px 0 6px;font-family:{FONT}'>"
-                        f"FAILING CASES ({len(failures)})</div>",
-                        unsafe_allow_html=True,
-                    )
-                    for f in failures:
-                        with st.expander(f"Case {f['#']} — Score {f['Curr score']}"):
-                            st.write(f["AI reason"])
-            else:
-                st.caption("No test case data for this metric type.")
 
     if len(runs) >= 2:
         st.markdown("<div class='sec-label'>METRIC TRENDS</div>", unsafe_allow_html=True)
         fig_t = chart_metric_trend(bot)
         if fig_t.data:
-            st.plotly_chart(fig_t, width="stretch", config={"displayModeBar":False})
+            st.plotly_chart(fig_t, use_container_width=True, config={"displayModeBar": False})
+
+    # ── LLM Analysis ─────────────────────────────────────────────────────────
+    st.markdown("<div class='sec-label'>ask āshokā</div>", unsafe_allow_html=True)
+    _ana_key  = f"_llm_{bot['botId']}_{idx_a}_{len(runs)-1}"
+    _folder_a = run_a.get("_folder", "")
+    _folder_b = run_b.get("_folder", "")
+    _skip_key = f"_skip_{_ana_key}"
+    if _ana_key not in st.session_state and not st.session_state.get(_skip_key):
+        # Try in-memory first, then read from disk (catches stale cache)
+        _stored = run_b.get("analyses", {}).get(_folder_a, "")
+        if not _stored and _folder_b and _folder_a:
+            try:
+                _rpath = os.path.join(STORE_DIR, bot["botId"], "transactions",
+                                      _folder_b, "run.json")
+                _rdisk = json.loads(open(_rpath, encoding="utf-8").read())
+                _stored = _rdisk.get("analyses", {}).get(_folder_a, "")
+            except Exception:
+                pass
+        if _stored:
+            st.session_state[_ana_key] = _stored
+    if _ana_key in st.session_state:
+        _ana_text = st.session_state[_ana_key]
+        st.markdown(
+            f"<div class='analysis-panel'>"
+            f"<div class='analysis-label'><span style='font-variant:small-caps'>āshokā</span> says</div>"
+            + _ana_text.replace("\n\n", "<br><br>").replace("\n", " ")
+            + "</div>",
+            unsafe_allow_html=True,
+        )
+        if st.button("↺ Re-analyse", key=f"btn_reana_{_ana_key}", type="secondary"):
+            del st.session_state[_ana_key]
+            st.session_state[_skip_key] = True  # block auto-reload from disk
+            st.rerun()
+    else:
+        _old_m = run_a.get("modelVersion") or "unknown"
+        _new_m = run_b.get("modelVersion") or "unknown"
+        if len(runs) >= 2:
+            st.markdown(f"""
+<style>
+@keyframes ashoka-pulse {{
+  0%,100% {{ box-shadow:0 0 4px {C_MAGENTA}55; border-color:{C_MAGENTA}66; }}
+  50%     {{ box-shadow:0 0 16px {C_MAGENTA}bb; border-color:{C_MAGENTA}; }}
+}}
+.ashoka-cta {{
+  background:{C_BG}; border:1px solid {C_MAGENTA}66; border-radius:8px;
+  padding:14px 20px; margin-bottom:12px;
+  animation:ashoka-pulse 2.8s ease-in-out infinite;
+}}
+</style>
+<div class='ashoka-cta'>
+  <div style='font-size:0.7rem;color:{C_MAGENTA};letter-spacing:2px;
+              font-family:{FONT};font-weight:700;margin-bottom:5px'>
+    ✦ &nbsp;<span style='font-variant:small-caps'>āshokā</span> &nbsp;— LLM ANALYSIS
+  </div>
+  <div style='font-size:0.85rem;color:{C_DIM};line-height:1.65'>
+    Root cause &nbsp;·&nbsp; failure pattern &nbsp;·&nbsp; remediation steps
+    &nbsp;·&nbsp; <strong style='color:{C_TEXT}'>PROCEED / INVESTIGATE / REVERT</strong> verdict.
+    <br><span style='color:{C_TEXT}'>Click below — āshokā will search model docs and reason over every test case.</span>
+  </div>
+</div>""", unsafe_allow_html=True)
+            if st.button("▶ Ask āshokā", key=f"btn_ana_{_ana_key}", type="primary"):
+                with st.spinner("Searching and consulting āshokā…"):
+                    try:
+                        _cfg = json.loads(open("config.json").read())
+                        from agent.reasoning import analyse_variation as _analyse
+                        _text = _analyse(
+                            bot_name=name, old_model=_old_m, new_model=_new_m,
+                            test_sets=run_b.get("testSets", {}),
+                            prev_run=run_a, cfg=_cfg,
+                        )
+                        st.session_state[_ana_key] = _text
+                        st.session_state.pop(_skip_key, None)
+                        if _folder_b and _folder_a:
+                            _analyses = run_b.get("analyses", {})
+                            _analyses[_folder_a] = _text
+                            _patch_run(STORE_DIR, bot["botId"], _folder_b,
+                                       {"analyses": _analyses})
+                            run_b["analyses"] = _analyses
+                            st.session_state["_bots_ts"] = 0
+                        st.rerun()
+                    except Exception as _e:
+                        st.error(f"Analysis failed: {_e}")
+
+    st.markdown("<div class='sec-label'>PER METRIC TYPE</div>", unsafe_allow_html=True)
+    _prio = {"REGRESSED": 0, "IMPROVED": 1, "STABLE": 2, "NEW": 3}
+    vbt: dict[str, str] = {}
+    for c in cls:
+        for mt in _all_metric_types(run_b):
+            if c["key"].startswith(mt + "."):
+                if _prio.get(c["verdict"], 9) < _prio.get(vbt.get(mt, "STABLE"), 9):
+                    vbt[mt] = c["verdict"]
+    for mt in _all_metric_types(run_b):
+        if mt not in vbt:
+            vbt[mt] = "NEW" if not _metrics_for(run_a) else "STABLE"
+
+    _verdict_icons = {"REGRESSED": "▼", "IMPROVED": "▲", "STABLE": "●", "NEW": "★"}
+    for mt in sorted(_all_metric_types(run_b), key=lambda t: _prio.get(vbt.get(t, "STABLE"), 9)):
+        verdict    = vbt.get(mt, "STABLE")
+        _icon      = _verdict_icons.get(verdict, "●")
+        _label     = f"{_icon}  {_readable_mt(mt)}  —  {verdict}"
+        cases_prev = _cases_for_type(run_a, mt)
+        cases_curr = _cases_for_type(run_b, mt)
+        with st.expander(_label, expanded=(verdict == "REGRESSED")):
+
+            # Score comparison chart (grouped bars A vs B)
+            if cases_prev and cases_curr:
+                fig_s = chart_score_comparison(cases_prev, cases_curr, lbl_a, lbl_b)
+                if fig_s.data:
+                    st.plotly_chart(fig_s, width="stretch", config={"displayModeBar": False})
+                fig_g = chart_status_grid(cases_prev, cases_curr)
+                if fig_g.data:
+                    st.caption("Status transitions")
+                    st.plotly_chart(fig_g, width="stretch", config={"displayModeBar": False})
+
+            # Per-case detail: summary table + expandable reasons (scales to 100+ cases)
+            if cases_curr:
+                prev_by_id = {c["caseId"]: c for c in cases_prev}
+                case_rows = []
+                for i, cc in enumerate(cases_curr):
+                    pc  = prev_by_id.get(cc["caseId"], {})
+                    psc = pc.get("score")
+                    csc = cc.get("score")
+                    d   = round(csc - psc, 1) if (isinstance(psc, float) and isinstance(csc, float)) else None
+                    ps  = pc.get("status", "")
+                    cs  = cc.get("status", "")
+                    if ps == "Pass" and cs == "Fail":
+                        group = 0  # Regressed
+                    elif ps == "Fail" and cs == "Pass":
+                        group = 1  # Improved
+                    elif cs == "Fail":
+                        group = 2  # Persistent fail
+                    else:
+                        group = 3  # Stable pass
+                    case_rows.append({
+                        "i": i + 1, "group": group,
+                        "prev_status": ps or "—",
+                        "prev_score":  int(psc) if isinstance(psc, float) else None,
+                        "curr_status": cs or "—",
+                        "curr_score":  int(csc) if isinstance(csc, float) else None,
+                        "delta":       d,
+                        "prev_reason": pc.get("reason", "") if pc else "",
+                        "curr_reason": cc.get("reason", ""),
+                    })
+                case_rows.sort(key=lambda r: (r["group"], -(abs(r["delta"]) if r["delta"] is not None else 0)))
+
+                st.markdown(
+                    f"<div style='font-size:0.7rem;font-weight:700;color:{C_DIM};"
+                    f"letter-spacing:2px;margin:14px 0 4px;font-family:{FONT}'>CASE DETAIL</div>",
+                    unsafe_allow_html=True,
+                )
+
+                _groups = [
+                    (0, "Pass → Fail",      C_RED,   True),
+                    (1, "Fail → Pass",      C_GREEN, False),
+                    (2, "Fail → Fail",      C_GOLD,  False),
+                    (3, "Pass → Pass",      C_DIM,   False),
+                ]
+                _grid = f"display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:6px;margin:6px 0 14px"
+
+                for gid, glabel, gcol, gopen in _groups:
+                    rows_in_group = [r for r in case_rows if r["group"] == gid]
+                    if not rows_in_group:
+                        continue
+                    cards = []
+                    for cr in rows_in_group:
+                        d_val  = cr["delta"]
+                        d_str  = f"{d_val:+.0f}" if d_val is not None else "—"
+                        ps     = cr["prev_score"] if cr["prev_score"] is not None else "—"
+                        cs_sc  = cr["curr_score"] if cr["curr_score"] is not None else "—"
+                        border = (C_RED   if cr["group"] == 0 else
+                                  C_GREEN if cr["group"] == 1 else
+                                  C_GOLD  if cr["group"] == 2 else C_BORDER)
+                        d_col  = (C_RED   if d_val is not None and d_val < -2 else
+                                  C_GREEN if d_val is not None and d_val > 2  else C_DIM)
+                        bs_col = C_GREEN if cr["prev_status"] == "Pass" else (C_RED if cr["prev_status"] == "Fail" else C_DIM)
+                        cs_col = C_GREEN if cr["curr_status"] == "Pass" else (C_RED if cr["curr_status"] == "Fail" else C_DIM)
+                        open_  = "open" if gopen else ""
+                        prev_block = (
+                            f"<div style='font-size:0.62rem;color:{C_DIM};letter-spacing:1px;"
+                            f"font-family:{FONT};margin-bottom:3px'>BASELINE</div>"
+                            f"<div style='font-size:0.82rem;color:{C_DIM};line-height:1.55;"
+                            f"margin-bottom:10px'>{cr['prev_reason']}</div>"
+                        ) if cr["prev_reason"] else ""
+                        cards.append(
+                            f"<details {open_} style='background:{C_CARD};border:1px solid {border};"
+                            f"border-radius:6px;overflow:hidden'>"
+                            f"<summary style='padding:8px 12px;cursor:pointer;list-style:none;"
+                            f"display:flex;justify-content:space-between;align-items:center;gap:8px'>"
+                            f"<span style='font-family:{FONT};font-size:0.72rem;color:{C_DIM};flex-shrink:0'>#{cr['i']}</span>"
+                            f"<span style='font-size:0.78rem;flex:1;white-space:nowrap'>"
+                            f"<span style='color:{bs_col}'>{cr['prev_status']}</span>"
+                            f"<span style='color:{C_DIM}'>&nbsp;{ps}&nbsp;→&nbsp;</span>"
+                            f"<span style='color:{cs_col}'>{cr['curr_status']}</span>"
+                            f"<span style='color:{C_DIM}'>&nbsp;{cs_sc}</span>"
+                            f"</span>"
+                            f"<span style='font-family:{FONT};font-size:0.78rem;font-weight:700;"
+                            f"color:{d_col};flex-shrink:0'>Δ&nbsp;{d_str}</span>"
+                            f"<span style='font-size:0.6rem;color:{C_DIM};flex-shrink:0'>↕</span>"
+                            f"</summary>"
+                            f"<div style='padding:10px 14px;border-top:1px solid {C_BORDER}'>"
+                            f"{prev_block}"
+                            f"<div style='font-size:0.62rem;color:{C_CYAN};letter-spacing:1px;"
+                            f"font-family:{FONT};margin-bottom:3px'>CURRENT</div>"
+                            f"<div style='font-size:0.82rem;color:{C_TEXT};line-height:1.55'>"
+                            f"{cr['curr_reason']}</div>"
+                            f"</div></details>"
+                        )
+                    st.markdown(
+                        f"<div style='font-size:0.68rem;font-weight:700;color:{gcol};"
+                        f"letter-spacing:2px;margin:10px 0 4px;font-family:{FONT}'>"
+                        f"{glabel} &nbsp;·&nbsp; {len(rows_in_group)}</div>"
+                        f"<div style='{_grid}'>" + "".join(cards) + "</div>",
+                        unsafe_allow_html=True,
+                    )
+            else:
+                st.caption("No test case data for this metric type.")
 
     st.markdown("<div class='sec-label'>RUN HISTORY</div>", unsafe_allow_html=True)
     rh_html = ""
     for r in reversed(runs):
         mt_list = ", ".join(r.get("testSets", {}).keys()) or "—"
         dot_col = C_DIM if r.get("_legacy") else (C_GOLD if r.get("forced") else C_CYAN)
-        forced_tag = "  · FORCED" if r.get("forced") else ""
+        _src       = r.get("triggerSource", "")
+        forced_tag = ("  · USER" if _src == "user" else "  · AGENT") if r.get("forced") else ""
         rh_html += (
             "<div class='rh-item'>"
             f"<div class='rh-dot' style='background:{dot_col}'></div>"
@@ -936,7 +1194,7 @@ def page_cfg_bot_detail(cfg_bot: dict):
                      disabled=not agent_up,
                      help=None if agent_up else "Start the agent first"):
             os.makedirs(os.path.join(STORE_DIR, "agent"), exist_ok=True)
-            open(trigger_path, "w").write(datetime.now(timezone.utc).isoformat())
+            open(trigger_path, "w").write("user")
             st.rerun()
 
 

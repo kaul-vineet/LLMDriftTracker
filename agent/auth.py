@@ -11,9 +11,12 @@ import json
 import msal
 import os
 import smtplib
+import threading
 from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+
+_cache_lock = threading.Lock()
 
 EVAL_SCOPES = ["https://api.powerplatform.com/.default"]
 
@@ -40,8 +43,9 @@ def _load_cache(cfg: dict) -> msal.SerializableTokenCache:
 
 def _save_cache(cache: msal.SerializableTokenCache, cfg: dict):
     if cache.has_state_changed:
-        with open(_cache_path(cfg), "w", encoding="utf-8") as f:
-            f.write(cache.serialize())
+        with _cache_lock:
+            with open(_cache_path(cfg), "w", encoding="utf-8") as f:
+                f.write(cache.serialize())
 
 
 def _app(cfg: dict, cache: msal.SerializableTokenCache) -> msal.PublicClientApplication:
@@ -64,18 +68,18 @@ def _write_auth_state(cfg: dict, state: dict):
 
 def _email_device_code(cfg: dict, code: str, expires_in: int):
     smtp = cfg.get("smtp", {})
-    host      = os.environ.get("SMTP_HOST")      or smtp.get("host")
-    port      = int(os.environ.get("SMTP_PORT")  or smtp.get("port", 587))
-    user      = os.environ.get("SMTP_USER")      or smtp.get("user")
-    password  = os.environ.get("SMTP_PASSWORD")  or smtp.get("password")
-    recipient = os.environ.get("SMTP_RECIPIENT") or smtp.get("recipient")
+    host      = smtp.get("host")
+    port      = int(smtp.get("port", 587))
+    user      = smtp.get("user")
+    password  = smtp.get("password")
+    recipient = smtp.get("recipient")
     if not all([host, user, password, recipient]):
         return False
     mins = expires_in // 60
     ts   = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     body = f"""<html><body style="font-family:sans-serif;background:#0a0a0f;color:#e0e0e0;padding:32px">
   <div style="max-width:520px;margin:auto;border:1px solid #1a1a2e;border-radius:8px;padding:28px;background:#12121a">
-    <h2 style="color:#ff4444;margin-top:0;font-family:monospace">⚠ ACTION REQUIRED — Sign in to ASHOKA</h2>
+    <h2 style="color:#ff4444;margin-top:0;font-family:monospace">⚠ ACTION REQUIRED — Sign in to āshokā</h2>
     <p>The agent needs re-authentication. Eval cycles are paused until you sign in.</p>
     <hr style="border-color:#1a1a2e">
     <p><strong>Step 1 —</strong> Open: <a href="https://microsoft.com/devicelogin" style="color:#00f0ff">https://microsoft.com/devicelogin</a></p>
@@ -89,7 +93,7 @@ def _email_device_code(cfg: dict, code: str, expires_in: int):
   </div>
 </body></html>"""
     msg            = MIMEMultipart("alternative")
-    msg["Subject"] = f"[ASHOKA] Sign-in required — code {code}"
+    msg["Subject"] = f"[āshokā] Sign-in required — code {code}"
     msg["From"]    = user
     msg["To"]      = recipient
     msg.attach(MIMEText(body, "html"))

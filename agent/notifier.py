@@ -11,11 +11,11 @@ def send_report(html: str, cfg: dict):
     smtp_cfg = cfg.get("smtp", {}) or {}
     log      = logger_mod.get()
 
-    host      = os.environ.get("SMTP_HOST")      or smtp_cfg.get("host", "")
-    port      = int(os.environ.get("SMTP_PORT")  or smtp_cfg.get("port") or 587)
-    user      = os.environ.get("SMTP_USER")      or smtp_cfg.get("user", "")
-    password  = os.environ.get("SMTP_PASSWORD")  or smtp_cfg.get("password", "")
-    recipient = os.environ.get("SMTP_RECIPIENT") or smtp_cfg.get("recipient", "")
+    host      = smtp_cfg.get("host", "")
+    port      = int(smtp_cfg.get("port") or 587)
+    user      = smtp_cfg.get("user", "")
+    password  = smtp_cfg.get("password", "")
+    recipient = smtp_cfg.get("recipient", "")
 
     if not all([host, user, password, recipient]):
         lore.report_skipped()

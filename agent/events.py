@@ -14,6 +14,7 @@ Event types:
   regression      — one or more metrics regressed
   improvement     — one or more metrics improved
   stable          — no change detected
+  eval_queued     — eval queued from the dashboard Force Eval button
   force_eval      — force-eval triggered (file trigger or CLI flag)
   error           — unhandled exception during a cycle
 """
@@ -57,21 +58,27 @@ def model_change(store_dir: str, bot_name: str, bot_id: str, old_ver: str, new_v
 
 
 def eval_start(store_dir: str, bot_name: str, bot_id: str, test_set_count: int = 0,
-               trigger_guid: str = "", env_id: str = ""):
+               trigger_guid: str = "", env_id: str = "", model_version: str = ""):
     detail = f"Running {test_set_count} test set(s)" if test_set_count else "Eval triggered — fetching test sets"
+    if model_version and model_version not in ("unknown", ""):
+        detail += f"  ·  {model_version}"
     extra: dict = {}
     if trigger_guid:
         extra["triggerGuid"] = trigger_guid
     if env_id:
         extra["envId"] = env_id
+    if model_version:
+        extra["modelVersion"] = model_version
     _write(store_dir, "eval_start", bot_name=bot_name, bot_id=bot_id, detail=detail,
            extra=extra or None)
 
 
 def eval_complete(store_dir: str, bot_name: str, bot_id: str,
                   pass_rate: float, avg_score: float, verdict: str,
-                  trigger_guid: str = "", env_id: str = "", duration_secs: int | None = None):
+                  trigger_guid: str = "", env_id: str = "", duration_secs: int | None = None,
+                  model_version: str = ""):
     pct = f"{pass_rate * 100:.0f}%"
+    mv_str = f"  ·  {model_version}" if model_version and model_version not in ("unknown", "") else ""
     extra: dict = {"passRate": pass_rate, "avgScore": avg_score, "verdict": verdict}
     if trigger_guid:
         extra["triggerGuid"] = trigger_guid
@@ -79,8 +86,10 @@ def eval_complete(store_dir: str, bot_name: str, bot_id: str,
         extra["envId"] = env_id
     if duration_secs is not None:
         extra["durationSecs"] = duration_secs
+    if model_version:
+        extra["modelVersion"] = model_version
     _write(store_dir, "eval_complete", bot_name=bot_name, bot_id=bot_id,
-           detail=f"pass {pct}  ·  avg score {avg_score:.1f}  ·  {verdict}",
+           detail=f"pass {pct}  ·  avg score {avg_score:.1f}  ·  {verdict}{mv_str}",
            extra=extra)
 
 
@@ -95,25 +104,31 @@ def eval_no_sets(store_dir: str, bot_name: str, bot_id: str):
 
 
 def regression(store_dir: str, bot_name: str, bot_id: str, metrics: list[str],
-               trigger_guid: str = "", env_id: str = ""):
+               trigger_guid: str = "", env_id: str = "", model_version: str = ""):
+    mv_str = f"  ·  {model_version}" if model_version and model_version not in ("unknown", "") else ""
     extra: dict = {"metrics": metrics}
     if trigger_guid:
         extra["triggerGuid"] = trigger_guid
     if env_id:
         extra["envId"] = env_id
+    if model_version:
+        extra["modelVersion"] = model_version
     _write(store_dir, "regression", bot_name=bot_name, bot_id=bot_id,
-           detail=f"Regression in: {', '.join(metrics)}", extra=extra)
+           detail=f"Regression in: {', '.join(metrics)}{mv_str}", extra=extra)
 
 
 def improvement(store_dir: str, bot_name: str, bot_id: str, metrics: list[str],
-                trigger_guid: str = "", env_id: str = ""):
+                trigger_guid: str = "", env_id: str = "", model_version: str = ""):
+    mv_str = f"  ·  {model_version}" if model_version and model_version not in ("unknown", "") else ""
     extra: dict = {"metrics": metrics}
     if trigger_guid:
         extra["triggerGuid"] = trigger_guid
     if env_id:
         extra["envId"] = env_id
+    if model_version:
+        extra["modelVersion"] = model_version
     _write(store_dir, "improvement", bot_name=bot_name, bot_id=bot_id,
-           detail=f"Improved: {', '.join(metrics)}", extra=extra)
+           detail=f"Improved: {', '.join(metrics)}{mv_str}", extra=extra)
 
 
 def stable(store_dir: str, bot_name: str, bot_id: str):
@@ -124,6 +139,11 @@ def stable(store_dir: str, bot_name: str, bot_id: str):
 def error(store_dir: str, bot_name: str, bot_id: str, err: str):
     _write(store_dir, "error", bot_name=bot_name, bot_id=bot_id,
            detail=str(err)[:200])
+
+
+def eval_queued(store_dir: str, bot_name: str, bot_id: str):
+    _write(store_dir, "eval_queued", bot_name=bot_name, bot_id=bot_id,
+           detail="Eval queued from dashboard")
 
 
 def force_eval(store_dir: str):

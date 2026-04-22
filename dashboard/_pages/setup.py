@@ -6,9 +6,6 @@ import json
 import msal
 import os
 
-from dotenv import load_dotenv
-load_dotenv()
-
 import streamlit as st
 
 import sys
@@ -240,6 +237,7 @@ _defs = {
     "s_smtp_host":     _smtp.get("host", ""),
     "s_smtp_port":     _smtp.get("port", 587),
     "s_smtp_user":     _smtp.get("user", ""),
+    "s_smtp_password": _smtp.get("password", ""),
     "s_smtp_rcpt":     _smtp.get("recipient", ""),
 }
 for k, v in _defs.items():
@@ -329,6 +327,77 @@ else:
             st.session_state.s_flow = None
             st.session_state.s_flow_started = False
             st.rerun()
+
+        # ── Dataverse token (model version lookup) ────────────────────────
+        _env_map = {e["name"]: e for e in st.session_state.get("s_envs", [])}
+        _dv_envs = [_env_map[n] for n in st.session_state.get("s_sel_envs", [])
+                    if n in _env_map and _env_map[n].get("orgUrl")]
+        if _dv_envs:
+            st.markdown("**Dataverse access** — model version lookup")
+            _dv_missing = []
+            for _env in _dv_envs:
+                _url    = _env["orgUrl"].rstrip("/")
+                _dv_tok, _ = _token_silent(
+                    [_url + "/.default"],
+                    st.session_state.s_client_id,
+                    st.session_state.s_tenant_id,
+                    st.session_state.s_cache_file,
+                )
+                if not _dv_tok:
+                    _dv_missing.append(_env["name"])
+
+            if not _dv_missing:
+                st.markdown("<div class='status-ok'>● DATAVERSE AUTHENTICATED</div>",
+                            unsafe_allow_html=True)
+            else:
+                st.markdown(
+                    f"<div class='status-warn'>⚠ Not authenticated for: "
+                    f"{', '.join(_dv_missing)}</div>",
+                    unsafe_allow_html=True,
+                )
+                st.caption(
+                    "Requires **Dynamics CRM → user_impersonation** on the app registration "
+                    "with admin consent. Once granted, click Sign In for Dataverse below."
+                )
+                if st.button("Sign In for Dataverse", key="btn_dv_signin", type="secondary"):
+                    try:
+                        _first_url = _dv_envs[0]["orgUrl"].rstrip("/")
+                        _dv_cache  = _load_cache(st.session_state.s_cache_file)
+                        _dv_app    = _msal_app(st.session_state.s_client_id,
+                                               st.session_state.s_tenant_id, _dv_cache)
+                        _dv_flow   = _dv_app.initiate_device_flow(
+                            scopes=[_first_url + "/.default"]
+                        )
+                        st.session_state["s_dv_flow"] = {
+                            "flow": _dv_flow, "app": _dv_app, "cache": _dv_cache
+                        }
+                        st.rerun()
+                    except Exception as _e:
+                        st.error(f"Failed to start Dataverse sign-in: {_e}")
+
+            if st.session_state.get("s_dv_flow"):
+                _dv_fd   = st.session_state["s_dv_flow"]
+                _dv_code = _dv_fd["flow"].get("user_code", "")
+                st.markdown(
+                    f"Open <a href='https://microsoft.com/devicelogin' target='_blank' "
+                    f"style='color:{C_CYAN}'>microsoft.com/devicelogin</a> and enter:",
+                    unsafe_allow_html=True,
+                )
+                st.markdown(f"<div class='device-code'>{_dv_code}</div>",
+                            unsafe_allow_html=True)
+                if st.button("✓ Done — verify Dataverse", key="btn_dv_verify", type="primary"):
+                    try:
+                        _r = _dv_fd["app"].acquire_token_by_device_flow(
+                            _dv_fd["flow"], exit_condition=lambda _: True
+                        )
+                    except Exception:
+                        _r = None
+                    if _r and "access_token" in _r:
+                        _save_cache(_dv_fd["app"].token_cache, st.session_state.s_cache_file)
+                        st.session_state.pop("s_dv_flow", None)
+                        st.rerun()
+                    else:
+                        st.warning("Not signed in yet — complete sign-in in your browser first.")
     else:
         if not st.session_state.s_flow_started:
             st.markdown("<div class='status-dim'>Not authenticated.</div>", unsafe_allow_html=True)
@@ -707,7 +776,10 @@ st.markdown("</div>", unsafe_allow_html=True)
 # SECTION 5 — LLM
 # ═══════════════════════════════════════════════════════════════════════════════
 _sec("5 · LLM (Response Analysis)", ok5)
-st.caption("Any OpenAI-compatible endpoint. API key goes in .env as LLM_API_KEY.")
+st.caption("Any OpenAI-compatible endpoint. All values saved in config.json.")
+
+if "s_llm_api_key" not in st.session_state:
+    st.session_state.s_llm_api_key = _cfg.get("llm", {}).get("api_key", "")
 
 c1, c2, c3 = st.columns([3, 2, 1])
 with c1:
@@ -739,13 +811,21 @@ with c4:
              "Leave blank for OpenAI. Common value: 2024-12-01-preview.",
     )
 
+c5, _ = st.columns([3, 2])
+with c5:
+    st.session_state.s_llm_api_key = st.text_input(
+        "API Key", value=st.session_state.s_llm_api_key,
+        type="password", key="in_llm_api_key",
+        placeholder="sk-… or Azure key",
+    )
+
 st.session_state.s_llm_url     = llm_url.strip()
 st.session_state.s_llm_model   = llm_model.strip()
 st.session_state.s_llm_api_ver = llm_api_ver.strip()
 st.session_state.s_poll        = int(poll)
 
 # LLM validation
-_api_key = os.environ.get("LLM_API_KEY", "")
+_api_key = st.session_state.s_llm_api_key
 _loading_llm = st.session_state.get("_op_loading_llm", False)
 col_t1, col_t2 = st.columns([1, 4])
 with col_t1:
@@ -773,31 +853,65 @@ if _loading_llm:
         import json as _json
         open(_llm_status_path(), "w").write(_json.dumps({"ok": ok, "error": err or ""}))
     st.session_state["_op_loading_llm"] = False
+    st.session_state["_ready_ts"] = 0  # invalidate sidebar readiness cache
     st.rerun()
 
 st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 6 — Notifications (optional)
+# SECTION 6 — Web Search (Tavily) — optional
 # ═══════════════════════════════════════════════════════════════════════════════
-with st.expander("6 · Notifications (SMTP) — optional"):
-    st.caption("Leave blank to disable email reports. SMTP_PASSWORD goes in .env.")
+with st.expander("6 · Web Search (Tavily) — optional"):
+    st.caption(
+        "When set, āshokā automatically searches for model release notes and capability "
+        "differences before running LLM analysis. Free tier: 1,000 searches/month. "
+        "Saved with config.json below."
+    )
+    if "s_tavily_key" not in st.session_state:
+        st.session_state.s_tavily_key = _cfg.get("tavily_api_key", "")
+    st.session_state.s_tavily_key = st.text_input(
+        "Tavily API Key",
+        value=st.session_state.s_tavily_key,
+        type="password",
+        placeholder="tvly-xxxxxxxxxxxxxxxxxxxx",
+        key="tav_key_input",
+    )
+    if st.session_state.s_tavily_key:
+        st.markdown(
+            "<div class='status-ok'>✓ Tavily key set — web search will be enabled on save</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            "<div class='status-dim'>· No key — analysis runs without web search</div>",
+            unsafe_allow_html=True,
+        )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SECTION 7 — Notifications (optional)
+# ═══════════════════════════════════════════════════════════════════════════════
+with st.expander("7 · Notifications (SMTP) — optional"):
+    st.caption("Leave blank to disable email reports. All values saved in config.json.")
     c1, c2 = st.columns(2)
     with c1:
         smtp_host = st.text_input("SMTP host", value=st.session_state.s_smtp_host,
                                    placeholder="smtp.office365.com", key="in_smtp_host")
         smtp_user = st.text_input("Sender email", value=st.session_state.s_smtp_user,
                                    key="in_smtp_user")
+        smtp_pass = st.text_input("SMTP password", value=st.session_state.s_smtp_password,
+                                   type="password", key="in_smtp_password")
     with c2:
         smtp_port = st.number_input("SMTP port", min_value=1, max_value=65535,
                                      value=int(st.session_state.s_smtp_port), key="in_smtp_port")
         smtp_rcpt = st.text_input("Recipient email", value=st.session_state.s_smtp_rcpt,
                                    key="in_smtp_rcpt")
-    st.session_state.s_smtp_host = smtp_host.strip()
-    st.session_state.s_smtp_port = int(smtp_port)
-    st.session_state.s_smtp_user = smtp_user.strip()
-    st.session_state.s_smtp_rcpt = smtp_rcpt.strip()
+    st.session_state.s_smtp_host     = smtp_host.strip()
+    st.session_state.s_smtp_port     = int(smtp_port)
+    st.session_state.s_smtp_user     = smtp_user.strip()
+    st.session_state.s_smtp_password = smtp_pass
+    st.session_state.s_smtp_rcpt     = smtp_rcpt.strip()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -836,9 +950,10 @@ cfg_out = {
     "poll_interval_minutes":      st.session_state.s_poll,
     "eval_poll_timeout_seconds":  1200,
     "eval_poll_interval_seconds": 20,
+    "tavily_api_key":             st.session_state.get("s_tavily_key", ""),
     "llm": {
         "base_url":    st.session_state.s_llm_url,
-        "api_key":     "",
+        "api_key":     st.session_state.s_llm_api_key,
         "model":       st.session_state.s_llm_model,
         "api_version": st.session_state.s_llm_api_ver,
     },
@@ -846,7 +961,7 @@ cfg_out = {
         "host":      st.session_state.s_smtp_host,
         "port":      st.session_state.s_smtp_port,
         "user":      st.session_state.s_smtp_user,
-        "password":  "",
+        "password":  st.session_state.s_smtp_password,
         "recipient": st.session_state.s_smtp_rcpt,
     },
 }
@@ -860,6 +975,7 @@ with col_s2:
                  use_container_width=True):
         try:
             open(CONFIG_PATH, "w").write(json.dumps(cfg_out, indent=2))
+            st.session_state["_ready_ts"] = 0  # invalidate sidebar readiness cache
             st.success("✓ config.json saved. Agent picks up changes on next poll cycle.")
             st.markdown(
                 f"<div style='color:{C_GREEN};font-family:{FONT};font-size:0.85rem;"

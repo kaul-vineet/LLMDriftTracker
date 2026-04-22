@@ -196,13 +196,13 @@ def authenticate(cfg: dict) -> str:
 # ── SMTP test ─────────────────────────────────────────────────────────────────
 def _send_test_email(host: str, port: int, user: str, password: str, recipient: str):
     msg           = MIMEMultipart("alternative")
-    msg["Subject"] = "✅ ASHOKA — You're all set!"
+    msg["Subject"] = "✅ āshokā — You're all set!"
     msg["From"]    = user
     msg["To"]      = recipient
     ts             = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     body = f"""<html><body style="font-family:sans-serif;background:#0d1117;color:#c9d1d9;padding:32px">
   <div style="max-width:520px;margin:auto;border:1px solid #30363d;border-radius:8px;padding:28px">
-    <h2 style="color:#58a6ff;margin-top:0">⚡ ASHOKA</h2>
+    <h2 style="color:#58a6ff;margin-top:0">⚡ āshokā</h2>
     <p style="color:#8b949e;font-size:13px;margin-top:-12px">copilot-eval-agent · v1.0</p>
     <hr style="border-color:#30363d">
     <p>Setup is complete. The agent will start monitoring your Copilot Studio bots and

@@ -13,8 +13,6 @@ import os
 import sys
 import threading
 import time
-from dotenv import load_dotenv
-load_dotenv()
 from datetime import datetime, timezone
 
 # Force UTF-8 stdout/stderr so emoji in lore.py don't crash on Windows CP1252 terminals
@@ -68,13 +66,6 @@ def load_cfg(path: str = "config.json") -> dict:
         cfg = json.loads(f.read())
     cfg.setdefault("llm", {})
     cfg.setdefault("smtp", {})
-    cfg["llm"]["api_key"]    = os.environ.get("LLM_API_KEY",    cfg["llm"].get("api_key", ""))
-    cfg["llm"]["base_url"]   = os.environ.get("LLM_BASE_URL",   cfg["llm"].get("base_url", ""))
-    cfg["llm"]["model"]      = os.environ.get("LLM_MODEL",      cfg["llm"].get("model", ""))
-    cfg["smtp"]["password"]  = os.environ.get("SMTP_PASSWORD",  cfg["smtp"].get("password", ""))
-    cfg["smtp"]["host"]      = os.environ.get("SMTP_HOST",      cfg["smtp"].get("host", ""))
-    cfg["smtp"]["user"]      = os.environ.get("SMTP_USER",      cfg["smtp"].get("user", ""))
-    cfg["smtp"]["recipient"] = os.environ.get("SMTP_RECIPIENT", cfg["smtp"].get("recipient", ""))
     return cfg
 
 
@@ -141,7 +132,7 @@ def _clear_stale_triggers(store_dir: str):
 
 
 def _build_bot_result(bot_name, old_ver, curr_ver, run_folder,
-                      test_sets, prev_run, cfg) -> dict:
+                      test_sets, prev_run, cfg, instructions="") -> dict:
     curr_metrics    = reasoning.extract_metrics_for_report(test_sets)
     prev_metrics    = (
         reasoning.extract_metrics_for_report(prev_run.get("testSets", {}))
@@ -149,7 +140,7 @@ def _build_bot_result(bot_name, old_ver, curr_ver, run_folder,
     )
     classifications = reasoning.classify_run(prev_metrics, curr_metrics)
     analysis        = reasoning.analyse_variation(
-        bot_name, old_ver, curr_ver, test_sets, prev_run, cfg
+        bot_name, old_ver, curr_ver, test_sets, prev_run, cfg, instructions
     )
     return {
         "botName":         bot_name,
@@ -166,6 +157,17 @@ def _build_bot_result(bot_name, old_ver, curr_ver, run_folder,
     }
 
 
+def _prune_reports(store_dir: str, keep: int):
+    """Delete oldest report_{timestamp}.html files beyond the keep limit."""
+    import glob as _glob
+    reports = sorted(_glob.glob(os.path.join(store_dir, "report_*.html")))
+    for path in reports[:-keep] if len(reports) > keep else []:
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+
+
 def _save_and_notify(bot_results, store_dir, cfg):
     html        = report.generate_report(bot_results)
     report_path = os.path.join(
@@ -175,6 +177,7 @@ def _save_and_notify(bot_results, store_dir, cfg):
     os.makedirs(store_dir, exist_ok=True)
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(html)
+    _prune_reports(store_dir, keep=cfg.get("max_runs_per_bot", 6))
     lore.report_saved(report_path)
     notifier.send_report(html, cfg)
     lore.cycle_complete(len(bot_results))
@@ -191,6 +194,7 @@ def run_cycle(cfg: dict, force: bool = False):
     # Consume ALL trigger files FIRST — before any network calls — so the
     # dashboard never gets stuck on "queued" regardless of what happens next.
     triggered_ids: set[str] = set()
+    triggered_sources: dict[str, str] = {}   # bot_id -> "user" | "agent"
     adir = _agent_dir(store_dir)
     if os.path.exists(adir):
         for fname in os.listdir(adir):
@@ -198,9 +202,11 @@ def run_cycle(cfg: dict, force: bool = False):
                 bot_id_from_file = fname[len("force_eval_"):-len(".trigger")]
                 triggered_ids.add(bot_id_from_file)
                 try:
+                    content = open(os.path.join(adir, fname), encoding="utf-8").read().strip()
+                    triggered_sources[bot_id_from_file] = content if content in ("user", "agent") else "agent"
                     os.remove(os.path.join(adir, fname))
                 except Exception:
-                    pass
+                    triggered_sources[bot_id_from_file] = "agent"
     if triggered_ids:
         log.info(f"Evaluation requested — picked up pending eval for {len(triggered_ids)} bot(s)")
 
@@ -265,15 +271,17 @@ def run_cycle(cfg: dict, force: bool = False):
         eval_start_ts = datetime.now(timezone.utc)
 
         ev.eval_start(store_dir, bot_name, bot_id, 0,
-                      trigger_guid=run_folder, env_id=bot.get("ppEnvId", ""))
+                      trigger_guid=run_folder, env_id=bot.get("ppEnvId", ""),
+                      model_version=curr_ver)
 
         bot_ctx[bot_id] = {
-            "bot":           bot,
-            "old_ver":       old_ver,
-            "curr_ver":      curr_ver,
-            "run_folder":    run_folder,
-            "eval_start_ts": eval_start_ts,
-            "bot_forced":    bot_forced,
+            "bot":            bot,
+            "old_ver":        old_ver,
+            "curr_ver":       curr_ver,
+            "run_folder":     run_folder,
+            "eval_start_ts":  eval_start_ts,
+            "bot_forced":     bot_forced,
+            "trigger_source": triggered_sources.get(bot_id, "agent") if bot_forced else ("agent" if force else ""),
         }
         bots_to_eval.append(bot)
 
@@ -287,7 +295,11 @@ def run_cycle(cfg: dict, force: bool = False):
         lock_path = os.path.join(_agent_dir(store_dir), f"eval_active_{bot['botId']}.lock")
         try:
             with open(lock_path, "w", encoding="utf-8") as f:
-                f.write(datetime.now(timezone.utc).isoformat())
+                import json as _j
+                f.write(_j.dumps({
+                    "startedAt":    datetime.now(timezone.utc).isoformat(),
+                    "modelVersion": bot_ctx[bot["botId"]]["curr_ver"],
+                }))
         except Exception:
             pass
 
@@ -345,10 +357,14 @@ def run_cycle(cfg: dict, force: bool = False):
                 forced=(force or ctx["bot_forced"]), folder_name=run_folder,
                 bot_name=bot_name, env_name=bot.get("envName", ""),
                 env_id=env_id, org_url=org_url,
+                trigger_source=ctx["trigger_source"],
             )
+            store.prune_runs(store_dir, bot_id,
+                             keep=cfg.get("max_runs_per_bot", 6))
 
             br = _build_bot_result(bot_name, old_ver, curr_ver, run_folder,
-                                   test_sets, prev_run, cfg)
+                                   test_sets, prev_run, cfg,
+                                   instructions=bot.get("instructions", ""))
 
             cls         = br.get("classifications", [])
             reg_metrics = [c["key"] for c in cls if c["verdict"] == "REGRESSED"]
@@ -366,13 +382,14 @@ def run_cycle(cfg: dict, force: bool = False):
             duration_s  = int((datetime.now(timezone.utc) - eval_start_ts).total_seconds())
 
             ev.eval_complete(store_dir, bot_name, bot_id, pass_rate, avg_score, verdict,
-                             trigger_guid=run_folder, env_id=env_id, duration_secs=duration_s)
+                             trigger_guid=run_folder, env_id=env_id, duration_secs=duration_s,
+                             model_version=curr_ver)
             if reg_metrics:
                 ev.regression(store_dir, bot_name, bot_id, reg_metrics,
-                              trigger_guid=run_folder, env_id=env_id)
+                              trigger_guid=run_folder, env_id=env_id, model_version=curr_ver)
             elif imp_metrics:
                 ev.improvement(store_dir, bot_name, bot_id, imp_metrics,
-                               trigger_guid=run_folder, env_id=env_id)
+                               trigger_guid=run_folder, env_id=env_id, model_version=curr_ver)
 
             store.save_tracking(store_dir, bot_id, curr_ver, run_folder,
                                 bot_name=bot_name, env_name=bot.get("envName", ""),
@@ -461,7 +478,7 @@ def _watch_loop(cfg: dict):
                     lore.model_changed(bot_name, old_ver, curr_ver)
                     ev.model_change(store_dir, bot_name, bot_id, old_ver, curr_ver)
                     with open(trigger_path, "w", encoding="utf-8") as f:
-                        f.write(datetime.now(timezone.utc).isoformat())
+                        f.write("agent")
                     log.info(f"Model change detected for {bot_name}: {old_ver} → {curr_ver}")
 
             sweep += 1
@@ -544,7 +561,7 @@ def main():
     # ── Startup banner ────────────────────────────────────────────────────────
     watch_s = cfg.get("watch_interval_seconds", 120)
     poll_s  = cfg.get("eval_poll_interval_seconds", 20)
-    log.info(f"ASHOKA starting — checking every {watch_s}s, polling every {poll_s}s")
+    log.info(f"āshokā starting — checking every {watch_s}s, polling every {poll_s}s")
 
     envs = cfg.get("environments", [])
     for e in envs:
@@ -569,7 +586,7 @@ def main():
 
         total_bots = sum(len(e.get("monitoredBots", [])) for e in envs)
         bot_label  = f"{total_bots} agent(s)" if total_bots else "all agents"
-        log.info(f"ASHOKA READY — {len(envs)} environment(s) · {bot_label} · watching every {watch_s}s")
+        log.info(f"āshokā READY — {len(envs)} environment(s) · {bot_label} · watching every {watch_s}s")
 
         watcher.join()   # keeps main thread alive; both are daemon so Ctrl-C exits cleanly
         evaluator.join()

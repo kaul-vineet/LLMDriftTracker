@@ -1,4 +1,4 @@
-"""agent/logger.py — Rotating JSON file logger for the ASHOKA agent.
+"""agent/logger.py — Rotating JSON file logger for the āshokā agent.
 
 One logger ("ashoka"), two handlers:
   - RotatingFileHandler → data/agent.log  (5 MB × 3 files, JSON lines)
@@ -17,14 +17,21 @@ from logging.handlers import RotatingFileHandler
 _logger: logging.Logger | None = None
 
 
+_EXTRA_KEYS = ("bot", "model", "prompt", "response", "duration_ms", "error_detail")
+
+
 class _JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
-        return json.dumps({
+        d = {
             "ts":     datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "level":  record.levelname,
             "thread": threading.current_thread().name,
             "msg":    record.getMessage(),
-        }, ensure_ascii=False)
+        }
+        for key in _EXTRA_KEYS:
+            if hasattr(record, key):
+                d[key] = getattr(record, key)
+        return json.dumps(d, ensure_ascii=False)
 
 
 def setup(store_dir: str, level: str = "INFO") -> logging.Logger:

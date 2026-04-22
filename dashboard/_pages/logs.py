@@ -1,4 +1,4 @@
-"""dashboard/pages/logs.py — Live log viewer for the ASHOKA agent."""
+"""dashboard/pages/logs.py — Live log viewer for the āshokā agent."""
 import json
 import os
 import time

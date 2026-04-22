@@ -1,5 +1,5 @@
 """
-dashboard/pages/2_Data.py — Storage management.
+dashboard/_pages/control.py — Control plane.
 Browse, inspect, and delete stored run data, event logs, and reports.
 """
 import json

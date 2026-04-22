@@ -14,6 +14,7 @@ are detected and wrapped into the new run shape.
 import json
 import os
 import re
+import shutil
 import sys
 from datetime import datetime, timezone
 from . import logger as logger_mod
@@ -132,10 +133,12 @@ def save_run(store_dir: str, bot_id: str, model_version: str,
              test_sets: dict[str, dict], forced: bool = False,
              folder_name: str = "",
              bot_name: str = "", env_name: str = "",
-             env_id: str = "", org_url: str = "") -> str:
+             env_id: str = "", org_url: str = "",
+             trigger_source: str = "") -> str:
     """
     Save one run. Returns the folder name.
     test_sets: dict[metric_type -> {apiRunId, results}]
+    trigger_source: "user" | "agent" | "" (unknown)
     """
     log    = logger_mod.get()
     folder = folder_name or make_run_folder_name(model_version)
@@ -143,20 +146,43 @@ def save_run(store_dir: str, bot_id: str, model_version: str,
     os.makedirs(run_dir, exist_ok=True)
 
     run = {
-        "botId":        bot_id,
-        "botName":      bot_name,
-        "envId":        env_id,
-        "envName":      env_name,
-        "orgUrl":       org_url,
-        "modelVersion": model_version,
-        "triggeredAt":  datetime.now(timezone.utc).isoformat(),
-        "forced":       forced,
-        "testSets":     test_sets,
+        "botId":          bot_id,
+        "botName":        bot_name,
+        "envId":          env_id,
+        "envName":        env_name,
+        "orgUrl":         org_url,
+        "modelVersion":   model_version,
+        "triggeredAt":    datetime.now(timezone.utc).isoformat(),
+        "forced":         forced,
+        "triggerSource":  trigger_source,
+        "testSets":       test_sets,
     }
     _atomic_write_json(os.path.join(run_dir, "run.json"), run)
     log.info(f"Run saved for {bot_name or bot_id}: folder '{folder}', "
-             f"{len(test_sets)} test set(s), forced={forced}")
+             f"{len(test_sets)} test set(s), forced={forced}, source={trigger_source or 'unknown'}")
     return folder
+
+
+# ── Run pruning ───────────────────────────────────────────────────────────────
+
+def prune_runs(store_dir: str, bot_id: str, keep: int = 6):
+    """Delete oldest run folders so at most `keep` remain. Folders sort chronologically
+    by their {timestamp}_{model} name, so the oldest are always at the front."""
+    log      = logger_mod.get()
+    runs_dir = os.path.join(_bot_dir(store_dir, bot_id), "transactions")
+    if not os.path.exists(runs_dir):
+        return
+    folders = sorted(
+        name for name in os.listdir(runs_dir)
+        if os.path.isdir(os.path.join(runs_dir, name))
+    )
+    for name in folders[:-keep] if len(folders) > keep else []:
+        path = os.path.join(runs_dir, name)
+        try:
+            shutil.rmtree(path)
+            log.info(f"Pruned run folder: {bot_id}/{name}")
+        except Exception as e:
+            log.warning(f"Could not prune run folder {path}: {e}")
 
 
 # ── Run load ──────────────────────────────────────────────────────────────────
@@ -220,6 +246,16 @@ def list_runs(store_dir: str, bot_id: str) -> list[dict]:
         if run:
             runs.append(run)
     return sorted(runs, key=lambda r: r.get("triggeredAt", ""))
+
+
+def patch_run(store_dir: str, bot_id: str, folder_name: str, updates: dict):
+    """Merge updates into an existing run.json. No-op for legacy or missing runs."""
+    path = os.path.join(_bot_dir(store_dir, bot_id), "transactions", folder_name, "run.json")
+    if not os.path.exists(path):
+        return
+    run = _load_json(path)
+    run.update(updates)
+    _atomic_write_json(path, run)
 
 
 def load_last_run(store_dir: str, bot_id: str) -> dict | None:

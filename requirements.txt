@@ -1,6 +1,7 @@
 requests
 msal
 openai
+tavily-python
 psutil
 azure-identity
 streamlit

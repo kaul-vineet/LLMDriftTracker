@@ -7,14 +7,62 @@ Dataverse token; if none is cached it defaults to "unknown" so the watcher
 never blocks on a device-flow prompt.
 """
 import os
+import re
 import requests
-from .auth import get_eval_token, get_eval_token_agent, AuthError
+from .auth import get_eval_token, get_eval_token_agent, get_dataverse_token_silent, AuthError
 from . import logger as logger_mod
 from . import lore
 
-INVENTORY_URL = "https://api.powerplatform.com/resourcequery/resources/query"
-CS_API_BASE   = "https://api.powerplatform.com/copilotstudio"
-PP_API_VER    = "2024-10-01"
+INVENTORY_URL   = "https://api.powerplatform.com/resourcequery/resources/query"
+PP_API_VER      = "2024-10-01"
+_DV_API         = "/api/data/v9.2"
+_DV_AUTH_NEEDED = "dv_auth_needed.json"
+
+
+def _dv_flag_path(cfg: dict) -> str:
+    return os.path.join(cfg.get("store_dir", "data"), "agent", _DV_AUTH_NEEDED)
+
+
+def _write_dv_auth_needed(cfg: dict):
+    path = _dv_flag_path(cfg)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if not os.path.exists(path):
+        open(path, "w").write("{}")
+
+
+def _clear_dv_auth_needed(cfg: dict):
+    try:
+        os.remove(_dv_flag_path(cfg))
+    except FileNotFoundError:
+        pass
+
+# Extracts modelNameHint from the YAML-valued `data` column of a botcomponents record.
+_MODEL_HINT_RX = re.compile(
+    r"^\s*modelNameHint\s*:\s*(\S+?)\s*$",
+    re.MULTILINE | re.IGNORECASE,
+)
+
+
+def _extract_instructions(yaml_text: str) -> str:
+    """Extract the bot system prompt from botcomponents YAML.
+
+    Handles both block scalar (instructions: |) and inline forms.
+    """
+    if not yaml_text:
+        return ""
+    # Block scalar: instructions: | or instructions: >
+    m = re.search(r"^instructions:\s*[|>][-+]?\s*\n((?:[ \t]+[^\n]*\n?)*)", yaml_text, re.MULTILINE)
+    if m:
+        block  = m.group(1)
+        lines  = block.split("\n")
+        indents = [len(l) - len(l.lstrip()) for l in lines if l.strip()]
+        min_i   = min(indents) if indents else 0
+        return "\n".join(l[min_i:] for l in lines).strip()
+    # Inline: instructions: some text  or  instructions: "quoted text"
+    m = re.search(r"^instructions:\s+(.+)$", yaml_text, re.MULTILINE)
+    if m:
+        return m.group(1).strip().strip('"').strip("'")
+    return ""
 
 
 def _eval_headers(token: str) -> dict:
@@ -26,31 +74,8 @@ def _eval_headers(token: str) -> dict:
 
 
 def _model_from_properties(p: dict) -> str:
-    """Extract model name from Inventory API bot properties (no Dataverse needed).
-
-    Tries aISettings.model.modelNameHint first (e.g. 'GPT5Chat', 'sonnet4-5'),
-    then falls back to publishedConfiguration and gPTSettings paths.
-    """
-    import json as _j
-
-    def _parse(raw) -> str:
-        if isinstance(raw, str):
-            try:
-                raw = _j.loads(raw)
-            except Exception:
-                return ""
-        if isinstance(raw, dict):
-            hint = raw.get("model", {}).get("modelNameHint", "")
-            if hint:
-                return hint
-        return ""
-
-    for key in ("aISettings", "aiSettings", "aisettings"):
-        hint = _parse(p.get(key, ""))
-        if hint:
-            return hint
-
-    return "unknown"
+    """Check Inventory API properties.model field (Preview, api-version 2024-10-01+)."""
+    return p.get("model") or "unknown"
 
 
 # ── Environment discovery ─────────────────────────────────────────────────────
@@ -164,48 +189,72 @@ def _fetch_bots_inventory(env_id: str, token: str) -> list[dict]:
                      f"— property keys: {sorted(p.keys())}")
             log.info(f"[verbose] raw properties: {json.dumps(p, indent=2)[:1200]}")
         bots.append({
-            "botId":        item.get("name", ""),
-            "name":         p.get("displayName", ""),
-            "schemaName":   p.get("schemaName", ""),
-            "modelVersion": mv,
+            "botId":      item.get("name", ""),
+            "name":       p.get("displayName", ""),
+            "schemaName": p.get("schemaName", ""),
+            "createdIn":  p.get("createdIn", ""),
         })
     return bots
 
 
-def _fetch_model_version_cs_api(pp_env_id: str, bot_id: str, token: str) -> str:
+
+def _fetch_model_via_botcomponent(org_url: str, bot_schema_name: str, cfg: dict) -> str:
+    """Look up modelNameHint from the bot's default GPT botcomponent YAML.
+
+    Copilot Studio stores the selected LLM in a child botcomponents record whose
+    schema name follows the convention '{botSchemaName}.gpt.default'. The model
+    name lives in that record's YAML-valued `data` column at
+    aISettings.model.modelNameHint.
+
+    Uses the same token path as the probe script — silent if cached, device-flow
+    email fallback if not. Returns 'unknown' on any token or API failure.
     """
-    Fallback: fetch model name via the Copilot Studio REST API (same eval token).
-    Tries GET /copilotstudio/environments/{env}/bots/{bot} and reads aISettings.
-    """
-    log     = logger_mod.get()
-    verbose = os.environ.get("VERBOSE")
+    if not (org_url and bot_schema_name):
+        return "unknown", ""
+    log      = logger_mod.get()
+    dv_token = get_dataverse_token_silent(org_url, cfg)
+    if not dv_token:
+        log.warning(f"Dataverse token unavailable for '{org_url}' — "
+                    f"add 'Dynamics CRM > user_impersonation' to the app registration "
+                    f"and grant admin consent, then re-authenticate via Setup")
+        _write_dv_auth_needed(cfg)
+        return "unknown", ""
+    _clear_dv_auth_needed(cfg)
+    gpt_schema = f"{bot_schema_name}.gpt.default"
     try:
-        url = f"{CS_API_BASE}/environments/{pp_env_id}/bots/{bot_id}?api-version={PP_API_VER}"
-        r   = requests.get(url, headers=_eval_headers(token), timeout=15)
+        r = requests.get(
+            f"{org_url.rstrip('/')}{_DV_API}/botcomponents",
+            params={"$filter": f"schemaname eq '{gpt_schema}'", "$select": "data,content"},
+            headers={"Authorization": f"Bearer {dv_token}", "Accept": "application/json"},
+            timeout=20,
+        )
         if not r.ok:
-            log.info(f"CS bot detail API returned HTTP {r.status_code} for {bot_id[:8]}")
-            return "unknown"
-        body = r.json()
-        mv   = _model_from_properties(body.get("properties", body))
-        if mv != "unknown":
-            log.info(f"Model version for {bot_id[:8]} from CS API: {mv}")
-        elif verbose:
-            import json
-            props = body.get("properties", body)
-            log.info(f"[verbose] CS API also returned unknown for {bot_id[:8]} "
-                     f"— keys: {sorted(props.keys()) if isinstance(props, dict) else type(props)}")
-            log.info(f"[verbose] CS API raw: {json.dumps(body, indent=2)[:1200]}")
-        return mv
+            log.info(f"botcomponents lookup HTTP {r.status_code} for '{gpt_schema}'")
+            return "unknown", ""
+        items = r.json().get("value", [])
+        if not items:
+            log.info(f"botcomponents lookup: no record found for schema '{gpt_schema}'")
+            return "unknown", ""
+        yaml_text    = items[0].get("data") or items[0].get("content") or ""
+        m            = _MODEL_HINT_RX.search(yaml_text) if yaml_text else None
+        instructions = _extract_instructions(yaml_text)
+        if m:
+            hint = m.group(1)
+            log.info(f"Model hint from botcomponents YAML for '{bot_schema_name}': {hint}")
+            return hint, instructions
+        # YAML exists but no modelNameHint — bot uses platform default model (model: {} or no aISettings)
+        log.info(f"No custom model in botcomponents YAML for '{gpt_schema}' — treating as default")
+        return "default", instructions
     except Exception as e:
-        log.info(f"CS bot detail API error for {bot_id[:8]}: {e}")
-        return "unknown"
+        log.info(f"botcomponents lookup error for '{bot_schema_name}': {e}")
+        return "unknown", ""
 
 
 def list_bots(env_id: str, org_url: str, monitored: list, cfg: dict) -> list[dict]:
     """
-    List active bots for an environment using Power Platform APIs only (eval token throughout).
-    Model name comes from Inventory API properties; if absent, falls back to Copilot Studio API.
-    No Dataverse / Dynamics API calls.
+    List active bots for an environment.
+    Bot inventory comes from the Power Platform Inventory API (eval token).
+    Model version comes from Dataverse botcomponents YAML (Dataverse token, silent).
     monitored: list of schemanames to filter; empty = return all.
     """
     log   = logger_mod.get()
@@ -218,16 +267,19 @@ def list_bots(env_id: str, org_url: str, monitored: list, cfg: dict) -> list[dic
 
     bots = []
     for b in raw:
-        bot_id = b["botId"]
-        mv     = b.get("modelVersion", "unknown")
-        if mv == "unknown":
-            # Inventory API didn't carry aISettings — try CS bot detail endpoint
-            mv = _fetch_model_version_cs_api(env_id, bot_id, token)
+        bot_id     = b["botId"]
+        created_in = b.get("createdIn", "")
+        # M365 Copilot Agent Builder agents don't have selectable models — skip Dataverse lookup
+        if created_in == "Microsoft 365 Copilot Agent Builder":
+            mv, instructions = "default", ""
+        else:
+            mv, instructions = _fetch_model_via_botcomponent(org_url, b.get("schemaName", ""), cfg)
         bots.append({
             "botId":        bot_id,
             "name":         b.get("name", ""),
             "schemaName":   b.get("schemaName", ""),
             "modelVersion": mv,
+            "instructions": instructions,
             "orgUrl":       org_url,
         })
         log.info(f"Bot loaded: {b.get('name', bot_id)} (schema: {b.get('schemaName', '')}, model: {mv})")
@@ -253,25 +305,34 @@ def probe_bots(org_url: str, cfg: dict) -> dict:
         return {"ok": False, "error": str(e)}
 
 
+def _scan_env(env: dict, cfg: dict, log) -> list[dict]:
+    monitored   = env.get("monitoredBots", [])
+    scope_label = f"{len(monitored)} selected" if monitored else "all"
+    env_id      = env.get("environmentId", "")
+    org_url     = env.get("orgUrl", "")
+    log.info(f"Scanning environment '{env['name']}' — {scope_label} bots, env ID: {env_id[:12]}...")
+    try:
+        bots = list_bots(env_id, org_url, monitored, cfg)
+        for b in bots:
+            b["envName"] = env["name"]
+            b["ppEnvId"] = env_id
+        lore.bots_found(env["name"], len(bots), scope_label)
+        log.info(f"Environment '{env['name']}': {len(bots)} agent(s) loaded")
+        return bots
+    except Exception as e:
+        log.error(f"Failed to load bots from environment '{env['name']}': {e}")
+        lore.bots_failed(env["name"], e)
+        return []
+
+
 def list_all_bots(cfg: dict) -> list[dict]:
-    log      = logger_mod.get()
-    all_bots = []
-    for env in cfg["environments"]:
-        monitored   = env.get("monitoredBots", [])
-        scope_label = f"{len(monitored)} selected" if monitored else "all"
-        env_id      = env.get("environmentId", "")
-        org_url     = env.get("orgUrl", "")
-        log.info(f"Scanning environment '{env['name']}' — {scope_label} bots, env ID: {env_id[:12]}...")
-        try:
-            bots = list_bots(env_id, org_url, monitored, cfg)
-            for b in bots:
-                b["envName"] = env["name"]
-                b["ppEnvId"] = env_id
-            all_bots.extend(bots)
-            lore.bots_found(env["name"], len(bots), scope_label)
-            log.info(f"Environment '{env['name']}': {len(bots)} agent(s) loaded")
-        except Exception as e:
-            log.error(f"Failed to load bots from environment '{env['name']}': {e}")
-            lore.bots_failed(env["name"], e)
-    log.info(f"Agent inventory complete — {len(all_bots)} agent(s) across {len(cfg['environments'])} environment(s)")
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    log  = logger_mod.get()
+    envs = cfg["environments"]
+    all_bots: list[dict] = []
+    with ThreadPoolExecutor(max_workers=max(1, len(envs))) as ex:
+        futures = {ex.submit(_scan_env, env, cfg, log): env for env in envs}
+        for fut in as_completed(futures):
+            all_bots.extend(fut.result())
+    log.info(f"Agent inventory complete — {len(all_bots)} agent(s) across {len(envs)} environment(s)")
     return all_bots
