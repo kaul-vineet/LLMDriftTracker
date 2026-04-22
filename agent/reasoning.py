@@ -96,10 +96,10 @@ def _search_model_context(old_model: str, new_model: str, cfg: dict) -> str:
                     chunks.append(f"Source: {url}\n{content[:600]}")
         if not chunks:
             return ""
-        log.debug(f"Tavily search returned {len(chunks)} result(s) for {new_model}")
+        log.info(f"Tavily search returned {len(chunks)} result(s) for {new_model}")
         return "\n\n".join(chunks)
     except Exception as e:
-        log.debug(f"Tavily search failed: {e}")
+        log.error(f"Tavily search failed: {e}")
         return ""
 
 
