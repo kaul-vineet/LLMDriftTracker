@@ -27,7 +27,6 @@ import psutil
 
 from . import dataverse
 from . import eval_client
-from .auth import get_dataverse_token
 from . import events as ev
 from . import logger as logger_mod
 from . import lore
@@ -474,20 +473,6 @@ def main():
 
     if not envs:
         log.warning("no environments configured — nothing to watch (run Setup to configure)")
-
-    # Acquire Dataverse tokens for each environment once at startup so the watcher can
-    # detect model version changes silently. If a token is not cached this triggers one
-    # device flow — the dashboard surfaces the code. After sign-in the cache is warm and
-    # no further interactive auth is needed during this session.
-    for env in envs:
-        org_url = env.get("orgUrl", "")
-        if not org_url:
-            continue
-        try:
-            get_dataverse_token(org_url, cfg)
-            log.info(f"Dataverse token ready for {env['name']} — model version detection enabled")
-        except Exception as e:
-            log.warning(f"Dataverse auth failed for {env['name']}: {e} — model version detection disabled for this session")
 
     try:
         lore.starting(watch_s // 60)
