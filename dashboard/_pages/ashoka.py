@@ -449,8 +449,8 @@ def _event_to_dict(e: dict, model_lookup: dict | None = None) -> dict:
     dot, icon, badge, badge_c = _EVENT_META.get(et, ("info","·",et.upper(),"stb"))
     if et == "eval_complete":
         v = e.get("verdict","")
-        if v == "REGRESSED":  dot,badge,badge_c = "bad","REGRESSED","reg"
-        elif v == "IMPROVED": dot,badge,badge_c = "ok","IMPROVED","imp"
+        if "REGRESSED" in v:  dot,badge,badge_c = "bad","REGRESSED","reg"
+        elif "IMPROVED" in v: dot,badge,badge_c = "ok","IMPROVED","imp"
         else:                 dot,badge,badge_c = "info","STABLE","stb"
     bot_name = e.get("botName") or "Agent"
     model    = (e.get("newModel") or e.get("oldModel") or "") if et == "model_change" \
