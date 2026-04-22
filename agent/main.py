@@ -586,6 +586,8 @@ def main():
 
     try:
         lore.starting(watch_s // 60)
+        total_bots = sum(len(e.get("monitoredBots", [])) for e in envs)
+        ev.agent_start(store_dir, watch_s, len(envs), total_bots)
 
         watcher   = threading.Thread(target=_watch_loop, args=(cfg,),
                                      daemon=True, name="watcher")
@@ -596,7 +598,6 @@ def main():
         evaluator.start()
         log.info("evaluator thread started")
 
-        total_bots = sum(len(e.get("monitoredBots", [])) for e in envs)
         bot_label  = f"{total_bots} agent(s)" if total_bots else "all agents"
         log.info(f"āshokā READY — {len(envs)} environment(s) · {bot_label} · watching every {watch_s}s")
 

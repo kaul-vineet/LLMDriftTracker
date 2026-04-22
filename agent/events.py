@@ -141,6 +141,11 @@ def error(store_dir: str, bot_name: str, bot_id: str, err: str):
            detail=str(err)[:200])
 
 
+def agent_start(store_dir: str, watch_interval_s: int, n_envs: int, n_bots: int):
+    detail = f"Watching {n_bots} agent(s) across {n_envs} environment(s) · poll every {watch_interval_s}s"
+    _write(store_dir, "agent_start", detail=detail)
+
+
 def eval_queued(store_dir: str, bot_name: str, bot_id: str):
     _write(store_dir, "eval_queued", bot_name=bot_name, bot_id=bot_id,
            detail="Eval queued from dashboard")
