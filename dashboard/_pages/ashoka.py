@@ -614,7 +614,7 @@ def page_overview(bots, raw_events):
 
     model_lookup = {b["botId"]: b.get("modelVersion","") for b in bots}
     live       = _build_timeline_events(raw_events, model_lookup)[:10]
-    all_events = sorted(origin + live, key=lambda e: e.get("ts",""))
+    all_events = live + origin
 
     parts = []
     for ev in all_events:
