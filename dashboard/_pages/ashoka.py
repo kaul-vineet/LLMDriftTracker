@@ -68,7 +68,7 @@ st.markdown(f"""
   .analysis-panel {{
     background:{C_BG}; border-left:3px solid {C_MAGENTA};
     border-radius:0 8px 8px 0; padding:16px 20px;
-    font-size:1.13rem; line-height:1.75; color:{C_TEXT}; margin-bottom:20px;
+    font-size:1rem; line-height:1.75; color:{C_TEXT}; margin-bottom:20px;
   }}
   .analysis-label {{
     font-size:0.85rem; font-weight:700; color:{C_MAGENTA};
