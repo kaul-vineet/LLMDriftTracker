@@ -27,12 +27,12 @@ st.markdown(
     f"<div style='font-size:1.4rem;font-weight:700;letter-spacing:4px;"
     f"color:{C_CYAN};font-family:{FONT};margin-bottom:4px'>⚡ LOGS</div>"
     f"<div style='font-size:0.78rem;color:{C_DIM};margin-bottom:20px'>"
-    f"Operational log · last {MAX_LINES} lines · newest first</div>",
+    f"Operational log · last {MAX_LINES} lines · newest first · auto-refreshes every 5s</div>",
     unsafe_allow_html=True,
 )
 
 # ── Controls ──────────────────────────────────────────────────────────────────
-c1, c2, c3 = st.columns([2, 3, 1])
+c1, c2 = st.columns([2, 3])
 with c1:
     level_filter = st.selectbox(
         "Level", ["ALL", "ERROR", "WARNING", "INFO", "DEBUG"],
@@ -43,12 +43,9 @@ with c2:
         "Search", placeholder="filter by text or thread…",
         key="log_search", label_visibility="collapsed",
     )
-with c3:
-    auto = st.toggle("Auto", key="log_auto", value=False,
-                     help="Refresh every 5 s")
 
-# ── Auto-refresh: use st.fragment so rerun doesn't block the server thread ────
-@st.fragment(run_every=5 if auto else None)
+# ── Auto-refresh every 5 s permanently ───────────────────────────────────────
+@st.fragment(run_every=5)
 def _render_logs():
     if not os.path.exists(LOG_PATH):
         st.info("No log file yet — start the agent to begin writing logs.")
