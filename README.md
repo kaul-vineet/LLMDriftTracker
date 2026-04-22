@@ -509,7 +509,7 @@ Every agent action is appended to `data/agent/events.jsonl` — an append-only a
 | 📭 `NO TEST SETS` | `eval_no_sets` | Bot has no test sets configured |
 | 🔥 `ERROR` | `error` | Unhandled exception during eval processing |
 
-`cycle_start` and `stable` events are written to `events.jsonl` but filtered from the timeline (too noisy).
+`cycle_start`, `stable`, `regression`, and `improvement` events are written to `events.jsonl` but filtered from the timeline (too noisy — the `eval_complete` event already carries the verdict and metric summary).
 
 ---
 
@@ -517,6 +517,8 @@ Every agent action is appended to `data/agent/events.jsonl` — an append-only a
 
 ```
 data/
+├── report_{timestamp}.html            ← self-contained HTML report (one per eval cycle, pruned at max_runs_per_bot)
+│
 ├── agent/
 │   ├── agent.log                      ← rotating operational log (JSON lines, 5 MB × 3 files)
 │   ├── agent.log.1 / .2 / .3         ← rotated backups
@@ -533,8 +535,7 @@ data/
     │   └── tracking.json              ← current model version + last run folder name
     └── transactions/
         └── {timestamp}_{modelVersion}/
-            ├── run.json               ← raw Eval API results + triggerSource (user/agent) + cached LLM analysis
-            └── report.html            ← self-contained HTML report
+            └── run.json               ← raw Eval API results + triggerSource (user/agent) + cached LLM analysis
 ```
 
 All comparisons, classifications, and LLM analyses are stored in `run.json["analyses"]` keyed by the baseline folder name. No derived files are created — everything recomputes from the raw eval results on demand.
@@ -551,9 +552,10 @@ All comparisons, classifications, and LLM analyses are stored in `run.json["anal
 │   ├── auth.py               unified MSAL — one cache for Eval API, Inventory, Dataverse
 │   ├── dataverse.py          fetch bots + model versions from Dataverse
 │   ├── eval_client.py        Copilot Studio Eval API — trigger + poll to completion
-│   ├── reasoning.py          metric extraction · classify · web search · LLM analysis
+│   ├── reasoning.py          metric extraction · classify · web search · two-call LLM analysis
 │   ├── events.py             append-only JSONL event log
 │   ├── logger.py             rotating JSON file logger
+│   ├── lore.py               themed terminal status output
 │   ├── store.py              run storage — transactions/{timestamp}_{model}/run.json
 │   ├── report.py             self-contained HTML report generator
 │   └── notifier.py           SMTP email sender
@@ -600,7 +602,7 @@ No secrets in environment variables. All credentials — LLM API key, SMTP passw
 
 | Key | Default | Description |
 |---|---|---|
-| `watch_interval_seconds` | `120` | How often the watcher polls Dataverse for model changes |
+| `poll_interval_minutes` | `2` | How often the watcher polls Dataverse for model changes (minutes) |
 | `eval_poll_timeout_seconds` | `1200` | Max wait time for eval completion |
 | `eval_poll_interval_seconds` | `20` | How often to ping the Eval API while polling |
 | `max_runs_per_bot` | `6` | Number of run folders to keep per bot — oldest pruned when limit exceeded |

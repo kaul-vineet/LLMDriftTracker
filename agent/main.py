@@ -453,12 +453,13 @@ def _interruptible_sleep(interval_s: int, store_dir: str):
 
 
 def _watch_loop(cfg: dict):
-    """Watcher thread — polls every watch_interval_seconds and writes a
+    """Watcher thread — polls every poll_interval_minutes and writes a
     trigger file the moment a model version change is detected. Never runs evals."""
     store_dir  = cfg.get("store_dir", "data")
     # Clamp to a safe minimum — a 0/negative value would spin the watcher thread
     # at 100% CPU and hammer the Dataverse API.
-    interval_s = max(30, int(cfg.get("watch_interval_seconds", 120) or 120))
+    _poll_min  = int(cfg.get("poll_interval_minutes", 2) or 2)
+    interval_s = max(30, _poll_min * 60)
     log        = logger_mod.get()
     proc       = psutil.Process()
     mem_base   = proc.memory_info().rss / 1024 / 1024
@@ -573,9 +574,10 @@ def main():
     log = logger_mod.setup(store_dir, level=cfg.get("log_level", "INFO"))
 
     # ── Startup banner ────────────────────────────────────────────────────────
-    watch_s = cfg.get("watch_interval_seconds", 120)
-    poll_s  = cfg.get("eval_poll_interval_seconds", 20)
-    log.info(f"āshokā starting — checking every {watch_s}s, polling every {poll_s}s")
+    _watch_min = int(cfg.get("poll_interval_minutes", 2) or 2)
+    watch_s    = max(30, _watch_min * 60)
+    poll_s     = cfg.get("eval_poll_interval_seconds", 20)
+    log.info(f"āshokā starting — checking every {watch_s}s ({_watch_min} min), polling every {poll_s}s")
 
     envs = cfg.get("environments", [])
     for e in envs:
