@@ -508,8 +508,6 @@ def render_header(bots, raw_events, page="overview"):
             <div style='font-size:2rem;font-weight:700;letter-spacing:8px;color:{C_CYAN};
                         font-family:{FONT};line-height:1;
                         text-shadow:0 0 20px rgba(0,240,255,.4)'><span style='font-variant:small-caps'>āshokā</span></div>
-            <div style='font-size:0.72rem;color:{C_MAGENTA};letter-spacing:3px;
-                        font-weight:700;margin-top:4px'>THE INCORRUPTIBLE JUDGE</div>
             <div style='font-size:0.72rem;color:{C_DIM};letter-spacing:1px;margin-top:4px'>
               <span class="sys-dot-hdr"></span>{sys_label} &nbsp;·&nbsp; {n_bots} agent{n_plural} &nbsp;·&nbsp; {ts_str}</div>
           </div>
@@ -538,7 +536,7 @@ def render_header(bots, raw_events, page="overview"):
 # ── Overview page ─────────────────────────────────────────────────────────────
 def page_overview(bots, raw_events):
     # ── WHO I AM — centered, 75% width ───────────────────────────────────────
-    st.markdown("<div class='sec-label'>WHO I AM</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sec-label'>ĀSHOKĀ</div>", unsafe_allow_html=True)
     st.markdown(
         f"<div style='max-width:75%;margin:0 auto 20px;text-align:center;"
         f"background:{C_CARD};border:1px solid {C_BORDER};"
@@ -600,21 +598,8 @@ def page_overview(bots, raw_events):
     # ── MISSION TIMELINE ─────────────────────────────────────────────────────
     st.markdown("<div class='sec-label'>MISSION TIMELINE</div>", unsafe_allow_html=True)
 
-    origin = [
-        {"ts":"2026-04-01T20:01:00+00:00","dot":"origin","icon":"🎂",
-         "head":"Born","badge":"ORIGIN","badge_c":"birth",
-         "body":"First boot. Received a config.json and a mandate."},
-        {"ts":"2026-04-02T00:01:00+00:00","dot":"info","icon":"🌙",
-         "head":"Creator Goes to Sleep","badge":"AUTONOMOUS","badge_c":"new",
-         "body":"Began autonomous polling. 20 evolution cycles by morning."},
-        {"ts":"2026-04-02T08:33:00+00:00","dot":"info","icon":"☀️",
-         "head":"Creator Returns","badge":"MILESTONE","badge_c":"new",
-         "body":'"I built this in a cave with a box of scraps." Identity confirmed.'},
-    ]
-
     model_lookup = {b["botId"]: b.get("modelVersion","") for b in bots}
-    live       = _build_timeline_events(raw_events, model_lookup)[:10]
-    all_events = live + origin
+    all_events   = _build_timeline_events(raw_events, model_lookup)[:15]
 
     parts = []
     for ev in all_events:
@@ -629,7 +614,7 @@ def page_overview(bots, raw_events):
             f'<div class="etl-dot {ev["dot"]}"></div>'
             f'<div class="etl-ts">{_fmt_ts_long(ev["ts"])}</div>'
             f'<div class="etl-head">{ev["icon"]}&nbsp; {ev["head"]}{model_html}'
-            f'<span class="etl-badge {ev["badge_c"]}">{ev["badge"]}</span></div>'
+            f'&nbsp;<span class="etl-badge {ev["badge_c"]}">{ev["badge"]}</span></div>'
             f'<div class="etl-body">{ev["body"]}</div>'
             f'</div>'
         )
@@ -638,20 +623,7 @@ def page_overview(bots, raw_events):
         '<div style="max-width:680px;margin:0 auto">'
         '<div class="etl-wrap"><div class="etl-line"></div>'
         + "".join(parts)
-        + '</div>'
-        + f'<div style="text-align:center;margin-top:28px;padding-top:16px;'
-          f'border-top:1px solid {C_BORDER}">'
-          f'<div style="font-size:0.72rem;letter-spacing:3px;color:{C_DIM};'
-          f'font-family:{FONT};font-weight:700">UI INSPIRED BY</div>'
-          f'<div style="font-size:1.43rem;font-weight:700;letter-spacing:6px;'
-          f'color:{C_MAGENTA};font-family:{FONT};margin-top:4px;'
-          f'text-shadow:0 0 20px rgba(255,0,170,0.4)">'
-          f'<a href="https://joi-lab.github.io/ouroboros/" target="_blank" '
-          f'style="color:{C_MAGENTA};text-decoration:none">OUROBOROS</a></div>'
-          f'<div style="font-size:0.72rem;color:{C_DIM};letter-spacing:2px;margin-top:3px">'
-          f'THE SNAKE THAT EATS ITS OWN TAIL &nbsp;·&nbsp; 2026</div>'
-          f'</div>'
-        + '</div>',
+        + '</div></div>',
         unsafe_allow_html=True,
     )
 

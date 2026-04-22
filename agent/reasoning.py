@@ -78,9 +78,10 @@ def _search_model_context(old_model: str, new_model: str, cfg: dict) -> str:
     api_key = (cfg.get("tavily_api_key") or "").strip()
     if not api_key:
         return ""
-    queries = [f"{new_model} LLM capabilities instruction following known limitations"]
+    queries = [f"{new_model} release notes known issues instruction following"]
     if old_model.strip() and old_model != new_model:
-        queries.append(f"{old_model} vs {new_model} language model quality differences")
+        queries.append(f"{old_model} vs {new_model} documented capability differences")
+    queries.append("Microsoft Copilot Studio best practices system prompt quality improvement")
     log = logger_mod.get()
     try:
         from tavily import TavilyClient
@@ -287,14 +288,13 @@ def _build_prompt(bot_name: str, old_model: str, new_model: str,
         task_line  = "Analyse the quality impact of a model swap from " + old_model + " to " + new_model + "."
         model_line = "Old model: " + old_model + "\nNew model: " + new_model
         questions  = (
-            "Using your knowledge of " + old_model + " and " + new_model + " - their documented differences in "
-            "capability, training cutoff, instruction-following behaviour, and factual accuracy - "
-            "tell the story of what happened when this agent moved from one model to the other.\n\n"
-            "Cover: which cases changed and why (ground every claim in the evidence above); "
-            "what the pattern of failures says about the new model's behaviour in this agent's domain; "
-            "what stayed stable and what that reveals about the agent's strengths; "
-            "and what a solution architect should do next - concrete system prompt changes, "
-            "few-shot examples, or a rollback - tied directly to the failure pattern you identified."
+            "Tell the story of what happened when this agent moved from " + old_model + " to " + new_model + ".\n\n"
+            "Ground every claim solely in the evidence above — the scores, statuses, and evaluator reasons "
+            "in the case data. Do not assume or speculate about model capabilities, training data, "
+            "or architecture beyond what the results directly show.\n\n"
+            "Cover: which cases changed and why (cite the specific case evidence); "
+            "what the pattern of failures reveals about how the new model handles this agent's tasks; "
+            "what stayed stable and what that reveals about the agent's strengths."
         )
 
     return (
@@ -302,10 +302,10 @@ def _build_prompt(bot_name: str, old_model: str, new_model: str,
         "Your audience is a mixed group: solution architects who care about root cause and technical remediation, "
         "and business stakeholders who care about impact and decision. "
         "Write as if you are briefing both in the same room — tell them a story about what happened to this agent, "
-        "not a report. Use a narrative voice: set the scene, build to the finding, land on a clear verdict. "
+        "not a report. Use a narrative voice: set the scene, build to the finding, land on best-practice guidance. "
         "No bullet lists. No headers. No numbered sections. Flowing prose only, "
         "organised as: what changed and where, why it happened (grounded in the case evidence), "
-        "what it means for the agent's users, and what to do next.\n\n"
+        "what it means for the agent's users, and what the best practice response looks like.\n\n"
         "## Task\n" + task_line + "\n\n"
         "## Agent\n"
         "Name: " + bot_name + instructions_section + "\n"
@@ -319,9 +319,35 @@ def _build_prompt(bot_name: str, old_model: str, new_model: str,
         "## Research questions\n"
         + questions + "\n\n"
         "Write 3 to 5 paragraphs. Open with what the data revealed the moment runs were compared. "
-        "Build through the evidence to explain why. Close with a single, unambiguous sentence: "
-        "PROCEED, INVESTIGATE, or REVERT - and the one reason that drives that call. "
+        "Build through the evidence to explain why. Close with the best-practice response — "
+        "what a skilled Copilot Studio architect should do next, grounded in the failure pattern above. "
         "Speak plainly. Every claim must be traceable to a specific case or metric in the data above."
+    )
+
+
+def _build_bp_prompt(bot_name: str, old_model: str, new_model: str,
+                     analysis: str, classifications: list[dict]) -> str:
+    """Second-call prompt: best-practice recommendations grounded in the analysis."""
+    regressed = [c["key"] for c in classifications if c["verdict"] == "REGRESSED"]
+    improved  = [c["key"] for c in classifications if c["verdict"] == "IMPROVED"]
+    metric_ctx = ""
+    if regressed:
+        metric_ctx += f"Regressed: {', '.join(regressed)}\n"
+    if improved:
+        metric_ctx += f"Improved: {', '.join(improved)}\n"
+    return (
+        "You are āshokā. You produced this analysis:\n\n"
+        f"{analysis}\n\n"
+        f"Agent: {bot_name}  ·  {old_model} → {new_model}\n"
+        f"{metric_ctx}\n"
+        "In 1-2 paragraphs of flowing prose — no headers, no bullets — "
+        "add the best-practice layer for a Microsoft Copilot Studio solution architect. "
+        "Consider: system prompt restructuring, grounding with knowledge sources, "
+        "expanding test coverage to target the failing patterns, rollback decision criteria, "
+        "and communicating impact to business stakeholders. "
+        "Base every recommendation solely on the evidence in the analysis above — "
+        "no assumptions, no speculation beyond what the data shows. "
+        "Write as a natural continuation of the narrative."
     )
 
 
@@ -358,7 +384,7 @@ def analyse_variation(bot_name: str, old_model: str, new_model: str,
 
     log      = logger_mod.get()
     model_id = _model(cfg)
-    log.debug(f"LLM request — {bot_name} ({old_model} → {new_model}) model={model_id}",
+    log.debug(f"LLM analysis call 1 — {bot_name} ({old_model} → {new_model}) model={model_id}",
               extra={"bot": bot_name, "model": model_id, "prompt": prompt})
     try:
         client = _build_client(cfg)
@@ -366,14 +392,31 @@ def analyse_variation(bot_name: str, old_model: str, new_model: str,
         resp   = client.chat.completions.create(
             model=model_id,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=1500,
+            max_tokens=1200,
         )
-        text        = resp.choices[0].message.content
-        duration_ms = int((time.monotonic() - t0) * 1000)
-        log.debug(f"LLM response — {bot_name} {len(text)} chars {duration_ms}ms",
+        analysis_text = resp.choices[0].message.content
+        duration_ms   = int((time.monotonic() - t0) * 1000)
+        log.debug(f"LLM analysis call 1 complete — {bot_name} {len(analysis_text)} chars {duration_ms}ms",
                   extra={"bot": bot_name, "model": model_id,
-                         "response": text, "duration_ms": duration_ms})
-        return text
+                         "response": analysis_text, "duration_ms": duration_ms})
+
+        non_stable = [c for c in classifications if c["verdict"] in ("REGRESSED", "IMPROVED")]
+        if non_stable:
+            bp_prompt = _build_bp_prompt(bot_name, old_model, new_model, analysis_text, classifications)
+            log.debug(f"LLM analysis call 2 (best practices) — {bot_name}",
+                      extra={"bot": bot_name, "model": model_id, "prompt": bp_prompt})
+            bp_resp = client.chat.completions.create(
+                model=model_id,
+                messages=[{"role": "user", "content": bp_prompt}],
+                max_tokens=400,
+            )
+            bp_text     = bp_resp.choices[0].message.content
+            bp_duration = int((time.monotonic() - t0) * 1000) - duration_ms
+            log.debug(f"LLM analysis call 2 complete — {bot_name} {len(bp_text)} chars {bp_duration}ms",
+                      extra={"bot": bot_name, "model": model_id, "response": bp_text})
+            return analysis_text + "\n\n" + bp_text
+
+        return analysis_text
     except Exception as e:
         log.error(f"LLM analysis failed for {bot_name}: {e}",
                   extra={"bot": bot_name, "model": model_id, "error_detail": str(e)})
