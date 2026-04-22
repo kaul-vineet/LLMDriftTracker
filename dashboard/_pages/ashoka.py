@@ -599,7 +599,18 @@ def page_overview(bots, raw_events):
     st.markdown("<div class='sec-label'>MISSION TIMELINE</div>", unsafe_allow_html=True)
 
     model_lookup = {b["botId"]: b.get("modelVersion","") for b in bots}
-    all_events   = _build_timeline_events(raw_events, model_lookup)[:15]
+    _NOISE       = ("cycle_start", "stable", "regression", "improvement")
+    live         = _build_timeline_events(raw_events, model_lookup)[:15]
+
+    # Pin agent_start / agent_stop at the bottom if they were pushed off by eval cycles
+    _visible_ts  = {e.get("ts") for e in [r for r in raw_events if r.get("event") not in _NOISE][:15]}
+    _pinned      = []
+    for _etype in ("agent_stop", "agent_start"):
+        _match = next((e for e in raw_events if e.get("event") == _etype), None)
+        if _match and _match.get("ts") not in _visible_ts:
+            _pinned.extend(_build_timeline_events([_match], model_lookup))
+
+    all_events = live + _pinned
 
     parts = []
     for ev in all_events:
