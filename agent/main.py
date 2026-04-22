@@ -606,6 +606,7 @@ def main():
         watcher.join()   # keeps main thread alive; both are daemon so Ctrl-C exits cleanly
         evaluator.join()
     finally:
+        ev.agent_stop(store_dir)
         _remove_pid(store_dir)
 
 

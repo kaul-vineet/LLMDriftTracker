@@ -428,6 +428,7 @@ _V_COLORS = {"REGRESSED":C_RED,"IMPROVED":C_GREEN,"STABLE":C_DIM,"NEW":C_GOLD,"B
 # ── Timeline helpers ──────────────────────────────────────────────────────────
 _EVENT_META = {
     "agent_start":   ("info","🟢","AGENT START", "new"),
+    "agent_stop":    ("warn","🔴","AGENT STOP",  "warn"),
     "model_change":  ("warn","🔄","MODEL SHIFT", "warn"),
     "eval_queued":   ("info","⏳","EVAL QUEUED", "new"),
     "agent_eval":    ("info","🤖","AGENT EVAL",  "new"),
