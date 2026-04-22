@@ -598,7 +598,12 @@ def page_overview(bots, raw_events):
 
     # ── MISSION TIMELINE ─────────────────────────────────────────────────────
     st.markdown("<div class='sec-label'>MISSION TIMELINE</div>", unsafe_allow_html=True)
+    _timeline_live(bots)
 
+
+@st.fragment(run_every=10)
+def _timeline_live(bots):
+    raw_events   = load_events(STORE_DIR)
     model_lookup = {b["botId"]: b.get("modelVersion","") for b in bots}
     live         = _build_timeline_events(raw_events, model_lookup)[:15]
 
