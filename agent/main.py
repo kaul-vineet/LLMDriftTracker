@@ -367,6 +367,16 @@ def run_cycle(cfg: dict, force: bool = False):
                                    test_sets, prev_run, cfg,
                                    instructions=bot.get("instructions", ""))
 
+            # Persist the LLM analysis into the current run's run.json so the dashboard
+            # can display it immediately without requiring the user to click "Ask āshokā".
+            # The analysis is keyed by the baseline (previous) run folder name, matching
+            # the schema used by the dashboard's patch_run calls.
+            _analysis    = br.get("analysis", "")
+            _prev_folder = prev_run.get("_folder", "") if prev_run else ""
+            if _analysis and _prev_folder:
+                store.patch_run(store_dir, bot_id, run_folder,
+                                {"analyses": {_prev_folder: _analysis}})
+
             cls         = br.get("classifications", [])
             reg_metrics = [c["key"] for c in cls if c["verdict"] == "REGRESSED"]
             imp_metrics = [c["key"] for c in cls if c["verdict"] == "IMPROVED"]
