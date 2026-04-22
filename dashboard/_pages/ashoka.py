@@ -428,14 +428,12 @@ _V_COLORS = {"REGRESSED":C_RED,"IMPROVED":C_GREEN,"STABLE":C_DIM,"NEW":C_GOLD,"B
 # ── Timeline helpers ──────────────────────────────────────────────────────────
 _EVENT_META = {
     "model_change":  ("warn","🔄","MODEL SHIFT","warn"),
-    "eval_queued":   ("info","⏳","QUEUED",     "new"),
+    "eval_queued":   ("info","⚡","USER EVAL",  "new"),
     "eval_start":    ("info","🚀","EVAL START", "new"),
     "eval_complete": ("info","✅","EVAL DONE",  "stb"),
     "eval_timeout":  ("bad", "⏱️","TIMEOUT",    "reg"),
     "eval_no_sets":  ("warn","📭","NO TEST SETS","warn"),
-    "regression":    ("bad", "📉","REGRESSION", "reg"),
-    "improvement":   ("ok",  "📈","IMPROVED",   "imp"),
-    "force_eval":    ("info","⚡","FORCE EVAL", "new"),
+    "force_eval":    ("info","⚡","USER EVAL",  "new"),
     "error":         ("bad", "🔥","ERROR",       "reg"),
 }
 
@@ -444,7 +442,7 @@ def _build_timeline_events(raw, model_lookup: dict | None = None):
     out = []
     for e in raw:
         et = e.get("event","")
-        if et in ("cycle_start","stable"):
+        if et in ("cycle_start", "stable", "regression", "improvement"):
             continue
         dot, icon, badge, badge_c = _EVENT_META.get(et, ("info","·",et.upper(),"stb"))
         if et == "eval_complete":
