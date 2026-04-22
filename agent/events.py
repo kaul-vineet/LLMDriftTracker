@@ -5,17 +5,22 @@ One JSON object per line in {store_dir}/events.jsonl.
 The dashboard reads this file to render the mission timeline.
 
 Event types:
-  cycle_start     — poll cycle began
+  agent_start     — agent process started
+  agent_stop      — agent process stopped
+  scan_start      — watcher began its first active scan
+  scan_end        — watcher scan session ended (emitted before agent_stop)
+  cycle_start     — poll cycle began (pinned as heartbeat; not shown in main timeline)
   model_change    — model version shift detected for a bot
+  agent_eval      — eval queued automatically on model change
+  eval_queued     — eval queued from the dashboard Force Eval button
+  force_eval      — force-eval triggered (file trigger or CLI flag)
   eval_start      — eval triggered for a bot / test set
   eval_complete   — eval finished (includes pass rate + verdict)
   eval_timeout    — eval polling timed out
   eval_no_sets    — no test sets found for bot; skipped
-  regression      — one or more metrics regressed
-  improvement     — one or more metrics improved
-  stable          — no change detected
-  eval_queued     — eval queued from the dashboard Force Eval button
-  force_eval      — force-eval triggered (file trigger or CLI flag)
+  regression      — one or more metrics regressed (written; filtered from timeline)
+  improvement     — one or more metrics improved (written; filtered from timeline)
+  stable          — no change detected (written; filtered from timeline)
   error           — unhandled exception during a cycle
 """
 import json
@@ -143,6 +148,15 @@ def error(store_dir: str, bot_name: str, bot_id: str, err: str):
 
 def agent_stop(store_dir: str):
     _write(store_dir, "agent_stop", detail="Agent process stopped")
+
+
+def scan_start(store_dir: str, n_bots: int):
+    _write(store_dir, "scan_start",
+           detail=f"Watcher began scanning {n_bots} agent(s)")
+
+
+def scan_end(store_dir: str):
+    _write(store_dir, "scan_end", detail="Watcher scan cycle completed — agent exiting")
 
 
 def agent_start(store_dir: str, watch_interval_s: int, n_envs: int, n_bots: int):

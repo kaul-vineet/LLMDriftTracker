@@ -427,17 +427,20 @@ _V_COLORS = {"REGRESSED":C_RED,"IMPROVED":C_GREEN,"STABLE":C_DIM,"NEW":C_GOLD,"B
 
 # ── Timeline helpers ──────────────────────────────────────────────────────────
 _EVENT_META = {
-    "agent_start":   ("info","🟢","AGENT START", "new"),
-    "agent_stop":    ("warn","🔴","AGENT STOP",  "warn"),
-    "model_change":  ("warn","🔄","MODEL SHIFT", "warn"),
-    "eval_queued":   ("info","⏳","EVAL QUEUED", "new"),
-    "agent_eval":    ("info","🤖","AGENT EVAL",  "new"),
-    "eval_start":    ("info","🚀","EVAL START",  "new"),
-    "eval_complete": ("info","✅","EVAL DONE",   "stb"),
-    "eval_timeout":  ("bad", "⏱️","TIMEOUT",     "reg"),
-    "eval_no_sets":  ("warn","📭","NO TEST SETS","warn"),
-    "force_eval":    ("info","⚡","USER EVAL",   "new"),
-    "error":         ("bad", "🔥","ERROR",        "reg"),
+    "agent_start":   ("info","🟢","AGENT START",  "new"),
+    "agent_stop":    ("warn","🔴","AGENT STOP",   "warn"),
+    "scan_start":    ("info","🔍","SCAN START",   "new"),
+    "scan_end":      ("warn","🔲","SCAN END",     "warn"),
+    "cycle_start":   ("info","📡","SCANNING",     "stb"),
+    "model_change":  ("warn","🔄","MODEL SHIFT",  "warn"),
+    "eval_queued":   ("info","⏳","EVAL QUEUED",  "new"),
+    "agent_eval":    ("info","🤖","AGENT EVAL",   "new"),
+    "eval_start":    ("info","🚀","EVAL START",   "new"),
+    "eval_complete": ("info","✅","EVAL DONE",    "stb"),
+    "eval_timeout":  ("bad", "⏱️","TIMEOUT",      "reg"),
+    "eval_no_sets":  ("warn","📭","NO TEST SETS", "warn"),
+    "force_eval":    ("info","⚡","USER EVAL",    "new"),
+    "error":         ("bad", "🔥","ERROR",         "reg"),
 }
 
 def _build_timeline_events(raw, model_lookup: dict | None = None):
@@ -488,8 +491,9 @@ def render_header(bots, raw_events, page="overview"):
         st.markdown(f"""
         <style>
           .sys-dot-hdr {{
-            width:8px;height:8px;border-radius:50%;background:{sys_color};
-            box-shadow:0 0 6px {sys_color};display:inline-block;margin-right:6px;
+            width:16px;height:16px;border-radius:50%;background:{sys_color};
+            box-shadow:0 0 10px {sys_color},0 0 20px {sys_color}44;
+            display:inline-block;margin-right:8px;
             animation:{blink_anim};vertical-align:middle;
           }}
           .radar-wrap {{ width:100px;height:100px; }}
@@ -602,10 +606,14 @@ def page_overview(bots, raw_events):
     _NOISE       = ("cycle_start", "stable", "regression", "improvement")
     live         = _build_timeline_events(raw_events, model_lookup)[:15]
 
-    # Pin agent_start / agent_stop at the bottom if they were pushed off by eval cycles
+    # Pin lifecycle + heartbeat events at the bottom if pushed off by eval cycles
     _visible_ts  = {e.get("ts") for e in [r for r in raw_events if r.get("event") not in _NOISE][:15]}
     _pinned      = []
-    for _etype in ("agent_stop", "agent_start"):
+    # Most recent cycle_start = proof agent is scanning even when no changes detected
+    _last_scan = next((e for e in raw_events if e.get("event") == "cycle_start"), None)
+    if _last_scan and _last_scan.get("ts") not in _visible_ts:
+        _pinned.extend(_build_timeline_events([_last_scan], model_lookup))
+    for _etype in ("scan_end", "scan_start", "agent_stop", "agent_start"):
         _match = next((e for e in raw_events if e.get("event") == _etype), None)
         if _match and _match.get("ts") not in _visible_ts:
             _pinned.extend(_build_timeline_events([_match], model_lookup))
