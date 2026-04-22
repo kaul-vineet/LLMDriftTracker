@@ -444,14 +444,17 @@ The main view. Your eval control panel.
   🔴 HR Bot        gpt-4o   Apr 17 · 2 runs   →
 
 ── MISSION TIMELINE ───────────────────────────────────────────────
-  Apr 22  🟢 AGENT START   Watching 1 agent(s) across 1 environment(s)
-  Apr 22  ⏳ EVAL QUEUED   Safe Travels  Eval queued from dashboard
-  Apr 22  🚀 EVAL START    Safe Travels  · gpt-4o  Eval triggered — fetching test sets
-  Apr 22  ✅ STABLE        Safe Travels  · gpt-4o  pass 80% · avg score 60.0
-  Apr 18  🤖 AGENT EVAL    Safe Travels  gpt-4o → gpt-4o-mini (auto-detected)
-  Apr 18  🔄 MODEL SHIFT   Safe Travels  gpt-4o → gpt-4o-mini
-  Apr 18  🚀 EVAL START    Safe Travels  · gpt-4o-mini  Eval triggered — fetching test sets
-  Apr 18  ✅ REGRESSED     Safe Travels  · gpt-4o-mini  pass 70% · avg score 47.5
+  Apr 22  🤖 AGENT EVAL    Safe Travels  gpt-4o → gpt-4o-mini (auto-detected)
+  Apr 22  🔄 MODEL SHIFT   Safe Travels  gpt-4o → gpt-4o-mini
+  Apr 22  🚀 EVAL START    Safe Travels  · gpt-4o-mini  Eval triggered — fetching test sets
+  Apr 22  ✅ REGRESSED     Safe Travels  · gpt-4o-mini  pass 70% · avg score 47.5
+  Apr 18  ⏳ EVAL QUEUED   Safe Travels  Eval queued from dashboard
+  Apr 18  🚀 EVAL START    Safe Travels  · gpt-4o  Eval triggered — fetching test sets
+  Apr 18  ✅ STABLE        Safe Travels  · gpt-4o  pass 80% · avg score 60.0
+  ·  ·  ·  (pinned at bottom — always visible)  ·  ·  ·
+  Apr 22  📡 SCANNING      Scheduled poll cycle started   ← heartbeat: last scan time
+  Apr 22  🔍 SCAN START    Watcher began scanning 2 agent(s)
+  🟢 AGENT START   Watching 2 agent(s) across 1 environment(s)
 ```
 
 Click any bot to open the **detail view**:
@@ -495,21 +498,26 @@ Real-time view into `data/agent/agent.log`.
 
 Every agent action is appended to `data/agent/events.jsonl` — an append-only audit trail rendered in the Mission Timeline on the home page.
 
-| Tag | Event type | Fires when |
-|---|---|---|
-| 🟢 `AGENT START` | `agent_start` | Agent process boots |
-| 🔴 `AGENT STOP` | `agent_stop` | Agent process exits (clean, Ctrl-C, or exception) |
-| 🔄 `MODEL SHIFT` | `model_change` | Watcher detects a model version change in Dataverse |
-| 🤖 `AGENT EVAL` | `agent_eval` | Same moment — watcher queues eval automatically |
-| ⏳ `EVAL QUEUED` | `eval_queued` | User clicks Force Eval button in dashboard |
-| ⚡ `USER EVAL` | `force_eval` | Global `force_eval.trigger` file consumed |
-| 🚀 `EVAL START` | `eval_start` | Eval API call initiated |
-| ✅ `STABLE` / `IMPROVED` / `REGRESSED` | `eval_complete` | Eval finished — verdict derived from metric comparison |
-| ⏱️ `TIMEOUT` | `eval_timeout` | Eval polling timed out |
-| 📭 `NO TEST SETS` | `eval_no_sets` | Bot has no test sets configured |
-| 🔥 `ERROR` | `error` | Unhandled exception during eval processing |
+| Tag | Event type | Fires when | Timeline |
+|---|---|---|---|
+| 🟢 `AGENT START` | `agent_start` | Agent process boots | Always pinned at bottom |
+| 🔴 `AGENT STOP` | `agent_stop` | Agent process exits (clean, Ctrl-C, or exception) | Always pinned |
+| 🔍 `SCAN START` | `scan_start` | Watcher completes its first active scan | Always pinned |
+| 🔲 `SCAN END` | `scan_end` | Watcher session ends (emitted just before agent_stop) | Always pinned |
+| 📡 `SCANNING` | `cycle_start` | Every poll cycle (newest one pinned as heartbeat) | Pinned — most recent only |
+| 🔄 `MODEL SHIFT` | `model_change` | Watcher detects a model version change in Dataverse | Shown |
+| 🤖 `AGENT EVAL` | `agent_eval` | Same moment — watcher queues eval automatically | Shown |
+| ⏳ `EVAL QUEUED` | `eval_queued` | User clicks Force Eval button in dashboard | Shown |
+| ⚡ `USER EVAL` | `force_eval` | Global `force_eval.trigger` file consumed | Shown |
+| 🚀 `EVAL START` | `eval_start` | Eval API call initiated | Shown |
+| ✅ `STABLE` / `IMPROVED` / `REGRESSED` | `eval_complete` | Eval finished — verdict from metric comparison | Shown |
+| ⏱️ `TIMEOUT` | `eval_timeout` | Eval polling timed out | Shown |
+| 📭 `NO TEST SETS` | `eval_no_sets` | Bot has no test sets configured | Shown |
+| 🔥 `ERROR` | `error` | Unhandled exception during eval processing | Shown |
 
-`cycle_start`, `stable`, `regression`, and `improvement` events are written to `events.jsonl` but filtered from the timeline (too noisy — the `eval_complete` event already carries the verdict and metric summary).
+`stable`, `regression`, and `improvement` are written to `events.jsonl` but never shown in the timeline — the `eval_complete` event already carries the verdict and metric summary.
+
+**Lifecycle pinning:** `agent_start`, `agent_stop`, `scan_start`, `scan_end`, and the most recent `cycle_start` (SCANNING heartbeat) are always shown at the bottom of the timeline regardless of how many eval cycles fill the visible window. Even with no model changes, the timeline proves the agent is running and shows the timestamp of its last scan.
 
 ---
 
