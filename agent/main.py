@@ -61,7 +61,8 @@ def _fatal_auth_error(store_dir: str, msg: str, log):
     os._exit(1)   # terminate all threads immediately
 
 
-def load_cfg(path: str = "config.json") -> dict:
+def load_cfg(path: str = None) -> dict:
+    path = path or os.environ.get("CONFIG_PATH", "config.json")
     with open(path, encoding="utf-8") as f:
         cfg = json.loads(f.read())
     cfg.setdefault("llm", {})

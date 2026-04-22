@@ -26,8 +26,9 @@ from agent.events import load_events, eval_queued as _ev_queued
 from agent.store import patch_run as _patch_run
 from spinner import spinner as _spinner
 
-STORE_DIR = os.environ.get("STORE_DIR", "data")
-PID_FILE  = os.path.join(STORE_DIR, "agent", "agent.pid")
+STORE_DIR   = os.environ.get("STORE_DIR", "data")
+CONFIG_PATH = os.environ.get("CONFIG_PATH", "config.json")
+PID_FILE    = os.path.join(STORE_DIR, "agent", "agent.pid")
 
 
 def _agent_running():
@@ -557,7 +558,7 @@ def page_overview(bots, raw_events):
         # Show configured bots from config.json even before first run
         _cfg_bots = []
         try:
-            _cfg = json.loads(open("config.json").read())
+            _cfg = json.loads(open(CONFIG_PATH).read())
             for _env in _cfg.get("environments", []):
                 _monitored = _env.get("monitoredBots", [])
                 if _monitored:
@@ -947,7 +948,7 @@ def page_bot_detail(bot):
             if st.button("▶ Ask āshokā", key=f"btn_ana_{_ana_key}", type="primary"):
                 with st.spinner("Searching and consulting āshokā…"):
                     try:
-                        _cfg = json.loads(open("config.json").read())
+                        _cfg = json.loads(open(CONFIG_PATH).read())
                         from agent.reasoning import analyse_variation as _analyse
                         _text = _analyse(
                             bot_name=name, old_model=_old_m, new_model=_new_m,

@@ -15,7 +15,7 @@ from theme import C_BG, C_CARD, C_BORDER, C_CYAN, C_MAGENTA, C_GOLD, C_RED, C_GR
 
 EVAL_SCOPES = ["https://api.powerplatform.com/.default"]
 STORE_DIR   = os.environ.get("STORE_DIR", "data")
-CONFIG_PATH = "config.json"
+CONFIG_PATH = os.environ.get("CONFIG_PATH", "config.json")
 DEFAULT_CLIENT_ID = "774142ce-9070-446b-83ac-e2053c716879"
 
 st.markdown(f"""

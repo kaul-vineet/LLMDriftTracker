@@ -1,12 +1,42 @@
-msal_token_cache.json
+# Secrets and local config — must never be baked into the image
 config.json
+msal_token_cache.json
+.env
+
+# Runtime state — varies per machine, not part of the image
 data/
+
+# Python bytecode
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
 .venv/
 venv/
-.env
+env/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git and CI
 .git/
+.github/
+.gitignore
+
+# Dev tooling
 .claude/
 scripts/
+
+# Docs
 README.md
+*.md
+
+# Docker files themselves (build context is repo root)
+docker/
+Dockerfile

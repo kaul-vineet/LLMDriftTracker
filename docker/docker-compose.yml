@@ -1,62 +1,147 @@
-# ASHOKA — two services, one image, shared volume
+# ── ĀSHOKĀ · Docker Compose ───────────────────────────────────────────────────
 #
-# Local usage (run from repo root):
-#   docker compose -f docker/docker-compose.yml up --build -d
-#   docker compose -f docker/docker-compose.yml logs -f ashoka-agent
-#   open http://localhost:8501
+# Two services, one image, shared volume.
 #
-# Azure Container Apps:
-#   - Build + push image to ACR
-#   - Create two container apps from the same image
-#   - Mount an Azure Files share at /app/data on both
-#   - Set env vars (LLM_API_KEY, SMTP_PASSWORD, etc.) as secrets
-#   - Override startup command per container app (same as below)
+# Architecture
+# ────────────
+#   ashoka-agent      Autonomous background process. Polls Dataverse every
+#                     poll_interval_minutes for model version changes, triggers
+#                     Copilot Studio evaluations, runs LLM analysis, persists
+#                     results and sends email reports.
 #
-# Secrets: never put real values here.
-# Use a .env file (gitignored) or Azure Key Vault references for production.
+#   ashoka-dashboard  Streamlit web app (http://localhost:8501). Visualises eval
+#                     runs, metric trends, āshokā analysis. Also hosts the Setup
+#                     page where you configure credentials and save config.json.
+#
+# Both services share:
+#   • The same Docker image  (built once from docker/Dockerfile)
+#   • /app/data volume       (eval runs, event log, MSAL token cache)
+#   • /app/config.json       (mounted read-write from the repo root)
+#
+# Quick start (run from repo root)
+# ─────────────────────────────────
+#   1. Copy config.example.json → config.json and fill in your values, OR
+#      start the stack, open http://localhost:8501, go to Setup, and save from there.
+#
+#   2. docker compose -f docker/docker-compose.yml up --build -d
+#
+#   3. Tail agent logs:
+#        docker compose -f docker/docker-compose.yml logs -f ashoka-agent
+#
+#   4. Open dashboard:
+#        open http://localhost:8501   (macOS)
+#        start http://localhost:8501  (Windows)
+#
+# Common operations
+# ──────────────────
+#   Stop:          docker compose -f docker/docker-compose.yml down
+#   Rebuild image: docker compose -f docker/docker-compose.yml build --no-cache
+#   Shell into agent:
+#     docker compose -f docker/docker-compose.yml exec ashoka-agent bash
+#   Inspect stored data:
+#     docker compose -f docker/docker-compose.yml exec ashoka-agent ls /app/data
+#
+# Persistent data
+# ────────────────
+# All eval results, logs, and the MSAL token cache are written to /app/data inside
+# the container.  By default this is bind-mounted to ../data (i.e. the repo's data/
+# directory) so data survives container restarts and is directly inspectable on disk.
+#
+# To use a named Docker volume instead (better isolation, follows you across moves):
+#   1. Change the volumes section below to:
+#        ashoka-data:
+#   2. Replace both '../data:/app/data' entries with:
+#        - ashoka-data:/app/data
+#   3. Re-create the containers.
+#
+# Secrets
+# ────────
+# All secrets (LLM API key, SMTP password, Tavily key, Azure app registration)
+# live in config.json only — there is no .env file, no Docker secret, no
+# environment variable for application secrets.  config.json is bind-mounted into
+# the container and is NOT baked into the image.  Keep it out of version control
+# (.gitignore already excludes it).
+# ─────────────────────────────────────────────────────────────────────────────
 
 services:
 
+  # ── Agent ──────────────────────────────────────────────────────────────────
   ashoka-agent:
     build:
-      context: ..
+      context: ..                   # repo root — Dockerfile references agent/, dashboard/, .streamlit/
       dockerfile: docker/Dockerfile
     image: ashoka:latest
     container_name: ashoka-agent
     restart: unless-stopped
-    command: python -m agent.main
-    volumes:
-      - ../data:/app/data
-      - ../config.json:/app/config.json:ro
-      - ../msal_token_cache.json:/app/msal_token_cache.json
-    environment:
-      LLM_API_KEY:    ${LLM_API_KEY:-}
-      LLM_BASE_URL:   ${LLM_BASE_URL:-}
-      LLM_MODEL:      ${LLM_MODEL:-}
-      SMTP_HOST:      ${SMTP_HOST:-}
-      SMTP_USER:      ${SMTP_USER:-}
-      SMTP_PASSWORD:  ${SMTP_PASSWORD:-}
-      SMTP_RECIPIENT: ${SMTP_RECIPIENT:-}
 
+    # Runs the autonomous polling loop.
+    command: python -m agent.main
+
+    environment:
+      # Tell the agent where to read its config and write its data.
+      # These match the defaults in Dockerfile but are explicit here for clarity.
+      STORE_DIR:   /app/data
+      CONFIG_PATH: /app/config.json
+
+    volumes:
+      # Run data, event log, MSAL token cache.
+      # Bind-mounted to the repo's data/ directory so you can inspect it directly.
+      - ../data:/app/data
+
+      # Config and secrets.  Mounted read-write so the Setup page (dashboard) can
+      # save changes that the agent picks up on its next poll cycle.
+      # The file must exist before starting — copy config.example.json → config.json.
+      - ../config.json:/app/config.json
+
+    healthcheck:
+      # Agent writes to agent.log once its first poll cycle begins.
+      # If the file doesn't exist after start_period the agent failed to start.
+      test: ["CMD", "python", "-c",
+             "import os, sys; sys.exit(0 if os.path.exists('/app/data/agent/agent.log') else 1)"]
+      interval: 30s
+      timeout:  5s
+      retries:  3
+      start_period: 20s
+
+  # ── Dashboard ──────────────────────────────────────────────────────────────
   ashoka-dashboard:
+    # Re-uses the image built above — no second build step.
     image: ashoka:latest
     container_name: ashoka-dashboard
     restart: unless-stopped
+
+    # Runs the Streamlit web server.
+    # --server.fileWatcherType none  prevents Streamlit's inotify watcher from
+    #   spinning up inside the container (wastes CPU, not useful in production).
+    # --server.headless true         suppresses the browser-open prompt.
     command: >
       streamlit run dashboard/app.py
         --server.port 8501
         --server.address 0.0.0.0
         --server.headless true
         --server.fileWatcherType none
+
     ports:
-      - "8501:8501"
-    volumes:
-      - ../data:/app/data
-      - ../config.json:/app/config.json:ro
-      - ../msal_token_cache.json:/app/msal_token_cache.json
+      - "8501:8501"               # Change left side to expose on a different host port
+
     environment:
-      LLM_API_KEY:    ${LLM_API_KEY:-}
-      LLM_BASE_URL:   ${LLM_BASE_URL:-}
-      LLM_MODEL:      ${LLM_MODEL:-}
+      STORE_DIR:   /app/data
+      CONFIG_PATH: /app/config.json
+
+    volumes:
+      - ../data:/app/data          # Shared with agent — same eval data, same MSAL cache
+      - ../config.json:/app/config.json
+
     depends_on:
-      - ashoka-agent
+      ashoka-agent:
+        condition: service_started  # Wait for agent container to start (not healthy)
+                                    # so both boot roughly together on first run.
+
+    healthcheck:
+      # Streamlit exposes a health endpoint at /_stcore/health once ready.
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"]
+      interval: 30s
+      timeout:  10s
+      retries:  3
+      start_period: 30s             # Streamlit takes ~10s to import and start up

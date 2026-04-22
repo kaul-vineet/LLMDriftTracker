@@ -15,8 +15,9 @@ from dashboard.theme import (
     C_RED, C_GREEN, C_DIM, C_TEXT, FONT,
 )
 
-STORE_DIR = os.environ.get("STORE_DIR", "data")
-PID_FILE  = os.path.join(STORE_DIR, "agent", "agent.pid")
+STORE_DIR   = os.environ.get("STORE_DIR", "data")
+CONFIG_PATH = os.environ.get("CONFIG_PATH", "config.json")
+PID_FILE    = os.path.join(STORE_DIR, "agent", "agent.pid")
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -215,11 +216,11 @@ def _get_readiness():
     """Returns (ready: bool, issues: list[str])."""
     issues = []
 
-    if not os.path.exists("config.json"):
+    if not os.path.exists(CONFIG_PATH):
         return False, ["No config.json — complete Setup"]
 
     try:
-        cfg = json.loads(open("config.json").read())
+        cfg = json.loads(open(CONFIG_PATH).read())
     except Exception:
         return False, ["config.json unreadable"]
 
@@ -229,7 +230,7 @@ def _get_readiness():
     # Offline cache inspection only — no network call; stale tokens surface on the first agent run
     try:
         import msal as _msal
-        cp = cfg.get("token_cache_file", "msal_token_cache.json")
+        cp = cfg.get("token_cache_file", os.path.join(STORE_DIR, "agent", "msal_token_cache.json"))
         if os.path.exists(cp):
             _c = _msal.SerializableTokenCache(); _c.deserialize(open(cp).read())
             _a = _msal.PublicClientApplication(
