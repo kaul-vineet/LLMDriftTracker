@@ -530,10 +530,6 @@ def render_header(bots, raw_events, page="overview"):
             <div class='stat-value' style='color:{C_RED if n_reg_ev else C_DIM}'>{n_reg_ev}</div>
             <div class='stat-label'>Regressions</div>
           </div>
-          <div class='stat-cell'>
-            <div class='stat-value' style='color:{C_RED if n_reg else C_DIM}'>{n_reg}</div>
-            <div class='stat-label'>Alert Now</div>
-          </div>
         </div>
         """, unsafe_allow_html=True)
 
