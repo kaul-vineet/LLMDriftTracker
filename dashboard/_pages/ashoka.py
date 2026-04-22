@@ -518,7 +518,7 @@ def render_header(bots, raw_events, page="overview"):
     n_bots      = len(bots)
     n_plural    = "s" if n_bots != 1 else ""
     next_scan   = _next_scan_str(raw_events) if agent_up else ""
-    next_scan_html = (f" &nbsp;·&nbsp; <span style='color:{C_CYAN};font-weight:600'>{next_scan}</span>"
+    next_scan_html = (f" &nbsp;·&nbsp; <span style='color:{C_CYAN};font-weight:600;white-space:nowrap'>{next_scan}</span>"
                       if next_scan else "")
 
     if page == "overview":
