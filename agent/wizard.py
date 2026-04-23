@@ -462,7 +462,7 @@ def print_summary(cfg: dict):
         bots = env.get("monitoredBots", [])
         bot_label = f"{len(bots)} bot(s)" if bots else "all bots"
         print(f"  {GR}{BD}  │{RS}  {CY}●{RS}  {BD}{env['name']}{RS}  {DM}{bot_label}{RS}")
-    print(f"  {GR}{BD}  │{RS}  {DM}Poll every        {RS}{cfg.get('poll_interval_minutes', 10)} min")
+    print(f"  {GR}{BD}  │{RS}  {DM}Poll every        {RS}{cfg.get('poll_interval_minutes')} min")
     print(f"  {GR}{BD}  │{RS}  {DM}LLM model         {RS}{llm.get('model', '—')}")
     print(f"  {GR}{BD}  │{RS}  {DM}Reports to        {RS}{recipient}")
     print(f"  {GR}{BD}  └─────────────────────────────────────────────────┘{RS}\n")

@@ -84,8 +84,17 @@ def _fatal_auth_error(store_dir: str, msg: str, log):
 
 def load_cfg(path: str = None) -> dict:
     path = path or os.environ.get("CONFIG_PATH", "config.json")
+    config_dir    = os.path.dirname(os.path.abspath(path))
+    defaults_path = os.path.join(config_dir, "defaults.json")
+    defaults: dict = {}
+    try:
+        with open(defaults_path, encoding="utf-8") as f:
+            defaults = json.loads(f.read())
+    except Exception:
+        pass
     with open(path, encoding="utf-8") as f:
-        cfg = json.loads(f.read())
+        user_cfg = json.loads(f.read())
+    cfg = {**defaults, **user_cfg}
     cfg.setdefault("llm", {})
     cfg.setdefault("smtp", {})
     return cfg
@@ -199,7 +208,7 @@ def _save_and_notify(bot_results, store_dir, cfg):
     os.makedirs(store_dir, exist_ok=True)
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(html)
-    _prune_reports(store_dir, keep=cfg.get("max_runs_per_bot", 6))
+    _prune_reports(store_dir, keep=cfg.get("max_runs_per_bot"))
     lore.report_saved(report_path)
     notifier.send_report(html, cfg)
     lore.cycle_complete(len(bot_results))
@@ -335,8 +344,8 @@ def run_cycle(cfg: dict, force: bool = False):
     # ── Phase 2: single-threaded round-robin poll until all done ────────────
     results_by_bot = eval_client.poll_all_runs(
         pool, cfg,
-        timeout_s=cfg.get("eval_poll_timeout_seconds", 1200),
-        interval_s=cfg.get("eval_poll_interval_seconds", 45),
+        timeout_s=cfg.get("eval_poll_timeout_seconds"),
+        interval_s=cfg.get("eval_poll_interval_seconds"),
         store_dir=store_dir,
     )
 
@@ -382,7 +391,7 @@ def run_cycle(cfg: dict, force: bool = False):
                 trigger_source=ctx["trigger_source"],
             )
             store.prune_runs(store_dir, bot_id,
-                             keep=cfg.get("max_runs_per_bot", 6))
+                             keep=cfg.get("max_runs_per_bot"))
 
             br = _build_bot_result(bot_name, old_ver, curr_ver, run_folder,
                                    test_sets, prev_run, cfg,
@@ -481,7 +490,7 @@ def _watch_loop(cfg: dict):
     store_dir  = cfg.get("store_dir", "data")
     # Clamp to a safe minimum — a 0/negative value would spin the watcher thread
     # at 100% CPU and hammer the Dataverse API.
-    _poll_min  = int(cfg.get("poll_interval_minutes", 2) or 2)
+    _poll_min  = int(cfg.get("poll_interval_minutes") or 1)
     interval_s = max(30, _poll_min * 60)
     log        = logger_mod.get()
     proc       = psutil.Process()
@@ -557,7 +566,7 @@ def _eval_loop(cfg: dict):
     store_dir  = cfg.get("store_dir", "data")
     log        = logger_mod.get()
     # Clamp to a safe minimum — otherwise a 0 value spins at 100% CPU.
-    interval_s = max(5, int(cfg.get("eval_loop_interval_seconds", 30) or 30))
+    interval_s = max(5, int(cfg.get("eval_loop_interval_seconds") or 5))
     while True:
         if os.path.exists(_shutdown_path(store_dir)):
             raise SystemExit(0)
@@ -614,12 +623,12 @@ def main():
         pass
     _clear_auth_error(store_dir)   # fresh start — clear any previous auth-error state
 
-    log = logger_mod.setup(store_dir, level=cfg.get("log_level", "INFO"))
+    log = logger_mod.setup(store_dir, level=cfg.get("log_level"))
 
     # ── Startup banner ────────────────────────────────────────────────────────
-    _watch_min = int(cfg.get("poll_interval_minutes", 2) or 2)
+    _watch_min = int(cfg.get("poll_interval_minutes") or 1)
     watch_s    = max(30, _watch_min * 60)
-    poll_s     = cfg.get("eval_poll_interval_seconds", 45)
+    poll_s     = cfg.get("eval_poll_interval_seconds")
     log.info(f"āshokā starting — checking every {watch_s}s ({_watch_min} min), polling every {poll_s}s")
 
     envs = cfg.get("environments", [])

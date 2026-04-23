@@ -301,8 +301,8 @@ def run_eval_for_bot(bot: dict, cfg: dict) -> dict[str, dict] | None:
             run_id = trigger_run(pp_env_id, bot_id, test_set_id, token)
             result = poll_run(
                 pp_env_id, bot_id, run_id, token,
-                timeout_s=cfg.get("eval_poll_timeout_seconds", 300),
-                interval_s=cfg.get("eval_poll_interval_seconds", 45),
+                timeout_s=cfg.get("eval_poll_timeout_seconds"),
+                interval_s=cfg.get("eval_poll_interval_seconds"),
             )
             metric_type = _infer_metric_type(result)
 

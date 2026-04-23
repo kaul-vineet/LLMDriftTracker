@@ -204,10 +204,17 @@ def _llm_validated():
 
 
 
-# ── Load existing config ──────────────────────────────────────────────────────
-_cfg = {}
+# ── Load defaults then overlay existing config ────────────────────────────────
+_defaults: dict = {}
 try:
-    _cfg = json.loads(open(CONFIG_PATH).read())
+    _defaults_path = os.path.join(os.path.dirname(os.path.abspath(CONFIG_PATH)), "defaults.json")
+    _defaults = json.loads(open(_defaults_path).read())
+except Exception:
+    pass
+
+_cfg = dict(_defaults)
+try:
+    _cfg.update(json.loads(open(CONFIG_PATH).read()))
 except Exception:
     pass
 
@@ -233,7 +240,7 @@ _defs = {
     "s_llm_url":        _llm.get("base_url", ""),
     "s_llm_model":      _llm.get("model", "gpt-4o"),
     "s_llm_api_ver":    _llm.get("api_version", ""),
-    "s_poll":          _cfg.get("poll_interval_minutes", 20),
+    "s_poll":          _cfg.get("poll_interval_minutes"),
     "s_smtp_host":     _smtp.get("host", ""),
     "s_smtp_port":     _smtp.get("port", 587),
     "s_smtp_user":     _smtp.get("user", ""),
@@ -948,8 +955,8 @@ cfg_out = {
     "token_cache_file":           st.session_state.s_cache_file,
     "store_dir":                  STORE_DIR,
     "poll_interval_minutes":      st.session_state.s_poll,
-    "eval_poll_timeout_seconds":  _cfg.get("eval_poll_timeout_seconds", 1200),
-    "eval_poll_interval_seconds": _cfg.get("eval_poll_interval_seconds", 45),
+    "eval_poll_timeout_seconds":  _cfg.get("eval_poll_timeout_seconds"),
+    "eval_poll_interval_seconds": _cfg.get("eval_poll_interval_seconds"),
     "tavily_api_key":             st.session_state.get("s_tavily_key", ""),
     "llm": {
         "base_url":    st.session_state.s_llm_url,
