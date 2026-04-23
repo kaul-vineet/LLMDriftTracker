@@ -204,7 +204,7 @@ You can use any OpenAI-compatible endpoint: OpenAI, Azure OpenAI, Azure AI Found
   Scheduled cron         →    trigger file    →    run eval, analyse, report  ← extend here
 ```
 
-To wire a new event source, write a `force_eval_{botId}.trigger` file to the `data/agent/` directory. The evaluator picks it up within 30 seconds. No code changes needed inside the core agent.
+To wire a new event source, write a `force_eval_{botId}.trigger` file to the `data/agent/` directory. The evaluator picks it up immediately — the watcher signals the evaluator thread the moment a trigger file appears. No code changes needed inside the core agent.
 
 **Examples of what you can build on top of āshokā:**
 - Run evals automatically on every Copilot Studio **publish** event (via Power Automate webhook → trigger file)
@@ -222,7 +222,7 @@ To wire a new event source, write a `force_eval_{botId}.trigger` file to the `da
 | 📋 | **Opt-in per bot** | Choose which bots to monitor — empty = watch all |
 | 🤖 | **Zero-touch eval** | Discovers all test sets, triggers Eval API, polls to completion automatically |
 | 🧠 | **LLM analysis** | Two-call approach: analysis grounded only in case data (no model assumptions), followed by architect best-practice recommendations when metrics change |
-| 📡 | **Event-driven** | File-based trigger system — any external event source can queue an eval in 30 seconds |
+| 📡 | **Event-driven** | File-based trigger system — any external event source can queue an eval; evaluator wakes immediately |
 | 📊 | **Any-run comparison** | Compare any two historical runs — not just the latest pair |
 | 🔐 | **Unified MSAL auth** | Single device-flow sign-in covers Eval API, Power Platform Inventory, and all Dataverse org URLs |
 | 📋 | **Event log** | Append-only `events.jsonl` — every agent action timestamped with tag |
@@ -652,11 +652,11 @@ No secrets in environment variables. All credentials — LLM API key, SMTP passw
 | 403 on Load Environments | App registration needs `EnvironmentManagement.Environments.Read` with admin consent |
 | SMTP failed | Office 365: host `smtp.office365.com`, port `587`, TLS — check password in Setup → Notifications |
 | Container exits immediately | `docker compose logs ashoka-agent` — check for missing volume mount or invalid `config.json` |
-| Timeline empty | Run a force eval from the bot detail page — it writes the first events to `data/agent/events.jsonl` |
+| Timeline empty | Start the agent process — `agent_start` is written to `data/agent/events.jsonl` on boot, before any eval runs |
 | Logs tab empty | Start the agent — `data/agent/agent.log` is created on first run |
 | LLM calls not visible in Logs | Set `log_level: "DEBUG"` in config — LLM and web API calls are at DEBUG level by default |
 | Memory warning in log | Agent RSS grew >50% from baseline — check for large Dataverse or eval API payloads |
-| Eval quota reached | Copilot Studio Eval API caps at ~20 evals per bot per 24 h — `error` is logged, next cycle retries |
+| Eval quota reached | Copilot Studio Eval API caps at ~20 evals per bot per 24 h — a `warning` is logged and the bot is skipped; the watcher re-triggers automatically next cycle |
 | `ask āshokā` shows button but no analysis | Analysis is auto-persisted on every agent run — click the button to regenerate on demand if the cached text is missing |
 
 ---

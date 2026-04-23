@@ -24,7 +24,6 @@ from agent.reasoning import (
 )
 from agent.events import load_events, eval_queued as _ev_queued
 from agent.store import patch_run as _patch_run
-from spinner import spinner as _spinner
 
 STORE_DIR   = os.environ.get("STORE_DIR", "data")
 CONFIG_PATH = os.environ.get("CONFIG_PATH", "config.json")
