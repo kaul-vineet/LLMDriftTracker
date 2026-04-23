@@ -55,9 +55,30 @@ def _clear_auth_error(store_dir: str):
         pass
 
 
+def _shutdown_path(store_dir: str) -> str:
+    return os.path.join(_agent_dir(store_dir), "shutdown.trigger")
+
+
+def _cleanup_all_locks(store_dir: str):
+    """Remove all eval lock and progress files left by mid-flight evals."""
+    adir = _agent_dir(store_dir)
+    if not os.path.exists(adir):
+        return
+    for fname in os.listdir(adir):
+        if (fname.startswith("eval_active_") and fname.endswith(".lock")) or \
+           (fname.startswith("eval_progress_") and fname.endswith(".json")):
+            try:
+                os.remove(os.path.join(adir, fname))
+            except Exception:
+                pass
+
+
 def _fatal_auth_error(store_dir: str, msg: str, log):
     log.critical(f"AUTH ERROR — agent shutting down: {msg}")
     _write_auth_error(store_dir, msg)
+    ev.agent_stop(store_dir)
+    _cleanup_all_locks(store_dir)
+    _remove_pid(store_dir)
     os._exit(1)   # terminate all threads immediately
 
 
@@ -444,11 +465,13 @@ def _consume_poll_trigger(store_dir: str) -> bool:
 
 
 def _interruptible_sleep(interval_s: int, store_dir: str):
-    """Sleep for interval_s but wake immediately if force_poll.trigger appears."""
+    """Sleep for interval_s but wake immediately if force_poll.trigger or shutdown.trigger appears."""
     deadline = time.time() + interval_s
     while time.time() < deadline:
         if os.path.exists(_poll_trigger_path(store_dir)):
             break
+        if os.path.exists(_shutdown_path(store_dir)):
+            raise SystemExit(0)
         time.sleep(2)
 
 
@@ -466,6 +489,8 @@ def _watch_loop(cfg: dict):
     sweep      = 0
 
     while True:
+        if os.path.exists(_shutdown_path(store_dir)):
+            raise SystemExit(0)
         forced_poll = _consume_poll_trigger(store_dir)
         if forced_poll:
             log.info("Force poll requested — running watcher cycle immediately")
@@ -534,6 +559,8 @@ def _eval_loop(cfg: dict):
     # Clamp to a safe minimum — otherwise a 0 value spins at 100% CPU.
     interval_s = max(5, int(cfg.get("eval_loop_interval_seconds", 30) or 30))
     while True:
+        if os.path.exists(_shutdown_path(store_dir)):
+            raise SystemExit(0)
         try:
             force = _check_file_trigger(store_dir)
             if force:
@@ -548,7 +575,7 @@ def _eval_loop(cfg: dict):
         except Exception as e:
             lore.eval_error("evaluator", e)
             log.error(f"Evaluation cycle failed: {e}")
-        time.sleep(interval_s)
+        _interruptible_sleep(interval_s, store_dir)
 
 
 def _write_pid(store_dir: str):
@@ -566,11 +593,25 @@ def _remove_pid(store_dir: str):
 
 
 def main():
+    import signal as _signal
     cfg       = load_cfg()
     store_dir = cfg.get("store_dir", "data")
 
+    # SIGTERM handler — raises SystemExit so try/finally runs on Linux/Mac external kills
+    def _sigterm_handler(signum, frame):
+        raise SystemExit(0)
+    try:
+        _signal.signal(_signal.SIGTERM, _sigterm_handler)
+    except (OSError, ValueError):
+        pass  # Windows or non-main thread — ignore
+
     _write_pid(store_dir)
     _clear_stale_triggers(store_dir)
+    # Remove any leftover shutdown trigger from a previous session
+    try:
+        os.remove(_shutdown_path(store_dir))
+    except FileNotFoundError:
+        pass
     _clear_auth_error(store_dir)   # fresh start — clear any previous auth-error state
 
     log = logger_mod.setup(store_dir, level=cfg.get("log_level", "INFO"))
@@ -612,7 +653,12 @@ def main():
     finally:
         ev.scan_end(store_dir)
         ev.agent_stop(store_dir)
+        _cleanup_all_locks(store_dir)
         _remove_pid(store_dir)
+        try:
+            os.remove(_shutdown_path(store_dir))
+        except FileNotFoundError:
+            pass
 
 
 if __name__ == "__main__":

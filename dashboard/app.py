@@ -193,21 +193,12 @@ def _start_agent():
 
 
 def _stop_agent():
-    pid = _read_pid()
-    if not pid:
+    if not _read_pid():
         return
-    import sys as _sys
+    shutdown_path = os.path.join(STORE_DIR, "agent", "shutdown.trigger")
     try:
-        if _sys.platform == "win32":
-            import subprocess as _sp
-            _sp.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True, check=False)
-        else:
-            import os as _os, signal as _sig
-            _os.kill(pid, _sig.SIGTERM)
-    except Exception:
-        pass
-    try:
-        os.remove(PID_FILE)
+        os.makedirs(os.path.dirname(shutdown_path), exist_ok=True)
+        open(shutdown_path, "w").write("")
     except Exception:
         pass
 
