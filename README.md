@@ -559,7 +559,7 @@ All comparisons, classifications, and LLM analyses are stored in `run.json["anal
 │   ├── dataverse.py          fetch bots + model versions from Dataverse
 │   ├── eval_client.py        Copilot Studio Eval API — trigger + poll to completion
 │   ├── reasoning.py          metric extraction · classify · web search · two-call LLM analysis
-│   ├── wizard.py             CLI setup wizard — invoked via `drift setup`
+│   ├── wizard.py             terminal setup wizard — alternative to the Setup page
 │   ├── events.py             append-only JSONL event log
 │   ├── logger.py             rotating JSON file logger
 │   ├── lore.py               themed terminal status output
