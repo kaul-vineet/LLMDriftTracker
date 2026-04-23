@@ -917,7 +917,7 @@ def page_bot_detail(bot):
         st.markdown("<div class='sec-label'>METRIC TRENDS</div>", unsafe_allow_html=True)
         fig_t = chart_metric_trend(bot)
         if fig_t.data:
-            st.plotly_chart(fig_t, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig_t, width='stretch', config={"displayModeBar": False})
 
     # ── LLM Analysis ─────────────────────────────────────────────────────────
     st.markdown("<div class='sec-label'>ask āshokā</div>", unsafe_allow_html=True)
@@ -1026,11 +1026,11 @@ def page_bot_detail(bot):
             if cases_prev and cases_curr:
                 fig_s = chart_score_comparison(cases_prev, cases_curr, lbl_a, lbl_b)
                 if fig_s.data:
-                    st.plotly_chart(fig_s, use_container_width=True, config={"displayModeBar": False})
+                    st.plotly_chart(fig_s, width='stretch', config={"displayModeBar": False})
                 fig_g = chart_status_grid(cases_prev, cases_curr)
                 if fig_g.data:
                     st.caption("Status transitions")
-                    st.plotly_chart(fig_g, use_container_width=True, config={"displayModeBar": False})
+                    st.plotly_chart(fig_g, width='stretch', config={"displayModeBar": False})
 
             # Per-case detail: summary table + expandable reasons (scales to 100+ cases)
             if cases_curr:
