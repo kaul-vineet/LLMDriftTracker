@@ -83,21 +83,26 @@ This is deliberate. Automated rollbacks of AI systems carry their own risks. ās
   │               ▼                             ▼                        │
   │         log STABLE                 log MODEL_CHANGE                  │
   │           · sleep                  write trigger file  ───────────┐  │
+  │                                    signal evaluator thread         │  │
   └─────────────────────────────────────────────────────────────────┬─┘  │
                                                                     │    │
                                               trigger file on disk ─┘    │
                                                                          │
   ┌──────────────────────────────────────────────────────────────────────┤
-  │  THREAD 2 · EVALUATOR  (checks every 30 s)                           │
+  │  THREAD 2 · EVALUATOR  (sleeps until watcher signals)                │
   │                                                                      │
+  │   watcher signals eval_event ──► wake immediately                    │
+  │          │                                                           │
+  │          ▼                                                           │
   │   any trigger files? ──► pick up all pending bots                    │
   │          │                                                           │
   │          ▼                                                           │
   │   fire Eval API for all pending bots simultaneously                  │
   │          │                                                           │
   │          ▼                                                           │
-  │   poll for completion  (round-robin, respects per-bot lock files)    │
-  │          │                                                           │
+  │   poll for completion  (round-robin, no sleep between sweeps)        │
+  │          │   ↑                                                       │
+  │          │   └── new trigger mid-poll? trigger new bot, add to pool  │
   │          ▼                                                           │
   │   compare metrics vs last run  →  REGRESSED / IMPROVED / STABLE      │
   │          │                                                           │
@@ -109,8 +114,8 @@ This is deliberate. Automated rollbacks of AI systems carry their own risks. ās
   │          └──► email to admin                                         │
   └──────────────────────────────────────────────────────────────────────┘
 
-  A model change on bot 4 is detected within N minutes even while
-  bots 1, 2, 3 are mid-eval — the watcher never waits.
+  A model change on bot 4 is detected while bots 1, 2, 3 are mid-eval —
+  bot 4 is added to the active polling pool immediately, no waiting.
 ```
 
 ---
@@ -544,8 +549,8 @@ data/
 │   ├── events.jsonl                   ← append-only business event log
 │   ├── llm_status.json                ← result of last LLM test (Setup → Test LLM)
 │   ├── msal_token_cache.json          ← MSAL token cache (shared between agent + dashboard)
-│   ├── force_eval_{botId}.trigger     ← written on model change or Force Eval — evaluator picks up within 30 s
-│   └── eval_active_{botId}.lock       ← present while a bot's eval is in flight
+│   ├── force_eval_{botId}.trigger     ← written on model change or Force Eval — evaluator wakes instantly
+│   └── eval_progress_{botId}.json    ← written when eval starts, deleted after Phase 3 — signals "running" to dashboard
 │
 └── {botId}/
     ├── runs/
@@ -619,10 +624,16 @@ No secrets in environment variables. All credentials — LLM API key, SMTP passw
 
 | Key | Default | Description |
 |---|---|---|
-| `poll_interval_minutes` | `2` | How often the watcher polls Dataverse for model changes (minutes) |
+| `poll_interval_minutes` | `5` | How often the watcher polls Dataverse for model changes (minutes) |
 | `eval_poll_timeout_seconds` | `1200` | Max wait time for eval completion |
-| `eval_poll_interval_seconds` | `45` | How often to ping the Eval API while polling |
+| `eval_poll_interval_seconds` | `45` | How often to ping the Eval API while a run is in progress |
+| `eval_loop_interval_seconds` | `45` | Evaluator heartbeat timeout — woken instantly by watcher on new trigger |
 | `max_runs_per_bot` | `6` | Number of run folders to keep per bot — oldest pruned when limit exceeded |
+| `daily_eval_limit` | `20` | Max evals per bot per day (Copilot Studio platform cap) |
+| `daily_eval_warning_threshold` | `18` | Log a warning when this many evals have been used today |
+| `metric_regression_threshold` | `0.03` | Minimum delta to classify a metric as REGRESSED or IMPROVED |
+| `llm_max_tokens_analysis` | `1200` | Max tokens for the main LLM analysis call |
+| `llm_max_tokens_best_practice` | `400` | Max tokens for the best-practice follow-up call |
 | `log_level` | `"INFO"` | Log verbosity — `"DEBUG"` to see LLM calls, `"ERROR"` for quiet |
 | `llm.base_url` | — | OpenAI-compatible endpoint base URL |
 | `llm.model` | — | Model or deployment name |

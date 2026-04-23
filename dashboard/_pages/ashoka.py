@@ -690,26 +690,18 @@ def page_overview(bots, raw_events):
 # ── Eval live banner (fragment — auto-refreshes without blocking navigation) ──
 @st.fragment(run_every=3)
 def _eval_live_banner(bot_id: str):
-    lock_path     = os.path.join(STORE_DIR, "agent", f"eval_active_{bot_id}.lock")
     progress_path = os.path.join(STORE_DIR, "agent", f"eval_progress_{bot_id}.json")
-    if not os.path.exists(lock_path):
+    if not os.path.exists(progress_path):
         st.rerun(scope="app")
         return
-    lock_data = {}
-    try:
-        lock_raw = open(lock_path).read().strip()
-        lock_data = json.loads(lock_raw) if lock_raw.startswith("{") else {}
-    except Exception:
-        pass
     prog = {}
     try:
-        if os.path.exists(progress_path):
-            prog = json.loads(open(progress_path).read())
+        prog = json.loads(open(progress_path).read())
     except Exception:
         pass
     elapsed     = prog.get("elapsedSecs", 0)
     elapsed_fmt = f"{elapsed // 60}m {elapsed % 60}s" if elapsed >= 60 else f"{elapsed}s"
-    mv          = lock_data.get("modelVersion", "")
+    mv          = prog.get("modelVersion", "")
     mv_label    = f" ON {mv}" if mv and mv not in ("unknown", "") else ""
     st.markdown(f"""
 <style>
@@ -773,10 +765,10 @@ def page_bot_detail(bot):
             st.rerun()
     with col_eval:
         bot_id       = bot["botId"]
-        trigger_path = os.path.join(STORE_DIR, "agent", f"force_eval_{bot_id}.trigger")
-        lock_path    = os.path.join(STORE_DIR, "agent", f"eval_active_{bot_id}.lock")
-        queued       = os.path.exists(trigger_path)
-        running      = os.path.exists(lock_path)
+        trigger_path  = os.path.join(STORE_DIR, "agent", f"force_eval_{bot_id}.trigger")
+        progress_path = os.path.join(STORE_DIR, "agent", f"eval_progress_{bot_id}.json")
+        queued        = os.path.exists(trigger_path)
+        running       = os.path.exists(progress_path)
         agent_up     = _agent_running()
         import time as _t
         queued_age   = (_t.time() - os.path.getmtime(trigger_path)) if queued else 0
@@ -1171,7 +1163,6 @@ def page_bot_detail(bot):
                 if os.path.isdir(txn_dir):
                     shutil.rmtree(txn_dir, ignore_errors=True)
                 for suffix in (f"force_eval_{bot_id}.trigger",
-                               f"eval_active_{bot_id}.lock",
                                f"eval_progress_{bot_id}.json"):
                     try:
                         os.remove(os.path.join(STORE_DIR, "agent", suffix))
@@ -1250,7 +1241,7 @@ def _main():
         if bot:
             page_bot_detail(bot)
         elif selected and os.path.exists(
-            os.path.join(STORE_DIR, "agent", f"eval_active_{selected}.lock")
+            os.path.join(STORE_DIR, "agent", f"eval_progress_{selected}.json")
         ):
             # Tracking file mid-write during active eval — bust cache and retry
             st.session_state["_bots_ts"] = 0

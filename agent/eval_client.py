@@ -80,7 +80,8 @@ def _infer_metric_type(result: dict) -> str:
     return "Unknown"
 
 
-def trigger_all_evals(bots_to_eval: list[dict], cfg: dict) -> list[dict]:
+def trigger_all_evals(bots_to_eval: list[dict], cfg: dict,
+                      store_dir: str = None) -> list[dict]:
     """
     Phase 1 — trigger ALL active test sets for ALL bots in one pass.
     Returns a pool list: [{"run_id", "bot", "display_name"}, ...]
@@ -134,7 +135,8 @@ def trigger_all_evals(bots_to_eval: list[dict], cfg: dict) -> list[dict]:
 
 def _write_progress(store_dir: str | None, bot_id: str, bot_name: str,
                     test_set: str, state: str, total: int, done_cases: int,
-                    elapsed: int, sets_done: int, sets_total: int):
+                    elapsed: int, sets_done: int, sets_total: int,
+                    model_version: str = ""):
     if not store_dir:
         return
     import json as _j, os as _os
@@ -142,15 +144,16 @@ def _write_progress(store_dir: str | None, bot_id: str, bot_name: str,
     try:
         _os.makedirs(_os.path.dirname(path), exist_ok=True)
         open(path, "w").write(_j.dumps({
-            "botId":       bot_id,
-            "botName":     bot_name,
-            "testSetName": test_set,
-            "state":       state,
-            "totalCases":  total,
-            "doneCases":   done_cases,
-            "elapsedSecs": elapsed,
-            "setsDone":    sets_done,
-            "setsTotal":   sets_total,
+            "botId":         bot_id,
+            "botName":       bot_name,
+            "testSetName":   test_set,
+            "state":         state,
+            "totalCases":    total,
+            "doneCases":     done_cases,
+            "elapsedSecs":   elapsed,
+            "setsDone":      sets_done,
+            "setsTotal":     sets_total,
+            "modelVersion":  model_version,
         }))
     except Exception:
         pass
@@ -168,11 +171,15 @@ def _clear_progress(store_dir: str | None, bot_id: str):
 
 def poll_all_runs(pool: list[dict], cfg: dict,
                   timeout_s: int = 1200, interval_s: int = 20,
-                  store_dir: str | None = None) -> dict[str, dict[str, dict]]:
+                  store_dir: str | None = None,
+                  eval_event=None, expand_pool_fn=None) -> dict[str, dict[str, dict]]:
     """
     Phase 2 — round-robin poll every run_id until terminal state or timeout.
-    Single-threaded: each sweep checks all pending runs (fast HTTP GETs), then
-    sleeps once for the full interval.  No threads needed for I/O-bound polling.
+    Each sweep checks all pending runs (fast HTTP GETs), then waits on eval_event
+    (woken instantly by watcher on new trigger, or times out after interval_s).
+
+    expand_pool_fn() is called after each sweep — if it returns new pool entries
+    they are appended to remaining so new bots join the same round-robin loop.
 
     Returns dict[bot_id -> dict[metric_type -> full_run_result]].
     """
@@ -209,18 +216,21 @@ def poll_all_runs(pool: list[dict], cfg: dict,
                 done_cases = len(data.get("testCasesResults") or [])
                 sets_done  = len(completed.get(bot_id, []))
                 sets_total = sets_total_by_bot.get(bot_id, 1)
+                model_ver = bot.get("modelVersion", "")
                 lore.eval_polling(run_id, state, elapsed, timeout_s, total)
                 log.info(f"Waiting for eval result — {bot['name']} [{ctx['display_name']}]: "
                          f"{state}, {elapsed}s elapsed, {total} case(s)")
                 _write_progress(store_dir, bot_id, bot["name"], ctx["display_name"],
-                                state, total, done_cases, elapsed, sets_done, sets_total)
+                                state, total, done_cases, elapsed, sets_done, sets_total,
+                                model_version=model_ver)
                 if state in ("completed", "failed", "cancelled"):
                     lore.eval_poll_done()
                     log.info(f"Eval {state} for {bot['name']} — run {run_id[:8]}")
                     completed.setdefault(bot_id, []).append((ctx["display_name"], data))
                     _write_progress(store_dir, bot_id, bot["name"], ctx["display_name"],
                                     state, total, total, elapsed,
-                                    len(completed[bot_id]), sets_total)
+                                    len(completed[bot_id]), sets_total,
+                                    model_version=model_ver)
                 else:
                     still_pending.append(ctx)
             except Exception as e:
@@ -229,12 +239,22 @@ def poll_all_runs(pool: list[dict], cfg: dict,
                 still_pending.append(ctx)   # retry next sweep
 
         remaining = still_pending
-        if remaining:
-            time.sleep(interval_s)
 
-    # Clear progress files for all bots now that polling is done
-    for bid in sets_total_by_bot:
-        _clear_progress(store_dir, bid)
+        # Expand pool with any newly triggered bots — watcher may have written
+        # a trigger mid-sweep; pick them up and add to the same round-robin loop.
+        if expand_pool_fn:
+            new_runs = expand_pool_fn()
+            for ctx in new_runs:
+                bid = ctx["bot"]["botId"]
+                remaining.append(ctx)
+                sets_total_by_bot[bid] = sets_total_by_bot.get(bid, 0) + 1
+
+        if remaining:
+            if eval_event is not None:
+                eval_event.wait(timeout=interval_s)
+                eval_event.clear()
+            else:
+                time.sleep(interval_s)
 
     for ctx in remaining:
         lore.eval_error(ctx["bot"]["name"],

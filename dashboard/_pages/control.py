@@ -310,7 +310,6 @@ def _render_maintenance():
     agent_dir = os.path.join(STORE_DIR, "agent")
     patterns  = [
         os.path.join(agent_dir, "force_eval*.trigger"),
-        os.path.join(agent_dir, "eval_active_*.lock"),
         os.path.join(agent_dir, "eval_progress_*.json"),
     ]
     stale = []

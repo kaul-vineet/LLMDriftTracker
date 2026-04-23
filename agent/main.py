@@ -59,14 +59,13 @@ def _shutdown_path(store_dir: str) -> str:
     return os.path.join(_agent_dir(store_dir), "shutdown.trigger")
 
 
-def _cleanup_all_locks(store_dir: str):
-    """Remove all eval lock and progress files left by mid-flight evals."""
+def _cleanup_eval_state(store_dir: str):
+    """Remove all eval progress files left by mid-flight evals."""
     adir = _agent_dir(store_dir)
     if not os.path.exists(adir):
         return
     for fname in os.listdir(adir):
-        if (fname.startswith("eval_active_") and fname.endswith(".lock")) or \
-           (fname.startswith("eval_progress_") and fname.endswith(".json")):
+        if fname.startswith("eval_progress_") and fname.endswith(".json"):
             try:
                 os.remove(os.path.join(adir, fname))
             except Exception:
@@ -77,7 +76,7 @@ def _fatal_auth_error(store_dir: str, msg: str, log):
     log.critical(f"AUTH ERROR — agent shutting down: {msg}")
     _write_auth_error(store_dir, msg)
     ev.agent_stop(store_dir)
-    _cleanup_all_locks(store_dir)
+    _cleanup_eval_state(store_dir)
     _remove_pid(store_dir)
     os._exit(1)   # terminate all threads immediately
 
@@ -145,7 +144,7 @@ def _has_pending_triggers(store_dir: str) -> bool:
 
 
 def _clear_stale_triggers(store_dir: str):
-    """Delete any leftover trigger or lock files from a previous stopped session."""
+    """Delete any leftover trigger or progress files from a previous stopped session."""
     adir = _agent_dir(store_dir)
     if not os.path.exists(adir):
         return
@@ -153,7 +152,6 @@ def _clear_stale_triggers(store_dir: str):
         if (
             fname == "force_eval.trigger"
             or (fname.startswith("force_eval_") and fname.endswith(".trigger"))
-            or (fname.startswith("eval_active_") and fname.endswith(".lock"))
             or (fname.startswith("eval_progress_") and fname.endswith(".json"))
         ):
             try:
@@ -214,7 +212,7 @@ def _save_and_notify(bot_results, store_dir, cfg):
     lore.cycle_complete(len(bot_results))
 
 
-def run_cycle(cfg: dict, force: bool = False):
+def run_cycle(cfg: dict, force: bool = False, eval_event=None):
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lore.cycle_start(ts)
 
@@ -307,6 +305,13 @@ def run_cycle(cfg: dict, force: bool = False):
                       trigger_guid=run_folder, env_id=bot.get("ppEnvId", ""),
                       model_version=curr_ver)
 
+        # Write progress immediately so dashboard shows "running" with no gap
+        # after the trigger file is consumed. Cleared per-bot at end of Phase 3.
+        eval_client._write_progress(
+            store_dir, bot_id, bot_name, "—", "starting",
+            0, 0, 0, 0, 0, model_version=curr_ver,
+        )
+
         bot_ctx[bot_id] = {
             "bot":            bot,
             "old_ver":        old_ver,
@@ -322,33 +327,73 @@ def run_cycle(cfg: dict, force: bool = False):
         lore.cycle_idle()
         return
 
-    # Write a lock file per bot so the dashboard knows an eval is actively running.
-    # Deleted in Phase 3 (inside finally) so it disappears even if processing fails.
-    for bot in bots_to_eval:
-        lock_path = os.path.join(_agent_dir(store_dir), f"eval_active_{bot['botId']}.lock")
+    # Build a bot_id lookup from the inventory so expand_pool can find full bot dicts
+    bots_by_id = {b["botId"]: b for b in bots}
+
+    def _expand_pool() -> list[dict]:
+        """Called by poll_all_runs between sweeps — consumes any new trigger files,
+        triggers their evals, and returns new pool entries for the round-robin loop."""
+        new_bots: list[dict] = []
+        adir = _agent_dir(store_dir)
+        if not os.path.exists(adir):
+            return []
+        for fname in os.listdir(adir):
+            if not (fname.startswith("force_eval_") and fname.endswith(".trigger")):
+                continue
+            bot_id = fname[len("force_eval_"):-len(".trigger")]
+            if bot_id in bot_ctx:   # already in this cycle
+                continue
+            bot = bots_by_id.get(bot_id)
+            if not bot:
+                continue
+            try:
+                src = open(os.path.join(adir, fname), encoding="utf-8").read().strip()
+                os.remove(os.path.join(adir, fname))
+            except Exception:
+                continue
+            curr_ver   = bot["modelVersion"]
+            tracking   = store.load_tracking(store_dir, bot_id)
+            old_ver    = tracking.get("modelVersion", curr_ver)
+            run_folder = store.make_run_folder_name(curr_ver)
+            bot_ctx[bot_id] = {
+                "bot":            bot,
+                "old_ver":        old_ver,
+                "curr_ver":       curr_ver,
+                "run_folder":     run_folder,
+                "eval_start_ts":  datetime.now(timezone.utc),
+                "bot_forced":     True,
+                "trigger_source": src if src in ("user", "agent") else "agent",
+            }
+            eval_client._write_progress(
+                store_dir, bot_id, bot["name"], "—", "starting",
+                0, 0, 0, 0, 0, model_version=curr_ver,
+            )
+            bots_to_eval.append(bot)
+            new_bots.append(bot)
+            log.info(f"Mid-poll trigger picked up for {bot['name']} — adding to active eval pool")
+        if not new_bots:
+            return []
         try:
-            with open(lock_path, "w", encoding="utf-8") as f:
-                import json as _j
-                f.write(_j.dumps({
-                    "startedAt":    datetime.now(timezone.utc).isoformat(),
-                    "modelVersion": bot_ctx[bot["botId"]]["curr_ver"],
-                }))
-        except Exception:
-            pass
+            return eval_client.trigger_all_evals(new_bots, cfg, store_dir=store_dir)
+        except Exception as e:
+            lore.eval_error("expand trigger phase", e)
+            return []
 
     # ── Phase 1: trigger all test sets for all bots at once ─────────────────
     try:
-        pool = eval_client.trigger_all_evals(bots_to_eval, cfg)
+        pool = eval_client.trigger_all_evals(bots_to_eval, cfg, store_dir=store_dir)
     except Exception as e:
         lore.eval_error("trigger phase", e)
-        pool = []   # fall through to Phase 3 so lock files are always cleaned up
+        pool = []
 
-    # ── Phase 2: single-threaded round-robin poll until all done ────────────
+    # ── Phase 2: round-robin poll; eval_event wakes instantly on new trigger ─
     results_by_bot = eval_client.poll_all_runs(
         pool, cfg,
         timeout_s=cfg.get("eval_poll_timeout_seconds"),
         interval_s=cfg.get("eval_poll_interval_seconds"),
         store_dir=store_dir,
+        eval_event=eval_event,
+        expand_pool_fn=_expand_pool,
     )
 
     # ── Phase 3: process & persist results per bot ──────────────────────────
@@ -365,7 +410,6 @@ def run_cycle(cfg: dict, force: bool = False):
         env_id   = bot.get("ppEnvId", "")
         org_url  = bot.get("orgUrl", "")
 
-        lock_path = os.path.join(_agent_dir(store_dir), f"eval_active_{bot_id}.lock")
         try:
             results_by_type = results_by_bot.get(bot_id)
             if not results_by_type:
@@ -373,6 +417,7 @@ def run_cycle(cfg: dict, force: bool = False):
                 store.save_tracking(store_dir, bot_id, curr_ver, None,
                                     bot_name=bot_name, env_name=bot.get("envName", ""),
                                     env_id=env_id, org_url=org_url)
+                eval_client._clear_progress(store_dir, bot_id)
                 continue
 
             # Reshape poll results into the testSets format expected by store/reasoning modules
@@ -437,6 +482,7 @@ def run_cycle(cfg: dict, force: bool = False):
             store.save_tracking(store_dir, bot_id, curr_ver, run_folder,
                                 bot_name=bot_name, env_name=bot.get("envName", ""),
                                 env_id=env_id, org_url=org_url)
+            eval_client._clear_progress(store_dir, bot_id)
             store.increment_daily_eval_count(store_dir, bot_id)
             bot_results.append(br)
             lore.eval_done(bot_name)
@@ -444,14 +490,7 @@ def run_cycle(cfg: dict, force: bool = False):
         except Exception as e:
             lore.eval_error(bot_name, e)
             ev.error(store_dir, bot_name, bot_id, str(e))
-
-        finally:
-            # Lock file removed here so the dashboard button re-enables only after
-            # this bot's full Phase 3 processing (not just trigger consumption).
-            try:
-                os.remove(lock_path)
-            except Exception:
-                pass
+            eval_client._clear_progress(store_dir, bot_id)
 
     if not bot_results:
         lore.cycle_idle()
@@ -486,7 +525,7 @@ def _interruptible_sleep(interval_s: int, store_dir: str):
         time.sleep(2)
 
 
-def _watch_loop(cfg: dict):
+def _watch_loop(cfg: dict, eval_event: threading.Event = None):
     """Watcher thread — polls every poll_interval_minutes and writes a
     trigger file the moment a model version change is detected. Never runs evals."""
     store_dir  = cfg.get("store_dir", "data")
@@ -512,10 +551,10 @@ def _watch_loop(cfg: dict):
                 bot_id   = bot["botId"]
                 bot_name = bot["name"]
                 curr_ver = bot["modelVersion"]
-                trigger_path = os.path.join(_agent_dir(store_dir), f"force_eval_{bot_id}.trigger")
-                lock_path    = os.path.join(_agent_dir(store_dir), f"eval_active_{bot_id}.lock")
-                # Already queued or running — skip to avoid duplicate triggers
-                if os.path.exists(trigger_path) or os.path.exists(lock_path):
+                trigger_path  = os.path.join(_agent_dir(store_dir), f"force_eval_{bot_id}.trigger")
+                progress_path = os.path.join(_agent_dir(store_dir), f"eval_progress_{bot_id}.json")
+                # Already queued or eval actively running — skip to avoid duplicate triggers
+                if os.path.exists(trigger_path) or os.path.exists(progress_path):
                     continue
                 # If model version is unavailable (no Dataverse token cached), skip change detection
                 if curr_ver == "unknown":
@@ -530,6 +569,8 @@ def _watch_loop(cfg: dict):
                     with open(trigger_path, "w", encoding="utf-8") as f:
                         f.write("agent")
                     log.info(f"Model change detected for {bot_name}: {old_ver} → {curr_ver}")
+                    if eval_event is not None:
+                        eval_event.set()   # wake evaluator immediately
 
             sweep += 1
             # Heartbeat every sweep so Logs tab shows the agent is alive
@@ -562,12 +603,11 @@ def _watch_loop(cfg: dict):
         _interruptible_sleep(interval_s, store_dir)
 
 
-def _eval_loop(cfg: dict):
-    """Evaluator thread — wakes every eval_loop_interval_seconds and runs a cycle
-    if any trigger is waiting."""
+def _eval_loop(cfg: dict, eval_event: threading.Event):
+    """Evaluator thread — sleeps until watcher signals a trigger (or timeout),
+    then runs a cycle. eval_event is set by the watcher the moment a trigger is written."""
     store_dir  = cfg.get("store_dir", "data")
     log        = logger_mod.get()
-    # Clamp to a safe minimum — otherwise a 0 value spins at 100% CPU.
     interval_s = max(5, int(cfg.get("eval_loop_interval_seconds") or 5))
     while True:
         if os.path.exists(_shutdown_path(store_dir)):
@@ -579,14 +619,17 @@ def _eval_loop(cfg: dict):
             if force or _has_pending_triggers(store_dir):
                 label = "forced" if force else "triggered"
                 log.info(f"Evaluation cycle starting ({label})")
-                run_cycle(cfg, force=force)
+                run_cycle(cfg, force=force, eval_event=eval_event)
                 log.info("Evaluation cycle complete")
         except AuthError as e:
             _fatal_auth_error(store_dir, str(e), log)
         except Exception as e:
             lore.eval_error("evaluator", e)
             log.error(f"Evaluation cycle failed: {e}")
-        _interruptible_sleep(interval_s, store_dir)
+        eval_event.wait(timeout=interval_s)
+        eval_event.clear()
+        if os.path.exists(_shutdown_path(store_dir)):
+            raise SystemExit(0)
 
 
 def _write_pid(store_dir: str):
@@ -647,9 +690,10 @@ def main():
         total_bots = sum(len(e.get("monitoredBots", [])) for e in envs)
         ev.agent_start(store_dir, watch_s, len(envs), total_bots)
 
-        watcher   = threading.Thread(target=_watch_loop, args=(cfg,),
+        eval_event = threading.Event()
+        watcher   = threading.Thread(target=_watch_loop, args=(cfg, eval_event),
                                      daemon=True, name="watcher")
-        evaluator = threading.Thread(target=_eval_loop,  args=(cfg,),
+        evaluator = threading.Thread(target=_eval_loop,  args=(cfg, eval_event),
                                      daemon=True, name="evaluator")
         watcher.start()
         log.info("watcher thread started")
@@ -664,7 +708,7 @@ def main():
     finally:
         ev.scan_end(store_dir)
         ev.agent_stop(store_dir)
-        _cleanup_all_locks(store_dir)
+        _cleanup_eval_state(store_dir)
         _remove_pid(store_dir)
         try:
             os.remove(_shutdown_path(store_dir))
