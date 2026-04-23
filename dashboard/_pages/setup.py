@@ -948,8 +948,8 @@ cfg_out = {
     "token_cache_file":           st.session_state.s_cache_file,
     "store_dir":                  STORE_DIR,
     "poll_interval_minutes":      st.session_state.s_poll,
-    "eval_poll_timeout_seconds":  1200,
-    "eval_poll_interval_seconds": 45,
+    "eval_poll_timeout_seconds":  _cfg.get("eval_poll_timeout_seconds", 1200),
+    "eval_poll_interval_seconds": _cfg.get("eval_poll_interval_seconds", 45),
     "tavily_api_key":             st.session_state.get("s_tavily_key", ""),
     "llm": {
         "base_url":    st.session_state.s_llm_url,
