@@ -80,6 +80,7 @@ def _search_model_context(old_model: str, new_model: str, cfg: dict) -> str:
         return ""
     queries = [f"{new_model} release notes known issues instruction following"]
     if old_model.strip() and old_model != new_model:
+        queries.append(f"{old_model} release notes known issues instruction following")
         queries.append(f"{old_model} vs {new_model} documented capability differences")
     queries.append("Microsoft Copilot Studio best practices system prompt quality improvement")
     log = logger_mod.get()
@@ -96,7 +97,8 @@ def _search_model_context(old_model: str, new_model: str, cfg: dict) -> str:
                     chunks.append(f"Source: {url}\n{content[:600]}")
         if not chunks:
             return ""
-        log.info(f"Tavily search returned {len(chunks)} result(s) for {new_model}")
+        models_str = f"{old_model} → {new_model}" if old_model != new_model else new_model
+        log.info(f"Tavily search returned {len(chunks)} result(s) for {models_str}")
         return "\n\n".join(chunks)
     except Exception as e:
         log.error(f"Tavily search failed: {e}")
