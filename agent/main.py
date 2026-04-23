@@ -336,7 +336,7 @@ def run_cycle(cfg: dict, force: bool = False):
     results_by_bot = eval_client.poll_all_runs(
         pool, cfg,
         timeout_s=cfg.get("eval_poll_timeout_seconds", 1200),
-        interval_s=cfg.get("eval_poll_interval_seconds", 20),
+        interval_s=cfg.get("eval_poll_interval_seconds", 45),
         store_dir=store_dir,
     )
 
@@ -619,7 +619,7 @@ def main():
     # ── Startup banner ────────────────────────────────────────────────────────
     _watch_min = int(cfg.get("poll_interval_minutes", 2) or 2)
     watch_s    = max(30, _watch_min * 60)
-    poll_s     = cfg.get("eval_poll_interval_seconds", 20)
+    poll_s     = cfg.get("eval_poll_interval_seconds", 45)
     log.info(f"āshokā starting — checking every {watch_s}s ({_watch_min} min), polling every {poll_s}s")
 
     envs = cfg.get("environments", [])

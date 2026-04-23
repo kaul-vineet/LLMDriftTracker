@@ -949,7 +949,7 @@ cfg_out = {
     "store_dir":                  STORE_DIR,
     "poll_interval_minutes":      st.session_state.s_poll,
     "eval_poll_timeout_seconds":  1200,
-    "eval_poll_interval_seconds": 20,
+    "eval_poll_interval_seconds": 45,
     "tavily_api_key":             st.session_state.get("s_tavily_key", ""),
     "llm": {
         "base_url":    st.session_state.s_llm_url,

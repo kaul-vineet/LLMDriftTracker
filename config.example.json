@@ -19,7 +19,7 @@
   "store_dir":                  "data",
   "poll_interval_minutes":      5,
   "eval_poll_timeout_seconds":  1200,
-  "eval_poll_interval_seconds": 20,
+  "eval_poll_interval_seconds": 45,
   "max_runs_per_bot":           6,
 
   "tavily_api_key": "tvly-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",

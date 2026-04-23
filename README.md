@@ -621,7 +621,7 @@ No secrets in environment variables. All credentials — LLM API key, SMTP passw
 |---|---|---|
 | `poll_interval_minutes` | `2` | How often the watcher polls Dataverse for model changes (minutes) |
 | `eval_poll_timeout_seconds` | `1200` | Max wait time for eval completion |
-| `eval_poll_interval_seconds` | `20` | How often to ping the Eval API while polling |
+| `eval_poll_interval_seconds` | `45` | How often to ping the Eval API while polling |
 | `max_runs_per_bot` | `6` | Number of run folders to keep per bot — oldest pruned when limit exceeded |
 | `log_level` | `"INFO"` | Log verbosity — `"DEBUG"` to see LLM calls, `"ERROR"` for quiet |
 | `llm.base_url` | — | OpenAI-compatible endpoint base URL |
