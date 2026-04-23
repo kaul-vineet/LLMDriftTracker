@@ -534,13 +534,15 @@ def render_header(bots, raw_events, page="overview"):
           .r1 {{ width:150px;height:150px; }} .r2 {{ width:108px;height:108px; }}
           .r3 {{ width:68px;height:68px; }}   .r4 {{ width:28px;height:28px; }}
           .radar-h {{ width:150px; }} .radar-v {{ height:150px; }}
+          {'/* agent offline — dim rings */' if not agent_up else ''}
+          {'.ring { border-color:rgba(80,80,80,0.4) !important; } .r4 { border-color:rgba(80,80,80,0.6) !important; box-shadow:none !important; } .radar-h,.radar-v { background:rgba(80,80,80,0.15) !important; } .center-dot { background:#555 !important; box-shadow:none !important; }' if not agent_up else ''}
         </style>
         <div style='display:flex;align-items:center;gap:20px;max-width:860px;margin:0 auto 12px'>
           <div class='radar-wrap' style='flex-shrink:0'>
             <div class='ring r1'></div><div class='ring r2'></div>
             <div class='ring r3'></div><div class='ring r4'></div>
             <div class='radar-h'></div><div class='radar-v'></div>
-            <div class='sweep'></div><div class='center-dot'></div>
+            {'<div class="sweep"></div>' if agent_up else ''}<div class='center-dot'></div>
           </div>
           <div>
             <div style='font-size:3rem;font-weight:700;letter-spacing:32px;color:{C_CYAN};
