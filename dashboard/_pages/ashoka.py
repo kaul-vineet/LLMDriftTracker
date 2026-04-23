@@ -463,7 +463,7 @@ def _event_to_dict(e: dict, model_lookup: dict | None = None) -> dict:
 
 def _build_timeline_events(raw, model_lookup: dict | None = None):
     """Newest-first, noise-filtered list of timeline event dicts."""
-    _FILTER = {"cycle_start","scan_end",
+    _FILTER = {"cycle_start","scan_start","scan_complete","scan_end",
                "agent_start","agent_stop","stable","regression","improvement"}
     return [_event_to_dict(e, model_lookup) for e in raw
             if e.get("event","") not in _FILTER]
