@@ -451,8 +451,7 @@ The main view. Your eval control panel.
   Apr 18  ⏳ EVAL QUEUED   Safe Travels  Eval queued from dashboard
   Apr 18  🚀 EVAL START    Safe Travels  · gpt-4o  Eval triggered — fetching test sets
   Apr 18  ✅ STABLE        Safe Travels  · gpt-4o  pass 80% · avg score 60.0
-  ·  ·  ·  (pinned at bottom — always visible)  ·  ·  ·
-  Apr 22  📡 SCANNING      Scheduled poll cycle started   ← heartbeat: last scan time
+  Apr 22  🔎 SCAN COMPLETE  Scan #4 complete — 2 agent(s) checked, 2 stable
   Apr 22  🔍 SCAN START    Watcher began scanning 2 agent(s)
   🟢 AGENT START   Watching 2 agent(s) across 1 environment(s)
 ```
@@ -487,7 +486,7 @@ Real-time view into `data/agent/agent.log`.
 
 - **Level filter** — ALL / ERROR / WARNING / INFO / DEBUG
 - **Free-text search** — filter by message or thread (`watcher` / `evaluator`)
-- **Auto-refresh** — polls every 5 s when toggled on
+- **Auto-refresh** — polls every 5 s permanently
 - **Newest first** — last 500 lines, colour-coded by severity
 
 > LLM and web API calls are logged at DEBUG level — set `log_level: "DEBUG"` in config to surface them.
@@ -560,6 +559,7 @@ All comparisons, classifications, and LLM analyses are stored in `run.json["anal
 │   ├── dataverse.py          fetch bots + model versions from Dataverse
 │   ├── eval_client.py        Copilot Studio Eval API — trigger + poll to completion
 │   ├── reasoning.py          metric extraction · classify · web search · two-call LLM analysis
+│   ├── wizard.py             CLI setup wizard — invoked via `drift setup`
 │   ├── events.py             append-only JSONL event log
 │   ├── logger.py             rotating JSON file logger
 │   ├── lore.py               themed terminal status output
