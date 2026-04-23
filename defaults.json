@@ -3,7 +3,7 @@
   "poll_interval_minutes":        5,
   "eval_poll_timeout_seconds":    1200,
   "eval_poll_interval_seconds":   45,
-  "eval_loop_interval_seconds":   30,
+  "eval_loop_interval_seconds":   45,
   "max_runs_per_bot":             6,
   "log_level":                    "INFO",
   "daily_eval_limit":             20,
