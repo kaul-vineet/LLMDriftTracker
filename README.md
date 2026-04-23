@@ -120,7 +120,16 @@ This is deliberate. Automated rollbacks of AI systems carry their own risks. ās
 āshokā doesn't just score test cases. It consults an LLM to explain the delta in plain language — acting as an intelligent guide, not just a metrics dashboard.
 
 Before calling the LLM, āshokā:
-- **Searches the web** (via Tavily, if configured) for release notes and known capability differences between the old and new model
+- **Searches the web** (via Tavily, if configured) across four targeted queries when a model swap is detected:
+  1. `{new_model} release notes known issues instruction following`
+  2. `{old_model} release notes known issues instruction following`
+  3. `{old_model} vs {new_model} documented capability differences`
+  4. `Microsoft Copilot Studio best practices system prompt quality improvement`
+
+  Each query returns up to 3 results (source URL + 600-char excerpt). This gives the LLM **background colour** — known quirks, release notes, or documented differences between the two models — so it can connect observed failure patterns to documented model behaviour. If no Tavily key is configured, this step is skipped silently.
+
+  Importantly, the Tavily context does **not** change what the LLM is allowed to claim. The prompt explicitly constrains every claim to a specific score or evaluator reason in the test data. Web context can help explain *why* a pattern appeared — it cannot be used to invent findings not present in the eval results.
+
 - **Injects the bot's own system prompt** so the LLM understands the bot's purpose and instructions
 - **Sends the full per-case comparison** — old model reason vs new model reason for every test case
 
