@@ -69,7 +69,7 @@ This is deliberate. Automated rollbacks of AI systems carry their own risks. ās
 
 ---
 
-## 🔄 How it works
+## 🏗️ Architecture
 
 āshokā runs two independent threads inside one process. Detection never waits for evaluation to finish.
 
@@ -116,6 +116,43 @@ This is deliberate. Automated rollbacks of AI systems carry their own risks. ās
 
   A model change on bot 4 is detected while bots 1, 2, 3 are mid-eval —
   bot 4 is added to the active polling pool immediately, no waiting.
+```
+
+**Components and external dependencies:**
+
+```
+  ┌──────────────────────────────────────────────────────────────┐
+  │  CONTROL PLANE  ─  Streamlit dashboard  (port 8501)          │
+  │                                                              │
+  │   ⚡ āshokā    fleet view · bot detail · run comparison     │
+  │   ⚙ Setup      browser-based config — no terminal needed    │
+  │   ⊞ Control    browse · delete runs, events, reports        │
+  │   ≡ Logs        live log viewer · level filter · auto-refresh│
+  │                                                              │
+  │   ▶ Start Agent / ■ Stop Agent                              │
+  └───────────────────────┬──────────────────────────────────────┘
+                          │  shared  data/  volume
+                          ▼
+  ┌──────────────────────────────────────────────────────────────┐
+  │  AGENT  ─  python -m agent.main                              │
+  │                                                              │
+  │  ┌─ Watcher thread ──────────────────────────────────────┐  │
+  │  │  dataverse.py   poll bot model versions               │──┼──► Dataverse
+  │  │  → writes force_eval_{botId}.trigger on change        │  │
+  │  └───────────────────────────────────────────────────────┘  │
+  │                                                              │
+  │  ┌─ Evaluator thread ────────────────────────────────────┐  │
+  │  │  eval_client.py  trigger + poll Eval API              │──┼──► Copilot Studio Eval API
+  │  │  reasoning.py    classify + LLM analysis              │──┼──► LLM endpoint + Tavily
+  │  │  store.py        write run.json                       │  │
+  │  │  report.py       generate HTML report                 │  │
+  │  │  notifier.py     email report via SMTP                │──┼──► email
+  │  └───────────────────────────────────────────────────────┘  │
+  │                                                              │
+  │  auth.py      unified MSAL — one cache, three APIs          │──► Microsoft Identity
+  │  events.py    append-only JSONL event log                   │
+  │  logger.py    rotating JSON file logger                     │
+  └──────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -174,57 +211,6 @@ To wire a new event source, write a `force_eval_{botId}.trigger` file to the `da
 - Run evals on a **weekly schedule** (cron → trigger file per bot)
 - Run evals when a **support ticket volume spikes** (alert webhook → trigger file)
 - Run evals as a **pre-deploy check** in a CI/CD pipeline
-
----
-
-## 🏗️ Architecture
-
-```
-  ┌──────────────────────────────────────────────────────────────┐
-  │  CONTROL PLANE  ─  Streamlit dashboard  (port 8501)          │
-  │                                                              │
-  │   ⚡ āshokā    fleet view · bot detail · run comparison     │
-  │   ⚙ Setup      browser-based config — no terminal needed    │
-  │   ⊞ Control    browse · delete runs, events, reports        │
-  │   ≡ Logs        live log viewer · level filter · auto-refresh│
-  │                                                              │
-  │   ▶ Start Agent / ■ Stop Agent                              │
-  └───────────────────────┬──────────────────────────────────────┘
-                          │  shared  data/  volume
-                          ▼
-  ┌──────────────────────────────────────────────────────────────┐
-  │  AGENT  ─  python -m agent.main                              │
-  │                                                              │
-  │  ┌─ Watcher thread ──────────────────────────────────────┐  │
-  │  │  dataverse.py   poll bot model versions               │──┼──► Dataverse
-  │  │  → writes force_eval_{botId}.trigger on change        │  │
-  │  └───────────────────────────────────────────────────────┘  │
-  │                                                              │
-  │  ┌─ Evaluator thread ────────────────────────────────────┐  │
-  │  │  eval_client.py  trigger + poll Eval API              │──┼──► Copilot Studio Eval API
-  │  │  reasoning.py    classify + LLM analysis              │──┼──► LLM endpoint + Tavily
-  │  │  store.py        write run.json                       │  │
-  │  │  report.py       generate HTML report                 │  │
-  │  │  notifier.py     email report via SMTP                │──┼──► email
-  │  └───────────────────────────────────────────────────────┘  │
-  │                                                              │
-  │  auth.py      unified MSAL — one cache, three APIs          │──► Microsoft Identity
-  │  events.py    append-only JSONL event log                   │
-  │  logger.py    rotating JSON file logger                     │
-  └──────────────────────────────────────────────────────────────┘
-
-  data/agent/
-      agent.log            rotating operational log (5 MB × 3)
-      events.jsonl         every agent action timestamped
-      auth_state.json      auth status for dashboard display
-      msal_token_cache.json
-      force_eval_{botId}.trigger   ← any event source writes here
-
-  data/{botId}/
-      runs/tracking.json              current model version
-      transactions/{ts}_{model}/
-          run.json                    raw eval results + LLM analysis
-```
 
 ---
 
