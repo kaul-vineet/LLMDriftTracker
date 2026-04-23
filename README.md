@@ -500,12 +500,12 @@ Every agent action is appended to `data/agent/events.jsonl` — an append-only a
 
 | Tag | Event type | Fires when | Timeline |
 |---|---|---|---|
-| 🟢 `AGENT START` | `agent_start` | Agent process boots | Always pinned at bottom |
-| 🔴 `AGENT STOP` | `agent_stop` | Agent process exits (clean, Ctrl-C, or exception) | Always pinned |
-| 🔍 `SCAN START` | `scan_start` | Watcher begins its first active scan | Always pinned |
-| 🔲 `SCAN END` | `scan_end` | Watcher session ends (emitted just before agent_stop) | Always pinned |
-| 🔎 `SCAN COMPLETE` | `scan_complete` | Every watcher sweep finishes — logs bot count and stable count | Not shown |
-| 📡 `SCANNING` | `cycle_start` | Every poll cycle (newest one pinned as heartbeat) | Pinned — most recent only |
+| 🟢 `AGENT START` | `agent_start` | Agent process boots | Shown |
+| 🔴 `AGENT STOP` | `agent_stop` | Agent process exits (clean, Ctrl-C, or exception) | Shown |
+| 🔍 `SCAN START` | `scan_start` | Watcher begins its first active scan | Shown |
+| 🔲 `SCAN END` | `scan_end` | Watcher session ends (emitted just before agent_stop) | Not shown |
+| 🔎 `SCAN COMPLETE` | `scan_complete` | Every watcher sweep finishes — logs bot count and stable count | Shown |
+| 📡 `SCANNING` | `cycle_start` | Every watcher poll cycle | Not shown |
 | 🔄 `MODEL SHIFT` | `model_change` | Watcher detects a model version change in Dataverse | Shown |
 | 🤖 `AGENT EVAL` | `agent_eval` | Same moment — watcher queues eval automatically | Shown |
 | ⏳ `EVAL QUEUED` | `eval_queued` | User clicks Force Eval button in dashboard | Shown |
@@ -516,9 +516,7 @@ Every agent action is appended to `data/agent/events.jsonl` — an append-only a
 | 📭 `NO TEST SETS` | `eval_no_sets` | Bot has no test sets configured | Shown |
 | 🔥 `ERROR` | `error` | Unhandled exception during eval processing | Shown |
 
-`stable`, `regression`, `improvement`, and `scan_complete` are written to `events.jsonl` but not shown in the timeline. For `stable`/`regression`/`improvement`, the `eval_complete` event already carries the verdict and metric summary. `scan_complete` fires every sweep and would flood the timeline.
-
-**Lifecycle pinning:** `agent_start`, `agent_stop`, `scan_start`, `scan_end`, and the most recent `cycle_start` (SCANNING heartbeat) are always shown at the bottom of the timeline regardless of how many eval cycles fill the visible window. Even with no model changes, the timeline proves the agent is running and shows the timestamp of its last scan.
+The timeline shows the 15 most recent non-filtered events, newest first. Filtered out (never shown): `cycle_start`, `scan_end`, `stable`, `regression`, `improvement`. `stable`/`regression`/`improvement` are redundant — `eval_complete` already carries the verdict. `cycle_start` and `scan_end` are low-signal noise filtered at the dashboard level.
 
 ---
 
