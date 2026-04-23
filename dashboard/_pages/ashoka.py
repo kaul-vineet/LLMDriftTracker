@@ -430,7 +430,7 @@ _EVENT_META = {
     "agent_start":   ("ok",  "🟢","AGENT START",  "imp"),   # green  — system up
     "agent_stop":    ("bad", "🔴","AGENT STOP",   "reg"),   # red    — system down
     "scan_start":    ("info","🔍","SCAN START",    "new"),   # cyan   — first scan
-    "scan_complete": ("info","✔","SCAN DONE",    "stb"),   # grey   — sweep done
+    "scan_complete": ("ok", "✔","SCAN DONE",    "imp"),   # green  — sweep done
     "scan_end":      ("info","🔲","SCAN END",     "stb"),   # grey   — agent exiting
     "cycle_start":   ("info","📡","SCANNING",     "stb"),   # grey   — eval heartbeat
     "model_change":  ("warn","🔄","SWAP DETECTED","warn"),  # gold   — change detected
@@ -643,7 +643,7 @@ def page_overview(bots, raw_events):
     st.markdown("<div class='sec-label'>MISSION TIMELINE</div>", unsafe_allow_html=True)
 
     model_lookup = {b["botId"]: b.get("modelVersion","") for b in bots}
-    all_events   = _build_timeline_events(raw_events, model_lookup)[:15]
+    all_events   = list(reversed(_build_timeline_events(raw_events, model_lookup)[:15]))
 
     parts = []
     for ev in all_events:
