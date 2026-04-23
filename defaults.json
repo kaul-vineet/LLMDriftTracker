@@ -1,9 +1,14 @@
 {
-  "store_dir":                  "data",
-  "poll_interval_minutes":      5,
-  "eval_poll_timeout_seconds":  1200,
-  "eval_poll_interval_seconds": 45,
-  "eval_loop_interval_seconds": 30,
-  "max_runs_per_bot":           6,
-  "log_level":                  "INFO"
+  "store_dir":                    "data",
+  "poll_interval_minutes":        5,
+  "eval_poll_timeout_seconds":    1200,
+  "eval_poll_interval_seconds":   45,
+  "eval_loop_interval_seconds":   30,
+  "max_runs_per_bot":             6,
+  "log_level":                    "INFO",
+  "daily_eval_limit":             20,
+  "daily_eval_warning_threshold": 18,
+  "metric_regression_threshold":  0.03,
+  "llm_max_tokens_analysis":      1200,
+  "llm_max_tokens_best_practice": 400
 }

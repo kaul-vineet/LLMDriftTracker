@@ -290,13 +290,15 @@ def run_cycle(cfg: dict, force: bool = False):
             lore.model_changed(bot_name, old_ver, curr_ver)
             ev.model_change(store_dir, bot_name, bot_id, old_ver, curr_ver)
 
-        # Guard against Copilot Studio's ~20 eval/day cap per bot
-        daily_count = store.daily_eval_count(store_dir, bot_id)
-        if daily_count >= 20:
+        # Guard against Copilot Studio's daily eval cap per bot
+        daily_limit   = cfg.get("daily_eval_limit")
+        daily_warn    = cfg.get("daily_eval_warning_threshold")
+        daily_count   = store.daily_eval_count(store_dir, bot_id)
+        if daily_count >= daily_limit:
             log.warning(f"Daily eval limit reached for {bot_name} ({daily_count} evals today) — skipping until tomorrow")
             continue
-        if daily_count >= 18:
-            log.warning(f"Approaching daily eval limit for {bot_name} — {daily_count} of ~20 evals used today")
+        if daily_count >= daily_warn:
+            log.warning(f"Approaching daily eval limit for {bot_name} — {daily_count} of ~{daily_limit} evals used today")
 
         run_folder    = store.make_run_folder_name(curr_ver)
         eval_start_ts = datetime.now(timezone.utc)

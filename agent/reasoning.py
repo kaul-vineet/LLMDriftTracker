@@ -13,7 +13,7 @@ import time
 from openai import OpenAI
 from . import logger as logger_mod
 
-REGRESS_THRESHOLD = 0.03   # absolute change to count as regression/improvement
+REGRESS_THRESHOLD = 0.03   # fallback — overridden by cfg["metric_regression_threshold"] at call site
 
 
 # ── Metric extraction ─────────────────────────────────────────────────────────
@@ -361,12 +361,13 @@ def analyse_variation(bot_name: str, old_model: str, new_model: str,
                       cfg: dict,
                       instructions: str = "",
                       extra_context: str = "") -> str:
+    threshold    = cfg.get("metric_regression_threshold") or REGRESS_THRESHOLD
     curr_metrics = extract_metrics_for_report(test_sets)
     prev_metrics = (
         extract_metrics_for_report(prev_run.get("testSets", {}))
         if prev_run else {}
     )
-    classifications = classify_run(prev_metrics, curr_metrics)
+    classifications = classify_run(prev_metrics, curr_metrics, threshold=threshold)
 
     curr_cases_by_type = _extract_cases_by_type(test_sets)
     prev_cases_by_type = (
@@ -396,7 +397,7 @@ def analyse_variation(bot_name: str, old_model: str, new_model: str,
         resp   = client.chat.completions.create(
             model=model_id,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=1200,
+            max_tokens=cfg.get("llm_max_tokens_analysis"),
         )
         analysis_text = resp.choices[0].message.content
         duration_ms   = int((time.monotonic() - t0) * 1000)
@@ -412,7 +413,7 @@ def analyse_variation(bot_name: str, old_model: str, new_model: str,
             bp_resp = client.chat.completions.create(
                 model=model_id,
                 messages=[{"role": "user", "content": bp_prompt}],
-                max_tokens=400,
+                max_tokens=cfg.get("llm_max_tokens_best_practice"),
             )
             bp_text     = bp_resp.choices[0].message.content
             bp_duration = int((time.monotonic() - t0) * 1000) - duration_ms
